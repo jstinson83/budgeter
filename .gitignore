@@ -1,0 +1,12 @@
+# Backend (Gradle/Kotlin)
+backend/.gradle/
+backend/.kotlin/
+backend/build/
+!backend/gradle/wrapper/gradle-wrapper.jar
+
+# Env files with secrets
+.env
+*.env.local
+
+# OS
+.DS_Store
