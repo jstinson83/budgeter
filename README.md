@@ -5,7 +5,7 @@ useful insight into spending habits.
 
 ## Status
 
-- [x] Sign-in page gating a (currently blank) home page
+- [x] Sign-in (Google OAuth) gating a (currently blank) home page
 - [ ] CSV transaction import (next up)
 - [ ] Bank connection via a data aggregator (Plaid / Flinks), as a
       convenience layer on top of CSV import
@@ -21,47 +21,41 @@ immediately. A proper aggregator (Plaid or Flinks — both support TD) is the
 right next step once the core app is useful; it handles the bank-auth flow
 itself so this app never touches TD credentials directly.
 
-## Stack
+## Tech stack
 
-- **Backend**: Kotlin + [Ktor](https://ktor.io), Gradle
-- **Frontend**: Vite + TypeScript (no framework)
-
-The backend serves the frontend's built static files directly, so in
-production it's a single process on one origin (no CORS to deal with).
+- **Backend**: Kotlin + [Ktor](https://ktor.io), server-rendered with
+  FreeMarker templates — no separate frontend build/framework, one deployable
+  service. (Matches the [`foodie`](https://github.com/jstinson83/foodie)
+  project's stack/patterns.)
+- **Auth**: Google OAuth sign-in, signed session cookie.
 
 ## Local development
 
 ### Prerequisites
 
 - JDK 21
-- Node 22
 
-### 1. Configure the backend
+### 1. Create a Google OAuth client
+
+In [Google Cloud Console](https://console.cloud.google.com/apis/credentials):
+create an OAuth 2.0 Client ID (Application type: **Web application**), and
+add `http://localhost:8080/auth/google/callback` as an authorized redirect
+URI. You'll get a Client ID and Client Secret.
+
+### 2. Configure the backend
 
 ```sh
 cd backend
 cp .env.example .env
 ```
 
-Generate a password hash and session secret, then fill in `.env`:
+Fill in `.env` with the Client ID/Secret from step 1, and a session secret:
 
 ```sh
-./gradlew run --args="hash-password <your-password>"
-openssl rand -hex 32   # use as BUDGETER_SESSION_SECRET
+openssl rand -hex 32   # use as SESSION_SECRET
 ```
 
-### 2. Run both servers
-
-In one terminal, run the frontend dev server (hot reload, proxies `/api` to
-the backend):
-
-```sh
-cd frontend
-npm install
-npm run dev
-```
-
-In another terminal, run the backend:
+### 3. Run it
 
 ```sh
 cd backend
@@ -69,24 +63,34 @@ set -a; source .env; set +a
 ./gradlew run
 ```
 
-Visit the frontend dev server URL Vite prints (typically
-`http://localhost:5173`).
+Visit `http://localhost:8080`.
 
-### Production-like single-process run
-
-Build the frontend, then let the backend serve it directly:
+### Tests
 
 ```sh
-cd frontend && npm run build
-cd ../backend && set -a; source .env; set +a && ./gradlew run
+cd backend
+./gradlew test
 ```
 
-Visit `http://localhost:8080`.
+Tests use a mocked HTTP client standing in for Google's OAuth endpoints, so
+the suite never makes a real network call.
+
+## Project layout
+
+```
+backend/src/main/kotlin/com/budgeter/
+  Application.kt   wiring: routing, DI defaults, plugin install
+  Auth.kt          Google OAuth + session handling
+backend/src/main/resources/
+  templates/*.ftl  server-rendered pages
+  static/          CSS
+```
 
 ## How auth works right now
 
-Single hardcoded user (you), configured via env vars. Login sets a signed,
-encrypted, `httpOnly` session cookie (Ktor `Sessions` plugin); `/api/me` is
-the gate the frontend checks on load to decide whether to show the home page
-or redirect to `/login.html`. No database yet — this will need to evolve once
-there's actual data to store (transactions, categories, etc.).
+Google sign-in via Ktor's built-in OAuth2 provider (`Auth.kt`). Identity is a
+signed, `httpOnly` session cookie (`googleSub`/`email`/`name`) — there's no
+database yet, so nothing about the signed-in user is persisted beyond the
+cookie itself. That'll need to change once there's actual per-account data to
+store (transactions, categories, etc.), at which point this should grow a
+`UserRepository` the same way `foodie` has one.
