@@ -102,6 +102,18 @@ Example: user says "Plumber came today and fixed the leak." The system
 identifies the plumber from prior vendor records and asks: "Should I add
 this as a repair event for the basement bathroom?"
 
+**Transaction import as a capture moment.** Bank/CSV import (the original
+budgeter feature) is a naturally high-attention moment — the user is already
+reviewing what came in — so it doubles as a prompt point for reasoning
+capture, not just categorization. Don't ask on every transaction; that
+recreates the form-fatigue this whole approach is trying to avoid. Filter to
+transactions worth asking about: unusual amount, a new payee, or a category
+that tends to matter (contractors, appliance/furniture stores, one-off large
+purchases). A note tied to one of these can attach directly to a vendor
+and/or project record — e.g. "$3,200 to ABC Contracting" → "What was this
+for?" → links a note to both the vendor and the renovation project in one
+prompt.
+
 ## Relationship to other domains
 
 Finance/home isn't a one-off — it's one instance of a repeatable shape that
@@ -128,7 +140,9 @@ obvious there, not because it's the only one that fits.
 **V2 — build the financial and maintenance layers**
 - Bank transaction import (this is where the original budgeter scope folds
   in, as the financial layer of the household model rather than a
-  standalone product)
+  standalone product) — filtered to prompt for notes on notable transactions
+  (see "Transaction import as a capture moment" above), rather than plain
+  categorization
 - Maintenance event tracking tied to assets
 - Warranty tracking with expiry awareness
 
