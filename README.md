@@ -3,6 +3,11 @@
 A personal spending-insights app. Goal: pull in bank transactions and surface
 useful insight into spending habits.
 
+> **Longer-term direction:** this project's scope is expanding beyond
+> budgeting into a broader "Household OS" concept — see
+> [`docs/HOUSEHOLD_OS.md`](docs/HOUSEHOLD_OS.md) for the vision. Nothing in
+> this codebase has changed yet; this is a note for later, not a rewrite.
+
 ## Status
 
 - [x] Sign-in (Google OAuth) gating a (currently blank) home page
