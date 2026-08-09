@@ -4,6 +4,7 @@ import org.apache.commons.csv.CSVFormat
 import org.apache.commons.csv.CSVParser
 import org.apache.commons.csv.CSVRecord
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
 data class ParsedTransaction(val date: LocalDate, val description: String, val amount: Double)
@@ -13,11 +14,12 @@ data class CsvRowError(val rowNumber: Int, val rawLine: String, val reason: Stri
 data class CsvParseResult(val transactions: List<ParsedTransaction>, val errors: List<CsvRowError>)
 
 // Headerless CSV: date,description,amount (a 4th balance column, if present,
-// is ignored - see .claude/context.md). Date is assumed ISO-8601
-// (yyyy-MM-dd) for now, since there's no real bank export to match against
-// yet; TD's actual export uses MM/DD/YYYY with separate debit/credit
-// columns instead of one signed amount, so this will need revisiting once
-// real statements are used instead of synthetic data.
+// is ignored - see .claude/context.md). Date accepts either ISO-8601
+// (yyyy-MM-dd, for synthetic/AI-generated test data) or MM/dd/yyyy (TD
+// Canada Trust's real export format) - see SUPPORTED_DATE_FORMATS. TD's
+// export also uses separate debit/credit columns rather than one signed
+// amount; that part is still unhandled since no real statement has been
+// tried against this yet.
 //
 // Field-level splitting/quoting/escaping is delegated to Apache Commons CSV
 // rather than a hand-rolled line parser - RFC4180 edge cases (quoted
@@ -28,6 +30,22 @@ object CsvTransactionParser {
         .setTrim(true)
         .setIgnoreEmptyLines(true)
         .build()
+
+    private val supportedDateFormats = listOf(
+        DateTimeFormatter.ISO_LOCAL_DATE,
+        DateTimeFormatter.ofPattern("MM/dd/yyyy")
+    )
+
+    private fun parseDate(value: String): LocalDate? {
+        for (dateFormat in supportedDateFormats) {
+            try {
+                return LocalDate.parse(value, dateFormat)
+            } catch (e: DateTimeParseException) {
+                // Try the next supported format.
+            }
+        }
+        return null
+    }
 
     fun parse(csvText: String): CsvParseResult {
         val transactions = mutableListOf<ParsedTransaction>()
@@ -42,9 +60,8 @@ object CsvTransactionParser {
                     continue
                 }
 
-                val date = try {
-                    LocalDate.parse(record.get(0))
-                } catch (e: DateTimeParseException) {
+                val date = parseDate(record.get(0))
+                if (date == null) {
                     errors += CsvRowError(rowNumber, record.rawLine(), "Invalid date: ${record.get(0)}")
                     continue
                 }

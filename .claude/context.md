@@ -44,12 +44,16 @@ either way (real Firestore persistence, real deploy path) that later
 photo/document-capture features will reuse.
 
 - CSV is assumed **headerless**: `date,description,amount[,balance]`.
-  Balance (if present) is parsed but discarded. Date is ISO-8601
-  (`yyyy-MM-dd`) since there's no real bank export yet to match against —
-  TD's actual export uses `MM/DD/YYYY` with separate debit/credit columns
-  instead of one signed amount, so `CsvTransactionParser` will need
-  updating once real statements replace synthetic test data.
-  `amount` is one signed `Double` (negative = money out).
+  Balance (if present) is parsed but discarded. Date accepts either
+  ISO-8601 (`yyyy-MM-dd`) or `MM/dd/yyyy` (`CsvTransactionParser.supportedDateFormats`)
+  — the latter added after a real-shaped sample export (credit-card-style:
+  unsigned charge amounts, balance increasing per row, a negative amount
+  for a payment) surfaced it. TD's actual export still differs further —
+  separate debit/credit columns instead of one signed amount — so more
+  parser work is likely once a real TD statement is tried.
+  `amount` is one signed `Double` (sign convention depends on the
+  statement type: chequing-account exports use negative = money out,
+  the credit-card-style sample above uses positive = charge).
 - Bad rows are skipped, not fatal — `CsvTransactionParser.parse` returns
   both the successfully parsed transactions and a list of per-row errors;
   the import route reports "Imported N, skipped M" rather than
