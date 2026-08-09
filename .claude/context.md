@@ -86,11 +86,14 @@ thing); this first pass intentionally doesn't build that yet.
 - `GeminiTransactionCategorizer` (`GeminiCategorizer.kt`) calls the Gemini
   API directly over REST (`generativelanguage.googleapis.com`, model
   `gemini-2.5-flash`) using a `responseSchema` that constrains output to
-  `{id, category}` pairs from the fixed enum - no Google AI SDK dependency
-  added, same "just use ktor's HttpClient" pattern as the OAuth userinfo
-  call in `Auth.kt`. Requires the `GEMINI_API_KEY` env var; not yet set on
-  the deployed Cloud Run service (see `CLAUDE.md`'s deploy pipeline
-  section - same manual-env-var pattern as the OAuth secrets).
+  `{index, category}` pairs (index into the request's transaction list, not
+  the transaction's real id - see CLAUDE.md gotcha below) from the fixed
+  enum - no Google AI SDK dependency added, same "just use ktor's
+  HttpClient" pattern as the OAuth userinfo call in `Auth.kt`. Requires the
+  `GEMINI_API_KEY` env var; not yet set on the deployed Cloud Run service
+  (see `CLAUDE.md`'s deploy pipeline section - same manual-env-var pattern
+  as the OAuth secrets). Thinking is explicitly disabled
+  (`thinkingConfig.thinkingBudget = 0`) - see CLAUDE.md gotcha.
 - Periods ("last week/month/year") are rolling windows from today
   (`LocalDate.now().minusWeeks(1)` etc.), not calendar-aligned (not
   "this calendar month").

@@ -102,3 +102,26 @@ breaks, not the facts themselves.
   formatting change (e.g. an added header row) hashes differently and
   re-imports everything as new - there's no real per-transaction ID from
   the source data to do better than this without one.
+
+## Gemini categorization gotchas
+
+`GeminiTransactionCategorizer` (`GeminiCategorizer.kt`) is what `/analysis`'s
+"Categorize" button calls - see `.claude/context.md` for the request/response
+shape.
+
+- First real-world run against a batch of ~120 transactions came back
+  "Categorized 0 of 123" with no error banner at all - looked like a no-op,
+  not a failure. Root cause: the original schema asked Gemini to echo back
+  each transaction's full id (a 64-hex-char SHA-256 string) in its response,
+  and `gemini-2.5-flash` has extended thinking on by default; for a batch
+  that size the model spent its whole output-token budget on reasoning and
+  returned a candidate with `finishReason: MAX_TOKENS` and no text part at
+  all - which the code silently treated as "nothing to report" instead of
+  an error. Fixed two ways: request/response now use a 0-based index into
+  the batch instead of the real id (shorter output, and an index is either
+  in range or it isn't - no room for a near-miss id to quietly vanish), and
+  `thinkingConfig.thinkingBudget` is set to `0` since this task doesn't
+  need extended reasoning. A missing/blank text part is now a thrown error
+  (surfaced as the `/analysis` error banner) rather than an empty result -
+  if this bites again, the error banner will say `finishReason=...`, which
+  is the thing to check first.
