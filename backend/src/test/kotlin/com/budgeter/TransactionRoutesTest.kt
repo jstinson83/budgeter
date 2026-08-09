@@ -77,6 +77,64 @@ class TransactionRoutesTest {
     }
 
     @Test
+    fun testReimportingSameCsvSkipsDuplicates() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val csv = "2026-01-15,Starbucks,-4.75\n2026-01-16,Payroll,2500.00"
+        val importCsv: suspend () -> String = {
+            val response = client.submitFormWithBinaryData(
+                url = "/transactions/import",
+                formData = formData {
+                    append("file", csv.toByteArray(), Headers.build {
+                        append(HttpHeaders.ContentType, "text/csv")
+                        append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
+                    })
+                }
+            )
+            response.headers[HttpHeaders.Location]!!
+        }
+
+        importCsv()
+        val secondRedirect = importCsv()
+
+        val listResponse = client.get(secondRedirect)
+        val body = listResponse.bodyAsText()
+        assertTrue(body.contains("Imported 0 transaction(s), skipped 2 duplicate(s)"))
+        assertEquals(1, Regex("Starbucks").findAll(body).count())
+        assertEquals(1, Regex("Payroll").findAll(body).count())
+    }
+
+    @Test
+    fun testIdenticalRowsInTheSameFileAreNotTreatedAsDuplicatesOfEachOther() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        // Two genuinely separate $4.75 Starbucks charges the same day -
+        // identical content, different rows of the same upload. Dedup is
+        // keyed on (file, row position), not row content, so both must be
+        // kept.
+        val csv = "2026-01-15,Starbucks,-4.75\n2026-01-15,Starbucks,-4.75"
+        val importResponse = client.submitFormWithBinaryData(
+            url = "/transactions/import",
+            formData = formData {
+                append("file", csv.toByteArray(), Headers.build {
+                    append(HttpHeaders.ContentType, "text/csv")
+                    append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
+                })
+            }
+        )
+
+        val redirectLocation = importResponse.headers[HttpHeaders.Location]
+        assertNotNull(redirectLocation)
+        val listResponse = client.get(redirectLocation)
+        val body = listResponse.bodyAsText()
+        assertTrue(body.contains("Imported 2 transaction(s)"))
+        assertFalse(body.contains("duplicate"))
+        assertEquals(2, Regex("Starbucks").findAll(body).count())
+    }
+
+    @Test
     fun testImportWithNoFileRedirectsWithError() = testApplication {
         testModule()
         val client = signInFakeUser()

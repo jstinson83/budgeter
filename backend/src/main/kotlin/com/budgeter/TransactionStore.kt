@@ -3,6 +3,7 @@ package com.budgeter
 import com.google.cloud.firestore.FieldValue
 import com.google.cloud.firestore.Firestore
 import com.google.cloud.firestore.Query
+import java.security.MessageDigest
 import java.time.LocalDate
 
 data class Transaction(
@@ -19,25 +20,68 @@ data class Transaction(
     val amount: Double
 )
 
+data class TransactionImportResult(val stored: List<Transaction>, val duplicateCount: Int)
+
+fun sha256Hex(text: String): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
+    return digest.joinToString("") { "%02x".format(it) }
+}
+
+// Deterministic per-(owner,file,row-position) hash, used as both the
+// Firestore document ID and the in-memory dedup key: re-importing the
+// exact same CSV file lands each row on the same ID as before, so
+// re-uploading a statement is naturally idempotent. Identity is tied to a
+// row's position within a specific uploaded file, not to its
+// date/description/amount - two genuinely distinct transactions that
+// happen to share a date, description, and amount (e.g. two identical
+// coffees bought the same day) sit at different row positions within the
+// same file and are correctly treated as separate, not as duplicates of
+// each other. The tradeoff: re-exporting the same statement with even a
+// trivial formatting change (e.g. an added header row shifting every row's
+// position, or a re-export with a wider date range) hashes differently and
+// re-imports every row as new - there's no real per-transaction ID from
+// the source data to do better than this without one.
+fun transactionFingerprint(ownerId: String, fileHash: String, parsed: ParsedTransaction): String =
+    sha256Hex("$ownerId|$fileHash|${parsed.rowNumber}")
+
 interface TransactionRepository {
     // One batched write for a whole CSV import rather than N individual
-    // round-trips - see FirestoreTransactionStore.
-    suspend fun addAll(ownerId: String, transactions: List<ParsedTransaction>): List<Transaction>
+    // round-trips - see FirestoreTransactionStore. fileHash identifies the
+    // uploaded file as a whole (see transactionFingerprint) so dedup can be
+    // scoped to "this row of this file" rather than a row's content alone.
+    suspend fun addAll(ownerId: String, fileHash: String, transactions: List<ParsedTransaction>): TransactionImportResult
     suspend fun all(ownerId: String): List<Transaction>
 }
 
 class FirestoreTransactionStore(private val firestore: Firestore) : TransactionRepository {
     private val collection = firestore.collection("transactions")
 
-    override suspend fun addAll(ownerId: String, transactions: List<ParsedTransaction>): List<Transaction> {
+    override suspend fun addAll(ownerId: String, fileHash: String, transactions: List<ParsedTransaction>): TransactionImportResult {
+        if (transactions.isEmpty()) return TransactionImportResult(emptyList(), 0)
+
+        val withFingerprints = transactions.map { it to transactionFingerprint(ownerId, fileHash, it) }
+        val docRefs = withFingerprints.map { (_, fingerprint) -> collection.document(fingerprint) }
+        // One batched existence check for the whole import rather than a
+        // per-row read - same round-trip-minimizing idea as the write batch
+        // below.
+        val existingIds = firestore.getAll(*docRefs.toTypedArray()).get()
+            .filter { it.exists() }
+            .map { it.id }
+            .toMutableSet()
+
         val batch = firestore.batch()
-        val stored = transactions.map { parsed ->
-            val docRef = collection.document()
-            batch.set(docRef, transactionToMap(ownerId, parsed))
-            Transaction(docRef.id, ownerId, parsed.date, parsed.description, parsed.amount)
+        val stored = mutableListOf<Transaction>()
+        var duplicateCount = 0
+        for ((parsed, fingerprint) in withFingerprints) {
+            if (!existingIds.add(fingerprint)) {
+                duplicateCount++
+                continue
+            }
+            batch.set(collection.document(fingerprint), transactionToMap(ownerId, parsed))
+            stored += Transaction(fingerprint, ownerId, parsed.date, parsed.description, parsed.amount)
         }
-        batch.commit().get()
-        return stored
+        if (stored.isNotEmpty()) batch.commit().get()
+        return TransactionImportResult(stored, duplicateCount)
     }
 
     override suspend fun all(ownerId: String): List<Transaction> {

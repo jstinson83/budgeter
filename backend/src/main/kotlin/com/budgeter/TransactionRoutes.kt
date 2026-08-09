@@ -36,12 +36,13 @@ fun Route.transactionRoutes(transactionStore: TransactionRepository) {
         }
 
         val result = CsvTransactionParser.parse(csvText!!)
-        if (result.transactions.isNotEmpty()) {
-            transactionStore.addAll(ownerId, result.transactions)
-        }
+        val importResult = transactionStore.addAll(ownerId, sha256Hex(csvText!!), result.transactions)
 
         val message = buildString {
-            append("Imported ${result.transactions.size} transaction(s)")
+            append("Imported ${importResult.stored.size} transaction(s)")
+            if (importResult.duplicateCount > 0) {
+                append(", skipped ${importResult.duplicateCount} duplicate(s)")
+            }
             if (result.errors.isNotEmpty()) {
                 append(", skipped ${result.errors.size} row(s) with errors")
             }

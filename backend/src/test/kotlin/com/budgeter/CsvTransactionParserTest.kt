@@ -16,8 +16,8 @@ class CsvTransactionParserTest {
         assertEquals(emptyList(), result.errors)
         assertEquals(
             listOf(
-                ParsedTransaction(LocalDate.of(2026, 1, 15), "Starbucks", -4.75),
-                ParsedTransaction(LocalDate.of(2026, 1, 16), "Payroll", 2500.00)
+                ParsedTransaction(1, LocalDate.of(2026, 1, 15), "Starbucks", -4.75),
+                ParsedTransaction(2, LocalDate.of(2026, 1, 16), "Payroll", 2500.00)
             ),
             result.transactions
         )
@@ -31,7 +31,7 @@ class CsvTransactionParserTest {
 
         assertEquals(emptyList(), result.errors)
         assertEquals(
-            listOf(ParsedTransaction(LocalDate.of(2026, 1, 15), "Starbucks", -4.75)),
+            listOf(ParsedTransaction(1, LocalDate.of(2026, 1, 15), "Starbucks", -4.75)),
             result.transactions
         )
     }

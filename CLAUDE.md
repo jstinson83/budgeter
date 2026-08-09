@@ -88,6 +88,14 @@ breaks, not the facts themselves.
   foodie's `Ingredient.quantity` uses. Revisit (e.g. integer cents) if
   floating-point drift ever actually shows up in a sum/balance - not
   addressed preemptively.
-- No dedup on CSV import: re-uploading the same file inserts the same rows
-  again as new documents. Known gap, not yet addressed - see
-  `.claude/context.md`.
+- Dedup on CSV import is keyed on `(ownerId, fileHash, rowNumber)` -
+  `transactionFingerprint()` in `TransactionStore.kt`, used as the Firestore
+  document ID. Identity is tied to a row's position within a specific
+  uploaded file, not to its date/description/amount: two transactions that
+  happen to share all three (e.g. two identical same-day coffees) are kept
+  as separate rows since they sit at different positions in the file.
+  Re-uploading the exact same file is idempotent (same fileHash, same row
+  positions, same IDs); re-exporting the same statement with even a minor
+  formatting change (e.g. an added header row) hashes differently and
+  re-imports everything as new - there's no real per-transaction ID from
+  the source data to do better than this without one.
