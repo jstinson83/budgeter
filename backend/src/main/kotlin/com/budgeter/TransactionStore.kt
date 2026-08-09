@@ -17,7 +17,11 @@ data class Transaction(
     // Double for now, same simplification foodie's Ingredient.quantity
     // uses - revisit (e.g. integer cents) if floating-point drift ever
     // actually shows up in a balance/total.
-    val amount: Double
+    val amount: Double,
+    // Null until a categorization pass (see GeminiTransactionCategorizer)
+    // assigns one. Absent from newly-imported transactions on purpose - it's
+    // filled in later, on demand, not at import time.
+    val category: TransactionCategory? = null
 )
 
 data class TransactionImportResult(val stored: List<Transaction>, val duplicateCount: Int)
@@ -51,6 +55,16 @@ interface TransactionRepository {
     // scoped to "this row of this file" rather than a row's content alone.
     suspend fun addAll(ownerId: String, fileHash: String, transactions: List<ParsedTransaction>): TransactionImportResult
     suspend fun all(ownerId: String): List<Transaction>
+
+    // Default in-memory filter over all(ownerId) rather than a separate
+    // Firestore query - avoids needing another composite index (see
+    // CLAUDE.md's Firestore gotchas) for what's a small per-user dataset.
+    // This is also what keeps a categorization pass from ever re-analyzing
+    // the same transaction twice: once category is set it drops out of
+    // this list for good.
+    suspend fun uncategorized(ownerId: String): List<Transaction> = all(ownerId).filter { it.category == null }
+
+    suspend fun updateCategories(ownerId: String, categorized: Map<String, TransactionCategory>)
 }
 
 class FirestoreTransactionStore(private val firestore: Firestore) : TransactionRepository {
@@ -92,6 +106,13 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
         return snapshot.documents.map { toTransaction(it.id, it.data) }
     }
 
+    override suspend fun updateCategories(ownerId: String, categorized: Map<String, TransactionCategory>) {
+        if (categorized.isEmpty()) return
+        val batch = firestore.batch()
+        categorized.forEach { (id, category) -> batch.update(collection.document(id), mapOf("category" to category.name)) }
+        batch.commit().get()
+    }
+
     private fun transactionToMap(ownerId: String, parsed: ParsedTransaction): Map<String, Any?> = mapOf(
         "ownerId" to ownerId,
         // Stored as an ISO-8601 string (yyyy-MM-dd) rather than a Firestore
@@ -109,6 +130,7 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
         ownerId = data["ownerId"] as? String ?: "",
         date = LocalDate.parse(data["date"] as? String ?: "1970-01-01"),
         description = data["description"] as? String ?: "",
-        amount = (data["amount"] as? Number)?.toDouble() ?: 0.0
+        amount = (data["amount"] as? Number)?.toDouble() ?: 0.0,
+        category = (data["category"] as? String)?.let { runCatching { TransactionCategory.valueOf(it) }.getOrNull() }
     )
 }
