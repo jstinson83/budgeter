@@ -43,7 +43,7 @@ interface TransactionCategorizer {
 class GeminiTransactionCategorizer(
     private val httpClient: HttpClient,
     private val apiKey: String,
-    private val model: String = "gemini-2.5-flash"
+    private val model: String = "gemini-3.5-flash"
 ) : TransactionCategorizer {
 
     override suspend fun categorize(transactions: List<Transaction>): Map<String, TransactionCategory> {

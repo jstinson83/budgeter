@@ -85,7 +85,7 @@ thing); this first pass intentionally doesn't build that yet.
   re-analyzes (or re-bills Gemini for) the same transaction twice.
 - `GeminiTransactionCategorizer` (`GeminiCategorizer.kt`) calls the Gemini
   API directly over REST (`generativelanguage.googleapis.com`, model
-  `gemini-2.5-flash`) using a `responseSchema` that constrains output to
+  `gemini-3.5-flash`) using a `responseSchema` that constrains output to
   `{index, category}` pairs (index into the request's transaction list, not
   the transaction's real id - see CLAUDE.md gotcha below) from the fixed
   enum - no Google AI SDK dependency added, same "just use ktor's
