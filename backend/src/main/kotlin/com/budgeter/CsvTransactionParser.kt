@@ -1,5 +1,8 @@
 package com.budgeter
 
+import org.apache.commons.csv.CSVFormat
+import org.apache.commons.csv.CSVParser
+import org.apache.commons.csv.CSVRecord
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 
@@ -15,67 +18,51 @@ data class CsvParseResult(val transactions: List<ParsedTransaction>, val errors:
 // yet; TD's actual export uses MM/DD/YYYY with separate debit/credit
 // columns instead of one signed amount, so this will need revisiting once
 // real statements are used instead of synthetic data.
+//
+// Field-level splitting/quoting/escaping is delegated to Apache Commons CSV
+// rather than a hand-rolled line parser - RFC4180 edge cases (quoted
+// newlines, escaped quotes, CRLF vs LF) are exactly the kind of thing not
+// worth re-deriving.
 object CsvTransactionParser {
+    private val format: CSVFormat = CSVFormat.DEFAULT.builder()
+        .setTrim(true)
+        .setIgnoreEmptyLines(true)
+        .build()
+
     fun parse(csvText: String): CsvParseResult {
         val transactions = mutableListOf<ParsedTransaction>()
         val errors = mutableListOf<CsvRowError>()
 
-        csvText.lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .forEachIndexed { index, line ->
-                val rowNumber = index + 1
-                val fields = parseCsvLine(line)
-                if (fields.size < 3) {
-                    errors += CsvRowError(rowNumber, line, "Expected at least 3 fields (date, description, amount), got ${fields.size}")
-                    return@forEachIndexed
+        CSVParser.parse(csvText, format).use { parser ->
+            for (record in parser) {
+                val rowNumber = record.recordNumber.toInt()
+
+                if (record.size() < 3) {
+                    errors += CsvRowError(rowNumber, record.rawLine(), "Expected at least 3 fields (date, description, amount), got ${record.size()}")
+                    continue
                 }
 
                 val date = try {
-                    LocalDate.parse(fields[0].trim())
+                    LocalDate.parse(record.get(0))
                 } catch (e: DateTimeParseException) {
-                    errors += CsvRowError(rowNumber, line, "Invalid date: ${fields[0]}")
-                    return@forEachIndexed
+                    errors += CsvRowError(rowNumber, record.rawLine(), "Invalid date: ${record.get(0)}")
+                    continue
                 }
 
-                val amount = fields[2].trim().toDoubleOrNull()
+                val amount = record.get(2).toDoubleOrNull()
                 if (amount == null) {
-                    errors += CsvRowError(rowNumber, line, "Invalid amount: ${fields[2]}")
-                    return@forEachIndexed
+                    errors += CsvRowError(rowNumber, record.rawLine(), "Invalid amount: ${record.get(2)}")
+                    continue
                 }
 
-                transactions += ParsedTransaction(date, fields[1].trim(), amount)
+                transactions += ParsedTransaction(date, record.get(1), amount)
             }
+        }
 
         return CsvParseResult(transactions, errors)
     }
 
-    // Minimal RFC4180-style line parser: handles double-quoted fields (real
-    // merchant descriptions routinely contain commas, e.g. "STARBUCKS, INC")
-    // and "" as an escaped quote inside one. Not a full CSV parser (no
-    // multi-line quoted fields) - fine since each transaction is one line.
-    private fun parseCsvLine(line: String): List<String> {
-        val fields = mutableListOf<String>()
-        val current = StringBuilder()
-        var inQuotes = false
-        var i = 0
-        while (i < line.length) {
-            val c = line[i]
-            when {
-                inQuotes && c == '"' && i + 1 < line.length && line[i + 1] == '"' -> {
-                    current.append('"')
-                    i++
-                }
-                c == '"' -> inQuotes = !inQuotes
-                c == ',' && !inQuotes -> {
-                    fields += current.toString()
-                    current.clear()
-                }
-                else -> current.append(c)
-            }
-            i++
-        }
-        fields += current.toString()
-        return fields
-    }
+    // CSVRecord doesn't retain the original source line, only the split
+    // fields - reconstruct a close-enough approximation for error messages.
+    private fun CSVRecord.rawLine(): String = toList().joinToString(",")
 }
