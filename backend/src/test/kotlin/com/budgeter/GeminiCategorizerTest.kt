@@ -14,11 +14,11 @@ class GeminiCategorizerTest {
     private fun transaction(id: String, description: String, amount: Double): Transaction =
         Transaction(id, "owner", LocalDate.of(2026, 1, 15), description, amount)
 
-    private fun mockClientRespondingWith(body: String): HttpClient = HttpClient(MockEngine) {
+    private fun mockClientRespondingWith(body: String, status: HttpStatusCode = HttpStatusCode.OK): HttpClient = HttpClient(MockEngine) {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         engine {
             addHandler {
-                respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+                respond(body, status, headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
             }
         }
     }
@@ -65,6 +65,28 @@ class GeminiCategorizerTest {
         val result = GeminiTransactionCategorizer(client, "fake-key").categorize(transactions)
 
         assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun testSurfacesGeminiApiErrorBodyInsteadOfGenericNoCandidatesMessage() = runBlocking {
+        // Reproduces a second real-world report: "Categorization failed:
+        // Gemini returned no candidates" with no further detail. Root
+        // cause was that a non-2xx response (Google's error body has no
+        // "candidates" key) used to get decoded straight into
+        // GeminiGenerateContentResponse anyway, where candidates defaults
+        // to emptyList() - indistinguishable from a genuine empty success.
+        // The actual error (here, an invalid API key) must now surface.
+        val transactions = listOf(transaction("tx-1", "Metro Grocery", -42.10))
+        val client = mockClientRespondingWith(
+            """{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}""",
+            HttpStatusCode.BadRequest
+        )
+
+        val exception = assertFailsWith<IllegalStateException> {
+            GeminiTransactionCategorizer(client, "fake-key").categorize(transactions)
+        }
+        assertTrue(exception.message!!.contains("400"))
+        assertTrue(exception.message!!.contains("API key not valid"))
     }
 
     @Test
