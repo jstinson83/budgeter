@@ -11,9 +11,11 @@ useful insight into spending habits.
 ## Status
 
 - [x] Sign-in (Google OAuth) gating a (currently blank) home page
-- [ ] CSV transaction import (next up)
+- [x] CSV transaction import (headerless `date,description,amount`,
+      Firestore-backed, no analysis yet — see `/transactions`)
 - [ ] Bank connection via a data aggregator (Plaid / Flinks), as a
       convenience layer on top of CSV import
+- [ ] Spending analysis / categorization
 
 ### Why CSV import before a live bank connection
 
@@ -39,6 +41,10 @@ itself so this app never touches TD credentials directly.
 ### Prerequisites
 
 - JDK 21
+- Google Cloud SDK with Application Default Credentials set up
+  (`gcloud auth application-default login`), and access to the `home-os`
+  Firestore database — there's no local emulator wired up yet, so
+  transaction import hits the real (shared-project) Firestore database.
 
 ### 1. Create a Google OAuth client
 
@@ -77,15 +83,20 @@ cd backend
 ./gradlew test
 ```
 
-Tests use a mocked HTTP client standing in for Google's OAuth endpoints, so
-the suite never makes a real network call.
+Tests use a mocked HTTP client standing in for Google's OAuth endpoints, and
+an in-memory `FakeTransactionRepository` standing in for Firestore, so the
+suite never makes a real network call.
 
 ## Project layout
 
 ```
 backend/src/main/kotlin/com/budgeter/
-  Application.kt   wiring: routing, DI defaults, plugin install
-  Auth.kt          Google OAuth + session handling
+  Application.kt          wiring: routing, DI defaults, plugin install
+  Auth.kt                 Google OAuth + session handling
+  TransactionStore.kt     Transaction model, repository interface + Firestore impl
+  CsvTransactionParser.kt headerless CSV -> ParsedTransaction, tolerant of bad rows
+  TransactionRoutes.kt    /transactions (list) and /transactions/import (upload)
+  TransactionPage.kt      Transaction -> FreeMarker view model
 backend/src/main/resources/
   templates/*.ftl  server-rendered pages
   static/          CSS
@@ -95,7 +106,18 @@ backend/src/main/resources/
 
 Google sign-in via Ktor's built-in OAuth2 provider (`Auth.kt`). Identity is a
 signed, `httpOnly` session cookie (`googleSub`/`email`/`name`) — there's no
-database yet, so nothing about the signed-in user is persisted beyond the
-cookie itself. That'll need to change once there's actual per-account data to
-store (transactions, categories, etc.), at which point this should grow a
-`UserRepository` the same way `foodie` has one.
+`User` record in Firestore yet, so nothing about the signed-in account itself
+is persisted beyond the cookie (only the data it owns, e.g. transactions, is).
+That'll need to change once there's a reason to store account-level state,
+at which point this should grow a `UserRepository` the same way `foodie` has
+one.
+
+## How CSV import works right now
+
+`/transactions` shows an upload form and the current account's transactions
+(most recent first). `POST /transactions/import` parses the uploaded file as
+headerless `date,description,amount` (ISO-8601 date, one signed amount
+column, an optional 4th balance column is ignored) via
+`CsvTransactionParser`, skips unparseable rows without failing the whole
+import, and reports how many rows landed vs. were skipped. No categorization
+or analysis yet — see `docs/HOUSEHOLD_OS.md` for where this is headed.

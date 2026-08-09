@@ -96,6 +96,11 @@ fun Application.installGoogleAuth(oauthHttpClient: HttpClient, redirectBaseUrl: 
 // functions with no knowledge of the call or session.
 fun ApplicationCall.currentUserModel(): Map<String, Any?> = mapOf("currentUser" to principal<UserSession>())
 
+// The one place route handlers pull the signed-in googleSub from - safe to
+// force-unwrap since every caller is already inside the
+// authenticate(USER_SESSION_PROVIDER_NAME) gate.
+fun ApplicationCall.requireUserId(): String = principal<UserSession>()!!.googleSub
+
 fun Route.authRoutes(oauthHttpClient: HttpClient) {
     get("/welcome") {
         val session = call.sessions.get<SessionData>()?.toUserSession()

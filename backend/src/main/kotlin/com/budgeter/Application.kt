@@ -1,5 +1,7 @@
 package com.budgeter
 
+import com.google.cloud.firestore.Firestore
+import com.google.cloud.firestore.FirestoreOptions
 import freemarker.cache.ClassTemplateLoader
 import freemarker.core.HTMLOutputFormat
 import freemarker.template.Configuration
@@ -30,10 +32,16 @@ private val oauthHttpClient: HttpClient by lazy {
     }
 }
 
+private val firestoreClient: Firestore by lazy {
+    val databaseId = System.getenv("FIRESTORE_DATABASE_ID") ?: "home-os"
+    FirestoreOptions.newBuilder().setDatabaseId(databaseId).build().service
+}
+
 fun Application.module(
     oauthClient: HttpClient = oauthHttpClient,
     oauthRedirectBaseUrl: String = System.getenv("OAUTH_REDIRECT_BASE_URL") ?: "http://localhost:8080",
-    sessionSecret: String = System.getenv("SESSION_SECRET") ?: "dev-only-insecure-session-secret-change-me"
+    sessionSecret: String = System.getenv("SESSION_SECRET") ?: "dev-only-insecure-session-secret-change-me",
+    transactionStore: TransactionRepository = FirestoreTransactionStore(firestoreClient)
 ) {
     install(FreeMarker) {
         templateLoader = ClassTemplateLoader(this::class.java.classLoader, "templates")
@@ -52,6 +60,8 @@ fun Application.module(
             get("/") {
                 call.respond(FreeMarkerContent("home.ftl", call.currentUserModel()))
             }
+
+            transactionRoutes(transactionStore)
         }
     }
 }
