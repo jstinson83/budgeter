@@ -139,3 +139,20 @@ shape.
   instead. If "no candidates" shows up again with the fix in place, it's a
   real 200-with-empty-candidates case (e.g. safety block) - the error
   banner will include `promptFeedback=...` for that.
+- Third round: with the above fix in place, the real error finally
+  surfaced: `400 INVALID_ARGUMENT` - `response_schema.items: field predicate
+  failed: $type == Type.ARRAY` and `response_schema.items.properties/required:
+  only allowed for OBJECT type`. Root cause: `GeminiSchema.type` (default
+  `"ARRAY"`) and `GeminiSchemaItem.type` (default `"OBJECT"`) are Kotlin
+  default values, and kotlinx.serialization's `Json` omits any field left at
+  its default unless `encodeDefaults = true` is set - `geminiHttpClient`'s
+  `Json` config never set it, so those `"type"` fields (and
+  `responseMimeType`) were silently missing from every outgoing request
+  the whole time. This was almost certainly the *actual* root cause behind
+  both earlier rounds too - the first two fixes were real bugs and worth
+  keeping, but they were masking this one rather than causing the original
+  symptom. Fixed by adding `encodeDefaults = true` to `geminiHttpClient`'s
+  `Json` config in `Application.kt`. `GeminiCategorizerTest` now has a test
+  that inspects the literal outgoing request JSON for these fields, since
+  the previous tests only ever mocked the *response* and would never have
+  caught a malformed *request*.
