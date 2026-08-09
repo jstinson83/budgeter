@@ -13,13 +13,20 @@ data class CsvRowError(val rowNumber: Int, val rawLine: String, val reason: Stri
 
 data class CsvParseResult(val transactions: List<ParsedTransaction>, val errors: List<CsvRowError>)
 
-// Headerless CSV: date,description,amount (a 4th balance column, if present,
-// is ignored - see .claude/context.md). Date accepts either ISO-8601
-// (yyyy-MM-dd, for synthetic/AI-generated test data) or MM/dd/yyyy (TD
-// Canada Trust's real export format) - see SUPPORTED_DATE_FORMATS. TD's
-// export also uses separate debit/credit columns rather than one signed
-// amount; that part is still unhandled since no real statement has been
-// tried against this yet.
+// Two supported headerless shapes, disambiguated by column count:
+// - 3-4 columns: date,description,amount[,balance] - a single signed
+//   amount, balance (if present) ignored. Used by synthetic/AI-generated
+//   test data and by TD's credit-card-style export (unsigned charge
+//   amounts, balance increasing per row - see
+//   testParsesSampleCreditCardStyleExport).
+// - 5+ columns: date,description,moneyOut,moneyIn,balance - TD's actual
+//   chequing/savings account export. Exactly one of moneyOut/moneyIn is
+//   populated per row (the other is blank); moneyOut becomes a negative
+//   amount, moneyIn a positive one. Balance (and anything past it) is
+//   ignored.
+//
+// Date accepts either ISO-8601 (yyyy-MM-dd, for synthetic test data) or
+// MM/dd/yyyy (TD's real export format) - see supportedDateFormats.
 //
 // Field-level splitting/quoting/escaping is delegated to Apache Commons CSV
 // rather than a hand-rolled line parser - RFC4180 edge cases (quoted
@@ -47,6 +54,24 @@ object CsvTransactionParser {
         return null
     }
 
+    // Exactly one of moneyOut/moneyIn should be populated per row; the other
+    // is blank. Returns null (an error) if both are blank, both are
+    // populated, or a populated field isn't a valid number.
+    private fun parseDebitCreditAmount(moneyOutRaw: String, moneyInRaw: String): Double? {
+        val moneyOut = moneyOutRaw.takeIf { it.isNotEmpty() }?.toDoubleOrNull()
+        val moneyIn = moneyInRaw.takeIf { it.isNotEmpty() }?.toDoubleOrNull()
+
+        if (moneyOutRaw.isNotEmpty() && moneyOut == null) return null
+        if (moneyInRaw.isNotEmpty() && moneyIn == null) return null
+
+        return when {
+            moneyOut != null && moneyIn != null -> null
+            moneyOut != null -> -moneyOut
+            moneyIn != null -> moneyIn
+            else -> null
+        }
+    }
+
     fun parse(csvText: String): CsvParseResult {
         val transactions = mutableListOf<ParsedTransaction>()
         val errors = mutableListOf<CsvRowError>()
@@ -66,10 +91,22 @@ object CsvTransactionParser {
                     continue
                 }
 
-                val amount = record.get(2).toDoubleOrNull()
-                if (amount == null) {
-                    errors += CsvRowError(rowNumber, record.rawLine(), "Invalid amount: ${record.get(2)}")
-                    continue
+                val amount = if (record.size() >= 5) {
+                    val moneyOut = record.get(2)
+                    val moneyIn = record.get(3)
+                    val parsed = parseDebitCreditAmount(moneyOut, moneyIn)
+                    if (parsed == null) {
+                        errors += CsvRowError(rowNumber, record.rawLine(), "Invalid amount: moneyOut=$moneyOut, moneyIn=$moneyIn")
+                        continue
+                    }
+                    parsed
+                } else {
+                    val parsed = record.get(2).toDoubleOrNull()
+                    if (parsed == null) {
+                        errors += CsvRowError(rowNumber, record.rawLine(), "Invalid amount: ${record.get(2)}")
+                        continue
+                    }
+                    parsed
                 }
 
                 transactions += ParsedTransaction(rowNumber, date, record.get(1), amount)
