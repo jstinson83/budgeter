@@ -35,9 +35,29 @@
 
 ## Deploy pipeline
 
-Not yet implemented. Intended approach (see `.claude/context.md`): Cloud
-Run, deployed via a GitHub-triggered Cloud Build trigger using a
-`cloudbuild.yaml` at the repo root, with Firestore for storage. Once real
-infra exists, record operational gotchas here (what breaks, how to debug
-it) and keep concrete config facts (project id, region, database id, env
-vars) in `context.md`.
+`cloudbuild.yaml` (repo root) + `backend/Dockerfile` exist, mirroring the
+maintainer's other project's (`foodie`) setup. Concrete project/region/
+service/database facts live in `.claude/context.md`'s Configuration
+reference — don't restate them here.
+
+- The Cloud Build trigger is created **manually** in the console, and only
+  after `cloudbuild.yaml` is on `main` (the trigger points at a config
+  file path on a branch, so it needs to exist there first). Same gotcha as
+  foodie: the trigger's build config must be set to "Cloud Build
+  configuration file", not "Dockerfile" — a Dockerfile-only trigger builds
+  and pushes the image but never deploys it.
+- Cloud Run env vars (OAuth client id/secret, `SESSION_SECRET`,
+  `OAUTH_REDIRECT_BASE_URL`, `FIRESTORE_DATABASE_ID`) are set manually on
+  the Cloud Run service after the first deploy, not via `cloudbuild.yaml` —
+  same pattern as foodie, since the OAuth redirect URI needs the actual
+  Cloud Run URL to exist first.
+- This project shares a GCP project with `foodie`. Firestore's
+  `roles/datastore.user` is project-scoped, so the runtime service account
+  likely already has it from foodie's setup — worth confirming in IAM
+  rather than assuming, but probably nothing new to grant.
+- Once a deploy actually runs, record any gotchas that bite (service
+  account/IAM surprises, build failures, etc.) here, following foodie's
+  CLAUDE.md as the template for what this section should eventually look
+  like (Cloud Run CPU-allocation behavior, Firestore composite-index
+  errors, etc. — check there if something in this pipeline looks
+  unfamiliar).
