@@ -43,17 +43,24 @@ something buildable while away from home; it's also genuine groundwork
 either way (real Firestore persistence, real deploy path) that later
 photo/document-capture features will reuse.
 
-- CSV is assumed **headerless**: `date,description,amount[,balance]`.
-  Balance (if present) is parsed but discarded. Date accepts either
-  ISO-8601 (`yyyy-MM-dd`) or `MM/dd/yyyy` (`CsvTransactionParser.supportedDateFormats`)
-  — the latter added after a real-shaped sample export (credit-card-style:
-  unsigned charge amounts, balance increasing per row, a negative amount
-  for a payment) surfaced it. TD's actual export still differs further —
-  separate debit/credit columns instead of one signed amount — so more
-  parser work is likely once a real TD statement is tried.
-  `amount` is one signed `Double` (sign convention depends on the
-  statement type: chequing-account exports use negative = money out,
-  the credit-card-style sample above uses positive = charge).
+- CSV is headerless, in one of two shapes disambiguated by column count
+  (`CsvTransactionParser`):
+  - 3-4 columns: `date,description,amount[,balance]` - one signed amount,
+    balance (if present) discarded. Covers synthetic/AI-generated test
+    data and TD's credit-card-style export (unsigned charge amounts,
+    balance increasing per row, a negative amount for a payment).
+  - 5+ columns: `date,description,moneyOut,moneyIn,balance` - TD's actual
+    chequing/savings account export, confirmed against a real statement.
+    Exactly one of `moneyOut`/`moneyIn` is populated per row; the other is
+    blank. `moneyOut` becomes a negative amount, `moneyIn` a positive one.
+    Balance is discarded. A row with both or neither populated is a parse
+    error, not silently guessed.
+  - Date accepts either ISO-8601 (`yyyy-MM-dd`) or `MM/dd/yyyy`
+    (`CsvTransactionParser.supportedDateFormats`) - the latter is TD's
+    real date format.
+  - `amount` is always one signed `Double` in `ParsedTransaction` -
+    the debit/credit split only exists in the raw CSV and is collapsed to
+    a sign during parsing.
 - Bad rows are skipped, not fatal — `CsvTransactionParser.parse` returns
   both the successfully parsed transactions and a list of per-row errors;
   the import route reports "Imported N, skipped M" rather than

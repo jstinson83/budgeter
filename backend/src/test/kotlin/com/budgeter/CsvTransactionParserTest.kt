@@ -134,4 +134,46 @@ class CsvTransactionParserTest {
         assertEquals(-450.0, result.transactions[2].amount)
         assertEquals("PHARMAPRIX MONTRÉAL", result.transactions[3].description)
     }
+
+    // TD's actual chequing/savings export: date,description,moneyOut,moneyIn,balance.
+    @Test
+    fun testParsesTdDebitCreditFormat() {
+        val csv = """
+            07/01/2026,STM MONTREAL RECHARGE,66.19,,916.69
+            07/11/2026,ONLINE PAYMENT - THANK YOU,,450.00,3574.68
+        """.trimIndent()
+
+        val result = CsvTransactionParser.parse(csv)
+
+        assertEquals(emptyList(), result.errors)
+        assertEquals(
+            listOf(
+                ParsedTransaction(1, LocalDate.of(2026, 7, 1), "STM MONTREAL RECHARGE", -66.19),
+                ParsedTransaction(2, LocalDate.of(2026, 7, 11), "ONLINE PAYMENT - THANK YOU", 450.00)
+            ),
+            result.transactions
+        )
+    }
+
+    @Test
+    fun testSkipsTdRowWithBothMoneyOutAndMoneyInPopulated() {
+        val csv = "07/01/2026,STM MONTREAL RECHARGE,66.19,450.00,916.69"
+
+        val result = CsvTransactionParser.parse(csv)
+
+        assertTrue(result.transactions.isEmpty())
+        assertEquals(1, result.errors.size)
+        assertTrue(result.errors.single().reason.contains("Invalid amount"))
+    }
+
+    @Test
+    fun testSkipsTdRowWithNeitherMoneyOutNorMoneyInPopulated() {
+        val csv = "07/01/2026,STM MONTREAL RECHARGE,,,916.69"
+
+        val result = CsvTransactionParser.parse(csv)
+
+        assertTrue(result.transactions.isEmpty())
+        assertEquals(1, result.errors.size)
+        assertTrue(result.errors.single().reason.contains("Invalid amount"))
+    }
 }
