@@ -135,6 +135,69 @@ class TransactionRoutesTest {
     }
 
     @Test
+    fun testImportDefaultsToBankAccountTypeWhenFieldIsAbsent() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        client.submitFormWithBinaryData(
+            url = "/transactions/import",
+            formData = formData {
+                append("file", "2026-01-15,Starbucks,4.75,,995.25".toByteArray(), Headers.build {
+                    append(HttpHeaders.ContentType, "text/csv")
+                    append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
+                })
+            }
+        )
+
+        val listResponse = client.get("/transactions") { header(HttpHeaders.Accept, "text/html") }
+        assertTrue(listResponse.bodyAsText().contains("Bank"))
+    }
+
+    @Test
+    fun testImportAcceptsExplicitCreditCardAccountType() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val importResponse = client.submitFormWithBinaryData(
+            url = "/transactions/import",
+            formData = formData {
+                append("accountType", "CREDIT_CARD")
+                append("file", "2026-01-15,PAYMENT - THANK YOU,,200.00,300.00".toByteArray(), Headers.build {
+                    append(HttpHeaders.ContentType, "text/csv")
+                    append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
+                })
+            }
+        )
+
+        val redirectLocation = importResponse.headers[HttpHeaders.Location]
+        assertNotNull(redirectLocation)
+        val listResponse = client.get(redirectLocation)
+        assertTrue(listResponse.bodyAsText().contains("Credit Card"))
+    }
+
+    @Test
+    fun testImportRejectsAnInvalidAccountType() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.submitFormWithBinaryData(
+            url = "/transactions/import",
+            formData = formData {
+                append("accountType", "SAVINGS")
+                append("file", "2026-01-15,Starbucks,4.75,,995.25".toByteArray(), Headers.build {
+                    append(HttpHeaders.ContentType, "text/csv")
+                    append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
+                })
+            }
+        )
+
+        assertEquals(HttpStatusCode.Found, response.status)
+        val redirectLocation = response.headers[HttpHeaders.Location]
+        assertNotNull(redirectLocation)
+        assertTrue(redirectLocation.startsWith("/transactions?error="))
+    }
+
+    @Test
     fun testImportWithNoFileRedirectsWithError() = testApplication {
         testModule()
         val client = signInFakeUser()

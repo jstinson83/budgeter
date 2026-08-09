@@ -7,18 +7,22 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
-data class ParsedTransaction(val rowNumber: Int, val date: LocalDate, val description: String, val amount: Double)
+data class ParsedTransaction(val rowNumber: Int, val accountType: AccountType, val date: LocalDate, val description: String, val amount: Double)
 
 data class CsvRowError(val rowNumber: Int, val rawLine: String, val reason: String)
 
 data class CsvParseResult(val transactions: List<ParsedTransaction>, val errors: List<CsvRowError>)
 
-// Headerless CSV, TD's real chequing/savings export format - the only
-// format this app needs to support: date,description,moneyOut,moneyIn,balance
-// (5 columns; anything past column 4 is ignored). Exactly one of
-// moneyOut/moneyIn is populated per row - the other is blank. moneyOut
-// becomes a negative amount (money leaving the account), moneyIn a
-// positive one (money coming in); balance is discarded.
+// Headerless CSV, TD's real export format for both chequing/savings and
+// credit card accounts - the same 5 columns and sign convention either way:
+// date,description,moneyOut,moneyIn,balance (5 columns; anything past
+// column 4 is ignored). Exactly one of moneyOut/moneyIn is populated per
+// row - the other is blank. moneyOut becomes a negative amount (money
+// leaving the account - a purchase, on either account type), moneyIn a
+// positive one (money coming in - a deposit on a bank account, a payment on
+// a credit card); balance is discarded. The CSV itself never states which
+// account it came from, so the caller passes accountType based on what the
+// user selected at upload time.
 //
 // Date accepts either ISO-8601 (yyyy-MM-dd, for synthetic test data) or
 // MM/dd/yyyy (TD's real date format) - see supportedDateFormats.
@@ -69,7 +73,11 @@ object CsvTransactionParser {
         }
     }
 
-    fun parse(csvText: String): CsvParseResult {
+    // accountType defaults to BANK so the many parser tests that aren't
+    // about account type at all don't need to state one - real callers
+    // (TransactionRoutes) always pass it explicitly, based on the upload
+    // form's selection.
+    fun parse(csvText: String, accountType: AccountType = AccountType.BANK): CsvParseResult {
         val transactions = mutableListOf<ParsedTransaction>()
         val errors = mutableListOf<CsvRowError>()
 
@@ -100,7 +108,7 @@ object CsvTransactionParser {
                     continue
                 }
 
-                transactions += ParsedTransaction(rowNumber, date, record.get(1), amount)
+                transactions += ParsedTransaction(rowNumber, accountType, date, record.get(1), amount)
             }
         }
 

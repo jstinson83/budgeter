@@ -13,7 +13,7 @@ import kotlin.test.*
 
 class GeminiCategorizerTest {
     private fun transaction(id: String, description: String, amount: Double): Transaction =
-        Transaction(id, "owner", LocalDate.of(2026, 1, 15), description, amount)
+        Transaction(id, "owner", AccountType.BANK, LocalDate.of(2026, 1, 15), description, amount)
 
     // encodeDefaults = true here mirrors Application.kt's real
     // geminiHttpClient config - see testRequestBodyIncludesSchemaTypeFields...
@@ -126,6 +126,33 @@ class GeminiCategorizerTest {
         assertTrue(body.contains(""""type":"ARRAY""""), "expected the outer response schema's type to be present: $body")
         assertTrue(body.contains(""""type":"OBJECT""""), "expected the item schema's type to be present: $body")
         assertTrue(body.contains(""""responseMimeType":"application/json""""), "expected responseMimeType to be present: $body")
+    }
+
+    @Test
+    fun testTransferCategoryIsNotOfferedToGemini() = runBlocking {
+        // TRANSFER is assigned deterministically by TransferMatcher from a
+        // description+amount+date match, never guessed by Gemini from free
+        // text - it must not appear in the schema's allowed enum values.
+        var capturedRequestBody: String? = null
+        val transactions = listOf(transaction("tx-1", "Metro Grocery", -42.10))
+        val client = HttpClient(MockEngine) {
+            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true; encodeDefaults = true }) }
+            engine {
+                addHandler { request ->
+                    capturedRequestBody = (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
+                    respond(
+                        """{"candidates":[{"content":{"parts":[{"text":"[{\"index\":0,\"category\":\"GROCERIES\"}]"}]},"finishReason":"STOP"}]}""",
+                        HttpStatusCode.OK,
+                        headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+                    )
+                }
+            }
+        }
+
+        GeminiTransactionCategorizer(client, "fake-key").categorize(transactions)
+
+        val body = assertNotNull(capturedRequestBody)
+        assertFalse(body.contains("TRANSFER"), "expected TRANSFER to be excluded from the enum sent to Gemini: $body")
     }
 
     @Test

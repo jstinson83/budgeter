@@ -6,11 +6,23 @@ import com.google.cloud.firestore.Query
 import java.security.MessageDigest
 import java.time.LocalDate
 
+// Which physical account a statement was exported from. The 5-column CSV
+// shape and sign convention (out=-, in=+) are identical either way - see
+// CsvTransactionParser - so this doesn't change parsing. It exists for
+// TransferMatcher (a bank "TFR-TO C/C" row only pairs with a credit-card
+// "PAYMENT - THANK YOU" row) and to keep a credit card's incoming payments
+// from ever being mistaken for income in analysis.
+enum class AccountType(val label: String) {
+    BANK("Bank"),
+    CREDIT_CARD("Credit Card")
+}
+
 data class Transaction(
     val id: String,
     // The Google sub of whoever imported this transaction - every read/write
     // below is scoped to it so one account never sees another's data.
     val ownerId: String,
+    val accountType: AccountType,
     val date: LocalDate,
     val description: String,
     // Signed: negative = money out, positive = money in. Stored as a plain
@@ -100,7 +112,7 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
                 continue
             }
             batch.set(collection.document(fingerprint), transactionToMap(ownerId, parsed))
-            stored += Transaction(fingerprint, ownerId, parsed.date, parsed.description, parsed.amount)
+            stored += Transaction(fingerprint, ownerId, parsed.accountType, parsed.date, parsed.description, parsed.amount)
         }
         if (stored.isNotEmpty()) batch.commit().get()
         return TransactionImportResult(stored, duplicateCount)
@@ -131,6 +143,7 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
 
     private fun transactionToMap(ownerId: String, parsed: ParsedTransaction): Map<String, Any?> = mapOf(
         "ownerId" to ownerId,
+        "accountType" to parsed.accountType.name,
         // Stored as an ISO-8601 string (yyyy-MM-dd) rather than a Firestore
         // Timestamp - it's a calendar date with no time/timezone component,
         // and ISO-8601's zero-padded format still sorts correctly as a
@@ -144,6 +157,10 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
     private fun toTransaction(id: String, data: Map<String, Any?>): Transaction = Transaction(
         id = id,
         ownerId = data["ownerId"] as? String ?: "",
+        // Falls back to BANK for documents written before AccountType
+        // existed - every transaction imported before this field was added
+        // came from the single TD bank export the app originally supported.
+        accountType = (data["accountType"] as? String)?.let { runCatching { AccountType.valueOf(it) }.getOrNull() } ?: AccountType.BANK,
         date = LocalDate.parse(data["date"] as? String ?: "1970-01-01"),
         description = data["description"] as? String ?: "",
         amount = (data["amount"] as? Number)?.toDouble() ?: 0.0,

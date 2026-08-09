@@ -17,6 +17,7 @@ fun transactionsPageModel(transactions: List<Transaction>, message: String?, err
         mapOf(
             "date" to it.date.toString(),
             "description" to it.description,
+            "accountType" to it.accountType.label,
             "amount" to formatSignedAmount(it.amount),
             "amountClass" to amountClass(it.amount)
         )

@@ -27,7 +27,13 @@ enum class TransactionCategory(val label: String) {
     HEALTH("Health"),
     SUBSCRIPTIONS("Subscriptions"),
     INCOME("Income"),
-    OTHER("Other")
+    OTHER("Other"),
+    // Assigned deterministically by TransferMatcher (a bank "TFR-TO C/C" row
+    // paired with the matching credit-card "PAYMENT - THANK YOU" row), never
+    // by Gemini - see the schema's enum below. A transfer between your own
+    // accounts isn't spending or income, so it's excluded from analysis
+    // totals entirely rather than grouped under either.
+    TRANSFER("Transfer")
 }
 
 interface TransactionCategorizer {
@@ -74,7 +80,16 @@ class GeminiTransactionCategorizer(
                             // the old id-set membership check with no sign
                             // anything went wrong.
                             "index" to GeminiSchemaProperty(type = "INTEGER"),
-                            "category" to GeminiSchemaProperty(type = "STRING", enum = TransactionCategory.entries.map { it.name })
+                            // TRANSFER excluded on purpose - it's assigned by
+                            // TransferMatcher from a deterministic
+                            // description+amount+date match, not guessed
+                            // from free text, and transfer-matched
+                            // transactions never reach this categorizer to
+                            // begin with (see AnalysisRoutes.kt).
+                            "category" to GeminiSchemaProperty(
+                                type = "STRING",
+                                enum = TransactionCategory.entries.filter { it != TransactionCategory.TRANSFER }.map { it.name }
+                            )
                         ),
                         required = listOf("index", "category")
                     )

@@ -27,10 +27,11 @@ class AnalysisRoutesTest {
         assertTrue(response.bodyAsText().contains("No transactions in this period"))
     }
 
-    private suspend fun HttpClient.importCsv(csv: String): String {
+    private suspend fun HttpClient.importCsv(csv: String, accountType: String? = null): String {
         val response = submitFormWithBinaryData(
             url = "/transactions/import",
             formData = formData {
+                if (accountType != null) append("accountType", accountType)
                 append("file", csv.toByteArray(), Headers.build {
                     append(HttpHeaders.ContentType, "text/csv")
                     append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
@@ -50,7 +51,7 @@ class AnalysisRoutesTest {
         client.importCsv("$today,Metro Grocery,42.10,,957.90\n$today,Payroll,,2500.00,3457.90")
 
         val beforeCategorize = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
-        assertTrue(beforeCategorize.bodyAsText().contains("Categorize 2 new transaction(s) with Gemini"))
+        assertTrue(beforeCategorize.bodyAsText().contains("Process 2 new transaction(s)"))
 
         val categorizeResponse = client.post("/analysis/categorize")
         val redirect = categorizeResponse.headers[HttpHeaders.Location]!!
@@ -59,9 +60,9 @@ class AnalysisRoutesTest {
         val afterCategorize = client.get(redirect)
         val body = afterCategorize.bodyAsText()
         assertTrue(body.contains("Groceries"))
-        // The "categorize" button (distinct from the "Categorized ..." success
+        // The "process" button (distinct from the "Categorized ..." success
         // banner also on this page) is gone now that nothing's left pending.
-        assertFalse(body.contains("with Gemini"))
+        assertFalse(body.contains("new transaction(s)"))
         assertEquals(1, categorizer.callCount)
     }
 
@@ -79,6 +80,52 @@ class AnalysisRoutesTest {
         val redirect = secondAttempt.headers[HttpHeaders.Location]!!
         assertEquals("No new transactions to categorize", Url(redirect).parameters["message"])
         // No second call to the categorizer - nothing left to categorize.
+        assertEquals(1, categorizer.callCount)
+    }
+
+    @Test
+    fun testMatchesCreditCardPaymentAsATransferAndExcludesItFromAnalysis() = testApplication {
+        val categorizer = FakeTransactionCategorizer(TransactionCategory.GROCERIES)
+        testModule(transactionCategorizer = categorizer)
+        val client = signInFakeUser()
+
+        val today = java.time.LocalDate.now()
+        // The bank's "paid the card" leg and the card's "received a
+        // payment" leg of the same real-world transfer - same amount,
+        // close dates, the two fixed description markers TransferMatcher
+        // looks for.
+        client.importCsv("$today,.....TFR-TO C/C,200.00,,795.00", accountType = "BANK")
+        client.importCsv("$today,PAYMENT - THANK YOU,,200.00,300.00", accountType = "CREDIT_CARD")
+
+        val categorizeResponse = client.post("/analysis/categorize")
+        val redirect = categorizeResponse.headers[HttpHeaders.Location]!!
+        assertEquals("Matched 1 transfer(s)", Url(redirect).parameters["message"])
+        // Neither leg went to the (fake) Gemini categorizer.
+        assertEquals(0, categorizer.callCount)
+
+        val page = client.get(redirect)
+        val body = page.bodyAsText()
+        // Excluded from analysis entirely - no "Transfer" bucket, and no
+        // leftover "process" button since both rows are now categorized.
+        assertFalse(body.contains("Transfer"))
+        assertTrue(body.contains("No transactions in this period"))
+    }
+
+    @Test
+    fun testDoesNotMatchATransferWhenOnlyOneLegIsPresent() = testApplication {
+        val categorizer = FakeTransactionCategorizer(TransactionCategory.GROCERIES)
+        testModule(transactionCategorizer = categorizer)
+        val client = signInFakeUser()
+
+        val today = java.time.LocalDate.now()
+        // Only the bank side was imported - nothing on the credit card side
+        // to pair it with, so it should fall through to ordinary
+        // categorization rather than being silently dropped.
+        client.importCsv("$today,.....TFR-TO C/C,200.00,,795.00", accountType = "BANK")
+
+        val categorizeResponse = client.post("/analysis/categorize")
+        val redirect = categorizeResponse.headers[HttpHeaders.Location]!!
+        assertEquals("Categorized 1 of 1 transaction(s)", Url(redirect).parameters["message"])
         assertEquals(1, categorizer.callCount)
     }
 
