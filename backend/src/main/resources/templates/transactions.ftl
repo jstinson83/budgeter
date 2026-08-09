@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Transactions · Budgeter</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="container">
+    <#include "_nav.ftl">
+
+    <#if message??>
+    <p class="banner-success">${message}</p>
+    </#if>
+    <#if error??>
+    <p class="banner-error">${error}</p>
+    </#if>
+
+    <form method="post" action="/transactions/import" enctype="multipart/form-data" class="upload-form">
+      <input type="file" name="file" accept=".csv" required>
+      <button type="submit" class="button">Import CSV</button>
+    </form>
+
+    <#if (transactions?size == 0)>
+    <p class="empty-state">No transactions yet. Import a CSV to get started.</p>
+    <#else>
+    <div class="transaction-list">
+      <#list transactions as transaction>
+      <div class="transaction-row">
+        <span class="transaction-date">${transaction.date}</span>
+        <span class="transaction-description">${transaction.description}</span>
+        <span class="transaction-amount ${transaction.amountClass}">${transaction.amount}</span>
+      </div>
+      </#list>
+    </div>
+    </#if>
+  </div>
+</body>
+</html>

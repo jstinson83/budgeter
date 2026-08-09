@@ -28,6 +28,8 @@ dependencies {
     implementation("io.ktor:ktor-client-cio-jvm:$ktorVersion")
     implementation("io.ktor:ktor-client-content-negotiation-jvm:$ktorVersion")
     implementation("ch.qos.logback:logback-classic:1.5.12")
+    implementation("com.google.cloud:google-cloud-firestore:3.31.0")
+    implementation("org.apache.commons:commons-csv:1.12.0")
 
     testImplementation("io.ktor:ktor-server-test-host-jvm:$ktorVersion")
     testImplementation("io.ktor:ktor-client-mock-jvm:$ktorVersion")

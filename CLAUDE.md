@@ -53,11 +53,41 @@ reference — don't restate them here.
   Cloud Run URL to exist first.
 - This project shares a GCP project with `foodie`. Firestore's
   `roles/datastore.user` is project-scoped, so the runtime service account
-  likely already has it from foodie's setup — worth confirming in IAM
-  rather than assuming, but probably nothing new to grant.
-- Once a deploy actually runs, record any gotchas that bite (service
-  account/IAM surprises, build failures, etc.) here, following foodie's
-  CLAUDE.md as the template for what this section should eventually look
-  like (Cloud Run CPU-allocation behavior, Firestore composite-index
+  already had it from foodie's setup — no new IAM grant was needed for the
+  `home-os` database.
+- **Live as of the CSV-import feature**: the trigger builds and deploys on
+  push to `main`, and Google sign-in works end to end on the deployed URL.
+  Record new gotchas here as they bite, following foodie's CLAUDE.md as the
+  template (Cloud Run CPU-allocation behavior, Firestore composite-index
   errors, etc. — check there if something in this pipeline looks
   unfamiliar).
+
+## Persistence (Firestore) gotchas
+
+Firestore database id and the repository/store class names live in
+`.claude/context.md` — this section is what to check when persistence
+breaks, not the facts themselves.
+
+- `TransactionRepository.all()` (`whereEqualTo("ownerId", ...).orderBy("date", ...)`)
+  needs a composite index on `(ownerId, date)` - Firestore won't create it
+  automatically, and the first time this query shape runs against the real
+  database it throws `FAILED_PRECONDITION` with a direct link in the error
+  message to create the missing index. Same gotcha as foodie's
+  `RecipeRepository.all()`, see foodie's CLAUDE.md for the full explanation.
+- Local dev needs `gcloud auth application-default login` (see README) -
+  without ADC, constructing the Firestore client throws a
+  `NullPointerException` down inside `FirestoreOptions`/`GrpcFirestoreRpc`
+  (not an obviously-Firestore-shaped error) rather than a clear
+  "not authenticated" message. On Cloud Run this resolves automatically via
+  the metadata server, so this only bites local runs.
+- `Transaction.date` is stored as a plain ISO-8601 string (`yyyy-MM-dd`),
+  not a Firestore `Timestamp` - it's a calendar date with no meaningful
+  time/timezone component, and ISO-8601's zero-padded format still sorts
+  correctly as a string, so `orderBy("date", ...)` works unchanged.
+- `Transaction.amount` is stored as a plain `Double`, same simplification
+  foodie's `Ingredient.quantity` uses. Revisit (e.g. integer cents) if
+  floating-point drift ever actually shows up in a sum/balance - not
+  addressed preemptively.
+- No dedup on CSV import: re-uploading the same file inserts the same rows
+  again as new documents. Known gap, not yet addressed - see
+  `.claude/context.md`.

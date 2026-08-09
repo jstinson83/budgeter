@@ -14,19 +14,50 @@ conversation, so the reasoning behind past decisions isn't lost to
 scattered emails, folders, and memory.
 
 This repo previously scoped a budgeting app. `product_spec.md` (added
-2026-08-09) captures the pivot to the broader Household OS concept.
-Implementation has not started yet — no code, schema, or infra reflects it.
+2026-08-09) captures the pivot to the broader Household OS concept. The
+codebase itself is still budgeting-app-shaped (Google sign-in + CSV
+transaction import) — the first sprint toward Household OS deliberately
+started there (see "First feature" below) since it's the roadmap's own
+stated Version 1 groundwork: real persistence, real deploy, before any AI
+extraction work.
 
 ## Architecture at a glance
 
 - **Backend**: Kotlin + Ktor, single service (`backend/`), same stack/patterns
   as the maintainer's other project (`foodie`).
-- **Deploy**: Cloud Run, deployed via a GitHub-triggered Cloud Build trigger
-  using `cloudbuild.yaml` at the repo root → Artifact Registry → Cloud Run.
-  Not live yet — `cloudbuild.yaml`/`Dockerfile` exist, but the Cloud Build
-  trigger hasn't been created (waiting on this to merge to `main` first),
-  and no deploy has run.
-- **Storage**: Firestore.
+- **Deploy**: Cloud Run, via a GitHub-triggered Cloud Build trigger using
+  `cloudbuild.yaml` at the repo root → Artifact Registry → Cloud Run. Live:
+  the trigger builds and deploys on push to `main`, and Google sign-in works
+  end to end on the deployed URL.
+- **Storage**: Firestore, database `home-os`. `TransactionRepository` /
+  `FirestoreTransactionStore` (`backend/src/main/kotlin/com/budgeter/TransactionStore.kt`)
+  is the first collection, following foodie's repository-interface +
+  Firestore-impl + in-memory-test-fake pattern.
+
+## First feature: CSV transaction import
+
+`/transactions` — upload a CSV, see imported transactions. Deliberately
+chosen as the first slice of work over spec's original "scan your home"
+Version 1 (photo → AI asset extraction) since the maintainer needed
+something buildable while away from home; it's also genuine groundwork
+either way (real Firestore persistence, real deploy path) that later
+photo/document-capture features will reuse.
+
+- CSV is assumed **headerless**: `date,description,amount[,balance]`.
+  Balance (if present) is parsed but discarded. Date is ISO-8601
+  (`yyyy-MM-dd`) since there's no real bank export yet to match against —
+  TD's actual export uses `MM/DD/YYYY` with separate debit/credit columns
+  instead of one signed amount, so `CsvTransactionParser` will need
+  updating once real statements replace synthetic test data.
+  `amount` is one signed `Double` (negative = money out).
+- Bad rows are skipped, not fatal — `CsvTransactionParser.parse` returns
+  both the successfully parsed transactions and a list of per-row errors;
+  the import route reports "Imported N, skipped M" rather than
+  all-or-nothing failing.
+- No categorization, dedup, or analysis yet — a re-uploaded CSV will import
+  the same rows again as duplicates. Categorization is planned to be
+  AI-driven off the description field (see product_spec.md's "Financial
+  assistant"), not built yet.
 
 ## Configuration reference
 
@@ -46,12 +77,12 @@ debug it, not the values themselves.
   (see `_IMAGE` in `cloudbuild.yaml`) rather than a dedicated AR repo.
 - **Firestore database ID**: `home-os` (`northamerica-northeast1`) — a
   separate named database from foodie's `foodie-nne1`, in the same shared
-  project. Not yet wired into any code (`FIRESTORE_DATABASE_ID` env var
-  convention TBD once persistence code exists, following foodie's
-  pattern).
-- **OAuth client / `SESSION_SECRET` / `OAUTH_REDIRECT_BASE_URL`**: not
-  created yet — the maintainer is setting these up manually after the
-  first deploy (need the Cloud Run URL for the OAuth redirect URI first).
+  project. Read via the `FIRESTORE_DATABASE_ID` env var
+  (`Application.kt`), falling back to `"home-os"` if unset, same pattern
+  as foodie's `FIRESTORE_DATABASE_ID`/`foodie` fallback.
+- **OAuth client / `SESSION_SECRET` / `OAUTH_REDIRECT_BASE_URL`**: created
+  and set on the Cloud Run service — sign-in is confirmed working on the
+  deployed URL.
 
 ## Maintenance
 

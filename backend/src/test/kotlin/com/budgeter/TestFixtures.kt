@@ -49,13 +49,15 @@ fun fakeGoogleOAuthClient(sub: String = "test-sub", email: String = "test@exampl
 fun ApplicationTestBuilder.testModule(
     oauthClient: HttpClient = fakeGoogleOAuthClient(),
     oauthRedirectBaseUrl: String = "http://localhost:8080",
-    sessionSecret: String = "test-session-secret"
+    sessionSecret: String = "test-session-secret",
+    transactionStore: TransactionRepository = FakeTransactionRepository()
 ) {
     application {
         module(
             oauthClient = oauthClient,
             oauthRedirectBaseUrl = oauthRedirectBaseUrl,
-            sessionSecret = sessionSecret
+            sessionSecret = sessionSecret,
+            transactionStore = transactionStore
         )
     }
 }
@@ -76,4 +78,23 @@ suspend fun ApplicationTestBuilder.signInFakeUser(): HttpClient {
         ?: error("Expected a state param in the Google authorize URL: $location")
     client.get("/auth/google/callback?code=fake-code&state=$state")
     return client
+}
+
+// In-memory stand-in for FirestoreTransactionStore, same shape as
+// FakeRecipeRepository in foodie - keeps the test suite from ever touching
+// real Firestore.
+class FakeTransactionRepository : TransactionRepository {
+    private val nextId = java.util.concurrent.atomic.AtomicInteger(1)
+    private val transactions = mutableListOf<Transaction>()
+
+    override suspend fun addAll(ownerId: String, transactions: List<ParsedTransaction>): List<Transaction> {
+        val stored = transactions.map {
+            Transaction(nextId.getAndIncrement().toString(), ownerId, it.date, it.description, it.amount)
+        }
+        this.transactions += stored
+        return stored
+    }
+
+    override suspend fun all(ownerId: String): List<Transaction> =
+        transactions.filter { it.ownerId == ownerId }.sortedByDescending { it.date }
 }
