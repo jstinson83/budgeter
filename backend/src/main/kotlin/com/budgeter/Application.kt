@@ -39,11 +39,18 @@ private val firestoreClient: Firestore by lazy {
 
 // Separate client from oauthHttpClient - different upstream, no reason to
 // couple their lifecycles even though the setup (CIO + JSON content
-// negotiation) looks the same.
+// negotiation) looks the same. encodeDefaults = true matters here in a way
+// it doesn't for oauthHttpClient: GeminiCategorizer.kt's request DTOs (the
+// response schema's "type" fields, "responseMimeType") rely on Kotlin
+// default values, and kotlinx.serialization omits any field left at its
+// default unless told otherwise - Gemini's schema validator requires those
+// "type" fields to be present, so without this the request silently goes
+// out missing them and gets rejected with a 400 (see CLAUDE.md's Gemini
+// categorization gotchas).
 private val geminiHttpClient: HttpClient by lazy {
     HttpClient(CIO) {
         install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true })
+            json(Json { ignoreUnknownKeys = true; encodeDefaults = true })
         }
     }
 }
