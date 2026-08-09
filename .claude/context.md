@@ -58,8 +58,12 @@ photo/document-capture features will reuse.
   both the successfully parsed transactions and a list of per-row errors;
   the import route reports "Imported N, skipped M" rather than
   all-or-nothing failing.
-- No categorization, dedup, or analysis yet — a re-uploaded CSV will import
-  the same rows again as duplicates. Categorization is planned to be
+- Dedup on re-upload: identity is `(ownerId, fileHash, rowNumber)`, not row
+  content, so re-uploading the exact same file is idempotent while two
+  distinct same-day/same-amount/same-description transactions within one
+  file both still get kept. See `CLAUDE.md`'s Firestore gotchas section for
+  the mechanics and the formatting-change tradeoff.
+- No categorization or analysis yet. Categorization is planned to be
   AI-driven off the description field (see product_spec.md's "Financial
   assistant"), not built yet.
 

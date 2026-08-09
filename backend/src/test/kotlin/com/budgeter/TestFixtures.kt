@@ -82,17 +82,26 @@ suspend fun ApplicationTestBuilder.signInFakeUser(): HttpClient {
 
 // In-memory stand-in for FirestoreTransactionStore, same shape as
 // FakeRecipeRepository in foodie - keeps the test suite from ever touching
-// real Firestore.
+// real Firestore. Mirrors the real store's fingerprint-as-ID dedup so
+// duplicate-import behavior is exercised the same way in tests.
 class FakeTransactionRepository : TransactionRepository {
-    private val nextId = java.util.concurrent.atomic.AtomicInteger(1)
     private val transactions = mutableListOf<Transaction>()
 
-    override suspend fun addAll(ownerId: String, transactions: List<ParsedTransaction>): List<Transaction> {
-        val stored = transactions.map {
-            Transaction(nextId.getAndIncrement().toString(), ownerId, it.date, it.description, it.amount)
+    override suspend fun addAll(ownerId: String, fileHash: String, transactions: List<ParsedTransaction>): TransactionImportResult {
+        val existingIds = this.transactions.filter { it.ownerId == ownerId }.map { it.id }.toMutableSet()
+        val stored = mutableListOf<Transaction>()
+        var duplicateCount = 0
+        for (parsed in transactions) {
+            val fingerprint = transactionFingerprint(ownerId, fileHash, parsed)
+            if (!existingIds.add(fingerprint)) {
+                duplicateCount++
+                continue
+            }
+            val transaction = Transaction(fingerprint, ownerId, parsed.date, parsed.description, parsed.amount)
+            stored += transaction
+            this.transactions += transaction
         }
-        this.transactions += stored
-        return stored
+        return TransactionImportResult(stored, duplicateCount)
     }
 
     override suspend fun all(ownerId: String): List<Transaction> =

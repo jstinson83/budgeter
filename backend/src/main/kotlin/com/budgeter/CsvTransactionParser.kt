@@ -7,7 +7,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
-data class ParsedTransaction(val date: LocalDate, val description: String, val amount: Double)
+data class ParsedTransaction(val rowNumber: Int, val date: LocalDate, val description: String, val amount: Double)
 
 data class CsvRowError(val rowNumber: Int, val rawLine: String, val reason: String)
 
@@ -72,7 +72,7 @@ object CsvTransactionParser {
                     continue
                 }
 
-                transactions += ParsedTransaction(date, record.get(1), amount)
+                transactions += ParsedTransaction(rowNumber, date, record.get(1), amount)
             }
         }
 
