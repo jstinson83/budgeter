@@ -17,19 +17,41 @@ This repo previously scoped a budgeting app. `product_spec.md` (added
 2026-08-09) captures the pivot to the broader Household OS concept.
 Implementation has not started yet — no code, schema, or infra reflects it.
 
-## Intended architecture (not yet implemented)
+## Architecture at a glance
 
-- **Deploy**: Cloud Run, deployed via a GitHub-triggered Cloud Build
-  trigger using a `cloudbuild.yaml` at the repo root — same deployment
-  pattern as the maintainer's other project.
+- **Backend**: Kotlin + Ktor, single service (`backend/`), same stack/patterns
+  as the maintainer's other project (`foodie`).
+- **Deploy**: Cloud Run, deployed via a GitHub-triggered Cloud Build trigger
+  using `cloudbuild.yaml` at the repo root → Artifact Registry → Cloud Run.
+  Not live yet — `cloudbuild.yaml`/`Dockerfile` exist, but the Cloud Build
+  trigger hasn't been created (waiting on this to merge to `main` first),
+  and no deploy has run.
 - **Storage**: Firestore.
 
-These are the maintainer's stated direction, not decisions made in this
-repo yet — no GCP project, Cloud Run service, or Firestore database has
-been provisioned. Once real infra exists, record the concrete facts here
-(project id, service name, region, database id, env var names) and keep
-operational gotchas (what breaks, how to debug it) in `CLAUDE.md` instead,
-referencing rather than restating these facts.
+## Configuration reference
+
+Concrete IDs and config values — the single source of truth for these
+facts. `CLAUDE.md` keeps the operational gotchas: what breaks and how to
+debug it, not the values themselves.
+
+- **GCP project**: `foodie-503510` — shared with the `foodie` project, not
+  a dedicated project for this app. Don't confuse the project *id* with
+  either app's own name.
+- **Region**: `northamerica-northeast1` (Montreal) for both Cloud Run and
+  Firestore, matching foodie's region.
+- **Cloud Run service**: `budgeter` (region above). Created automatically
+  on first deploy — not manually provisioned.
+- **Artifact Registry**: reuses foodie's existing `cloud-run-source-deploy`
+  repo (also `northamerica-northeast1`), image name `budgeter-backend`
+  (see `_IMAGE` in `cloudbuild.yaml`) rather than a dedicated AR repo.
+- **Firestore database ID**: `home-os` (`northamerica-northeast1`) — a
+  separate named database from foodie's `foodie-nne1`, in the same shared
+  project. Not yet wired into any code (`FIRESTORE_DATABASE_ID` env var
+  convention TBD once persistence code exists, following foodie's
+  pattern).
+- **OAuth client / `SESSION_SECRET` / `OAUTH_REDIRECT_BASE_URL`**: not
+  created yet — the maintainer is setting these up manually after the
+  first deploy (need the Cloud Run URL for the OAuth redirect URI first).
 
 ## Maintenance
 
