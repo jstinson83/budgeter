@@ -47,10 +47,13 @@ reference — don't restate them here.
   configuration file", not "Dockerfile" — a Dockerfile-only trigger builds
   and pushes the image but never deploys it.
 - Cloud Run env vars (OAuth client id/secret, `SESSION_SECRET`,
-  `OAUTH_REDIRECT_BASE_URL`, `FIRESTORE_DATABASE_ID`) are set manually on
-  the Cloud Run service after the first deploy, not via `cloudbuild.yaml` —
-  same pattern as foodie, since the OAuth redirect URI needs the actual
-  Cloud Run URL to exist first.
+  `OAUTH_REDIRECT_BASE_URL`, `FIRESTORE_DATABASE_ID`, `GEMINI_API_KEY`) are
+  set manually on the Cloud Run service after the first deploy, not via
+  `cloudbuild.yaml` — same pattern as foodie, since the OAuth redirect URI
+  needs the actual Cloud Run URL to exist first. `GEMINI_API_KEY` isn't set
+  yet as of the Gemini categorization feature landing — the "Categorize"
+  button on `/analysis` will fail with a "GEMINI_API_KEY is not set" error
+  banner on the deployed app until it's added.
 - This project shares a GCP project with `foodie`. Firestore's
   `roles/datastore.user` is project-scoped, so the runtime service account
   already had it from foodie's setup — no new IAM grant was needed for the

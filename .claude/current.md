@@ -8,11 +8,13 @@ alone. See `context.md` for the stable project overview instead.
 
 ## Active task
 
-None currently. Deploy pipeline (trigger, first deploy, OAuth client, env
-vars) and the first feature (CSV transaction import) are both done — see
-`context.md` for what's actually live.
+None currently. Deploy pipeline, CSV transaction import, and the
+quick-version Gemini categorization + `/analysis` screen are all done — see
+`context.md` for what's actually live. `GEMINI_API_KEY` still needs to be
+set on the Cloud Run service (see `CLAUDE.md`) before categorization works
+on the deployed app.
 
-Mentioned as a possible next step, not yet a committed plan: what spending
-analysis to build on top of the imported transactions (maintainer's own
-words: "maybe next we can figure out what makes sense for analysis, etc.")
-- write it down as a real checklist once they actually lay one out.
+Mentioned as a real next step, not yet a committed plan: a persistent,
+precomputed version of the analysis (cron-job-like — compute and store
+category totals instead of recomputing per button press). Write it down as
+a checklist once the maintainer actually lays one out.

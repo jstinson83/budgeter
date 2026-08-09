@@ -63,9 +63,37 @@ photo/document-capture features will reuse.
   distinct same-day/same-amount/same-description transactions within one
   file both still get kept. See `CLAUDE.md`'s Firestore gotchas section for
   the mechanics and the formatting-change tradeoff.
-- No categorization or analysis yet. Categorization is planned to be
-  AI-driven off the description field (see product_spec.md's "Financial
-  assistant"), not built yet.
+## Second feature: Gemini spending analysis
+
+`/analysis` — category totals for the last week/month/year, with a button
+to categorize any new transactions via Gemini. Deliberately a "quick
+version": categorization is triggered by a button press and runs
+synchronously in the request, not a background/cron job. The maintainer
+has said they want a persistent, precomputed version later (a cron-job-like
+thing); this first pass intentionally doesn't build that yet.
+
+- `Transaction.category: TransactionCategory?` (`TransactionStore.kt`) is
+  null until categorized. `TransactionCategory` is a fixed enum (groceries,
+  alcohol, dining out, entertainment, mortgage, house expenses, utilities,
+  transportation, health, subscriptions, income, other) - fixed rather than
+  Gemini-invented per call, so the analysis screen's grouping stays stable
+  run over run.
+- `TransactionRepository.uncategorized(ownerId)` (default method: filters
+  `all(ownerId)` in memory) is what makes categorization idempotent - once a
+  transaction has a category it's permanently excluded from future
+  `/analysis/categorize` calls, so pressing the button repeatedly never
+  re-analyzes (or re-bills Gemini for) the same transaction twice.
+- `GeminiTransactionCategorizer` (`GeminiCategorizer.kt`) calls the Gemini
+  API directly over REST (`generativelanguage.googleapis.com`, model
+  `gemini-2.5-flash`) using a `responseSchema` that constrains output to
+  `{id, category}` pairs from the fixed enum - no Google AI SDK dependency
+  added, same "just use ktor's HttpClient" pattern as the OAuth userinfo
+  call in `Auth.kt`. Requires the `GEMINI_API_KEY` env var; not yet set on
+  the deployed Cloud Run service (see `CLAUDE.md`'s deploy pipeline
+  section - same manual-env-var pattern as the OAuth secrets).
+- Periods ("last week/month/year") are rolling windows from today
+  (`LocalDate.now().minusWeeks(1)` etc.), not calendar-aligned (not
+  "this calendar month").
 
 ## Configuration reference
 

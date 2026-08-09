@@ -50,14 +50,16 @@ fun ApplicationTestBuilder.testModule(
     oauthClient: HttpClient = fakeGoogleOAuthClient(),
     oauthRedirectBaseUrl: String = "http://localhost:8080",
     sessionSecret: String = "test-session-secret",
-    transactionStore: TransactionRepository = FakeTransactionRepository()
+    transactionStore: TransactionRepository = FakeTransactionRepository(),
+    transactionCategorizer: TransactionCategorizer = FakeTransactionCategorizer()
 ) {
     application {
         module(
             oauthClient = oauthClient,
             oauthRedirectBaseUrl = oauthRedirectBaseUrl,
             sessionSecret = sessionSecret,
-            transactionStore = transactionStore
+            transactionStore = transactionStore,
+            transactionCategorizer = transactionCategorizer
         )
     }
 }
@@ -106,4 +108,25 @@ class FakeTransactionRepository : TransactionRepository {
 
     override suspend fun all(ownerId: String): List<Transaction> =
         transactions.filter { it.ownerId == ownerId }.sortedByDescending { it.date }
+
+    override suspend fun updateCategories(ownerId: String, categorized: Map<String, TransactionCategory>) {
+        for (i in transactions.indices) {
+            val transaction = transactions[i]
+            val category = categorized[transaction.id] ?: continue
+            if (transaction.ownerId == ownerId) transactions[i] = transaction.copy(category = category)
+        }
+    }
+}
+
+// Counts how many times categorize() is actually called, so tests can
+// assert that already-categorized transactions never get re-sent to
+// Gemini - the "don't duplicate analysis" requirement.
+class FakeTransactionCategorizer(private val category: TransactionCategory = TransactionCategory.OTHER) : TransactionCategorizer {
+    var callCount: Int = 0
+        private set
+
+    override suspend fun categorize(transactions: List<Transaction>): Map<String, TransactionCategory> {
+        callCount++
+        return transactions.associate { it.id to category }
+    }
 }
