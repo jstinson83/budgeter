@@ -189,6 +189,10 @@ body {
   margin-bottom: 0;
 }
 
+.button-danger {
+  background: #dc2626;
+}
+
 .transaction-list {
   display: flex;
   flex-direction: column;

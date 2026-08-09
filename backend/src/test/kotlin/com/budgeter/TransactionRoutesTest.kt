@@ -31,7 +31,7 @@ class TransactionRoutesTest {
         testModule()
         val client = signInFakeUser()
 
-        val csv = "2026-01-15,Starbucks,-4.75\n2026-01-16,Payroll,2500.00"
+        val csv = "2026-01-15,Starbucks,4.75,,995.25\n2026-01-16,Payroll,,2500.00,3495.25"
         val importResponse = client.submitFormWithBinaryData(
             url = "/transactions/import",
             formData = formData {
@@ -59,7 +59,7 @@ class TransactionRoutesTest {
         testModule()
         val client = signInFakeUser()
 
-        val csv = "2026-01-15,Starbucks,-4.75\nnot-a-date,Broken,1.00"
+        val csv = "2026-01-15,Starbucks,4.75,,995.25\nnot-a-date,Broken,1.00,,999.00"
         val importResponse = client.submitFormWithBinaryData(
             url = "/transactions/import",
             formData = formData {
@@ -81,7 +81,7 @@ class TransactionRoutesTest {
         testModule()
         val client = signInFakeUser()
 
-        val csv = "2026-01-15,Starbucks,-4.75\n2026-01-16,Payroll,2500.00"
+        val csv = "2026-01-15,Starbucks,4.75,,995.25\n2026-01-16,Payroll,,2500.00,3495.25"
         val importCsv: suspend () -> String = {
             val response = client.submitFormWithBinaryData(
                 url = "/transactions/import",
@@ -114,7 +114,7 @@ class TransactionRoutesTest {
         // identical content, different rows of the same upload. Dedup is
         // keyed on (file, row position), not row content, so both must be
         // kept.
-        val csv = "2026-01-15,Starbucks,-4.75\n2026-01-15,Starbucks,-4.75"
+        val csv = "2026-01-15,Starbucks,4.75,,995.25\n2026-01-15,Starbucks,4.75,,995.25"
         val importResponse = client.submitFormWithBinaryData(
             url = "/transactions/import",
             formData = formData {
@@ -149,6 +149,65 @@ class TransactionRoutesTest {
     }
 
     @Test
+    fun testDeleteAllClearsTransactionsForCallingOwner() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        client.submitFormWithBinaryData(
+            url = "/transactions/import",
+            formData = formData {
+                append("file", "2026-01-15,Starbucks,4.75,,995.25".toByteArray(), Headers.build {
+                    append(HttpHeaders.ContentType, "text/csv")
+                    append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
+                })
+            }
+        )
+
+        val deleteResponse = client.post("/transactions/delete-all")
+        assertEquals(HttpStatusCode.Found, deleteResponse.status)
+        val redirectLocation = deleteResponse.headers[HttpHeaders.Location]
+        assertNotNull(redirectLocation)
+
+        val listResponse = client.get(redirectLocation)
+        assertTrue(listResponse.bodyAsText().contains("No transactions yet"))
+    }
+
+    @Test
+    fun testDeleteAllDoesNotAffectOtherAccounts() {
+        // Same shared-repo, two-identity shape as
+        // testTransactionsAreScopedPerAccount, but exercising deleteAll's
+        // ownerId scoping specifically rather than addAll/all's.
+        val transactionRepo = FakeTransactionRepository()
+
+        testApplication {
+            testModule(transactionStore = transactionRepo, oauthClient = fakeGoogleOAuthClient("owner-sub", "owner@example.com", "Owner"))
+            val client = signInFakeUser()
+            client.submitFormWithBinaryData(
+                url = "/transactions/import",
+                formData = formData {
+                    append("file", "2026-01-15,Bagel Shop,3.50,,500.00".toByteArray(), Headers.build {
+                        append(HttpHeaders.ContentType, "text/csv")
+                        append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
+                    })
+                }
+            )
+        }
+
+        testApplication {
+            testModule(transactionStore = transactionRepo, oauthClient = fakeGoogleOAuthClient("other-sub", "other@example.com", "Other"))
+            val client = signInFakeUser()
+            client.post("/transactions/delete-all")
+        }
+
+        testApplication {
+            testModule(transactionStore = transactionRepo, oauthClient = fakeGoogleOAuthClient("owner-sub", "owner@example.com", "Owner"))
+            val client = signInFakeUser()
+            val listResponse = client.get("/transactions") { header(HttpHeaders.Accept, "text/html") }
+            assertTrue(listResponse.bodyAsText().contains("Bagel Shop"))
+        }
+    }
+
+    @Test
     fun testTransactionsAreScopedPerAccount() {
         // Same shape as foodie's testDataIsIsolatedPerAccount: two
         // testApplication instances sharing one fake repository, signed in
@@ -161,7 +220,7 @@ class TransactionRoutesTest {
             client.submitFormWithBinaryData(
                 url = "/transactions/import",
                 formData = formData {
-                    append("file", "2026-01-15,Starbucks,-4.75".toByteArray(), Headers.build {
+                    append("file", "2026-01-15,Starbucks,4.75,,995.25".toByteArray(), Headers.build {
                         append(HttpHeaders.ContentType, "text/csv")
                         append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
                     })

@@ -13,26 +13,23 @@ data class CsvRowError(val rowNumber: Int, val rawLine: String, val reason: Stri
 
 data class CsvParseResult(val transactions: List<ParsedTransaction>, val errors: List<CsvRowError>)
 
-// Two supported headerless shapes, disambiguated by column count:
-// - 3-4 columns: date,description,amount[,balance] - a single signed
-//   amount, balance (if present) ignored. Used by synthetic/AI-generated
-//   test data and by TD's credit-card-style export (unsigned charge
-//   amounts, balance increasing per row - see
-//   testParsesSampleCreditCardStyleExport).
-// - 5+ columns: date,description,moneyOut,moneyIn,balance - TD's actual
-//   chequing/savings account export. Exactly one of moneyOut/moneyIn is
-//   populated per row (the other is blank); moneyOut becomes a negative
-//   amount, moneyIn a positive one. Balance (and anything past it) is
-//   ignored.
+// Headerless CSV, TD's real chequing/savings export format - the only
+// format this app needs to support: date,description,moneyOut,moneyIn,balance
+// (5 columns; anything past column 4 is ignored). Exactly one of
+// moneyOut/moneyIn is populated per row - the other is blank. moneyOut
+// becomes a negative amount (money leaving the account), moneyIn a
+// positive one (money coming in); balance is discarded.
 //
 // Date accepts either ISO-8601 (yyyy-MM-dd, for synthetic test data) or
-// MM/dd/yyyy (TD's real export format) - see supportedDateFormats.
+// MM/dd/yyyy (TD's real date format) - see supportedDateFormats.
 //
 // Field-level splitting/quoting/escaping is delegated to Apache Commons CSV
 // rather than a hand-rolled line parser - RFC4180 edge cases (quoted
 // newlines, escaped quotes, CRLF vs LF) are exactly the kind of thing not
 // worth re-deriving.
 object CsvTransactionParser {
+    private const val EXPECTED_FIELD_COUNT = 5
+
     private val format: CSVFormat = CSVFormat.DEFAULT.builder()
         .setTrim(true)
         .setIgnoreEmptyLines(true)
@@ -80,8 +77,12 @@ object CsvTransactionParser {
             for (record in parser) {
                 val rowNumber = record.recordNumber.toInt()
 
-                if (record.size() < 3) {
-                    errors += CsvRowError(rowNumber, record.rawLine(), "Expected at least 3 fields (date, description, amount), got ${record.size()}")
+                if (record.size() < EXPECTED_FIELD_COUNT) {
+                    errors += CsvRowError(
+                        rowNumber,
+                        record.rawLine(),
+                        "Expected at least $EXPECTED_FIELD_COUNT fields (date, description, moneyOut, moneyIn, balance), got ${record.size()}"
+                    )
                     continue
                 }
 
@@ -91,22 +92,12 @@ object CsvTransactionParser {
                     continue
                 }
 
-                val amount = if (record.size() >= 5) {
-                    val moneyOut = record.get(2)
-                    val moneyIn = record.get(3)
-                    val parsed = parseDebitCreditAmount(moneyOut, moneyIn)
-                    if (parsed == null) {
-                        errors += CsvRowError(rowNumber, record.rawLine(), "Invalid amount: moneyOut=$moneyOut, moneyIn=$moneyIn")
-                        continue
-                    }
-                    parsed
-                } else {
-                    val parsed = record.get(2).toDoubleOrNull()
-                    if (parsed == null) {
-                        errors += CsvRowError(rowNumber, record.rawLine(), "Invalid amount: ${record.get(2)}")
-                        continue
-                    }
-                    parsed
+                val moneyOut = record.get(2)
+                val moneyIn = record.get(3)
+                val amount = parseDebitCreditAmount(moneyOut, moneyIn)
+                if (amount == null) {
+                    errors += CsvRowError(rowNumber, record.rawLine(), "Invalid amount: moneyOut=$moneyOut, moneyIn=$moneyIn")
+                    continue
                 }
 
                 transactions += ParsedTransaction(rowNumber, date, record.get(1), amount)

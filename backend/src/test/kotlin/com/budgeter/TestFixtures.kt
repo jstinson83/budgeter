@@ -116,6 +116,10 @@ class FakeTransactionRepository : TransactionRepository {
             if (transaction.ownerId == ownerId) transactions[i] = transaction.copy(category = category)
         }
     }
+
+    override suspend fun deleteAll(ownerId: String) {
+        transactions.removeAll { it.ownerId == ownerId }
+    }
 }
 
 // Counts how many times categorize() is actually called, so tests can

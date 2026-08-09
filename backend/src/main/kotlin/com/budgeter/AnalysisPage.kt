@@ -17,9 +17,9 @@ fun analysisPageModel(
         .map { (label, total, count) ->
             mapOf(
                 "category" to label,
-                "total" to "%.2f".format(total),
+                "total" to formatSignedAmount(total),
                 "count" to count,
-                "totalClass" to if (total < 0) "transaction-amount-negative" else "transaction-amount-positive"
+                "totalClass" to amountClass(total)
             )
         }
 

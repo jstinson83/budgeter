@@ -43,24 +43,39 @@ something buildable while away from home; it's also genuine groundwork
 either way (real Firestore persistence, real deploy path) that later
 photo/document-capture features will reuse.
 
-- CSV is headerless, in one of two shapes disambiguated by column count
-  (`CsvTransactionParser`):
-  - 3-4 columns: `date,description,amount[,balance]` - one signed amount,
-    balance (if present) discarded. Covers synthetic/AI-generated test
-    data and TD's credit-card-style export (unsigned charge amounts,
-    balance increasing per row, a negative amount for a payment).
-  - 5+ columns: `date,description,moneyOut,moneyIn,balance` - TD's actual
-    chequing/savings account export, confirmed against a real statement.
-    Exactly one of `moneyOut`/`moneyIn` is populated per row; the other is
-    blank. `moneyOut` becomes a negative amount, `moneyIn` a positive one.
-    Balance is discarded. A row with both or neither populated is a parse
-    error, not silently guessed.
+- CSV is headerless, one format only - TD's real chequing/savings account
+  export, confirmed against an actual statement (`CsvTransactionParser`):
+  `date,description,moneyOut,moneyIn,balance` (5 columns; anything past
+  column 4 is ignored). Exactly one of `moneyOut`/`moneyIn` is populated
+  per row; the other is blank. `moneyOut` becomes a negative amount
+  (money out, red in the UI), `moneyIn` a positive one (money in, green).
+  Balance is discarded. A row with both or neither populated is a parse
+  error, not silently guessed. An earlier 3-4 column single-signed-amount
+  format (for synthetic test data and a guessed "credit-card-style"
+  export) was dropped - the maintainer confirmed only the 5-column TD
+  format is actually needed, and it had a real design problem anyway: its
+  sign convention tracked *debt owed* (charge=+, payment=-), inverted from
+  the 5-column format's *cash in the account* convention (out=-, in=+) -
+  mixed together the same color meant opposite things.
   - Date accepts either ISO-8601 (`yyyy-MM-dd`) or `MM/dd/yyyy`
     (`CsvTransactionParser.supportedDateFormats`) - the latter is TD's
     real date format.
   - `amount` is always one signed `Double` in `ParsedTransaction` -
     the debit/credit split only exists in the raw CSV and is collapsed to
     a sign during parsing.
+  - Display makes the sign explicit rather than relying on color alone:
+    `formatSignedAmount`/`amountClass` (`TransactionPage.kt`, shared with
+    `AnalysisPage.kt`) prefix positive amounts with `+` on top of the
+    negative sign `Double` formatting already provides, plus the existing
+    red/negative vs. green/positive CSS classes.
+- `TransactionRepository.deleteAll(ownerId)` wipes all of one owner's
+  transactions (and, since categories/analysis are computed from
+  transactions rather than a separate collection, effectively "all
+  analysis" too) - exposed as a "Delete all transactions" button on
+  `/transactions` while the import format is still being validated
+  against real statements, so a bad import doesn't have to be untangled
+  row-by-row (dedup only skips existing docs, it never overwrites - see
+  the Firestore gotchas section in CLAUDE.md).
 - Bad rows are skipped, not fatal — `CsvTransactionParser.parse` returns
   both the successfully parsed transactions and a list of per-row errors;
   the import route reports "Imported N, skipped M" rather than

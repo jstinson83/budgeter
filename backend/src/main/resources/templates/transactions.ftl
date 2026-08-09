@@ -22,6 +22,12 @@
       <button type="submit" class="button">Import CSV</button>
     </form>
 
+    <#if (transactions?size gt 0)>
+    <form method="post" action="/transactions/delete-all" class="upload-form" onsubmit="return confirm('Delete all transactions? This cannot be undone.');">
+      <button type="submit" class="button button-danger">Delete all transactions</button>
+    </form>
+    </#if>
+
     <#if (transactions?size == 0)>
     <p class="empty-state">No transactions yet. Import a CSV to get started.</p>
     <#else>

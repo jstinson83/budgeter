@@ -49,4 +49,10 @@ fun Route.transactionRoutes(transactionStore: TransactionRepository) {
         }
         call.respondRedirect("/transactions?message=${message.encodeURLQueryComponent()}")
     }
+
+    post("/transactions/delete-all") {
+        val ownerId = call.requireUserId()
+        transactionStore.deleteAll(ownerId)
+        call.respondRedirect("/transactions?message=${"All transactions deleted".encodeURLQueryComponent()}")
+    }
 }
