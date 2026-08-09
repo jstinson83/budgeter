@@ -65,6 +65,14 @@ interface TransactionRepository {
     suspend fun uncategorized(ownerId: String): List<Transaction> = all(ownerId).filter { it.category == null }
 
     suspend fun updateCategories(ownerId: String, categorized: Map<String, TransactionCategory>)
+
+    // Wipes every transaction (and, since categories/analysis live on the
+    // transaction record rather than a separate collection, everything
+    // /analysis would show too) for one owner. Handy while the CSV import
+    // format is still being nailed down against real statements - lets a
+    // bad import be cleared and retried from scratch instead of piling up
+    // wrongly-signed rows a re-upload's dedup would otherwise never correct.
+    suspend fun deleteAll(ownerId: String)
 }
 
 class FirestoreTransactionStore(private val firestore: Firestore) : TransactionRepository {
@@ -110,6 +118,14 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
         if (categorized.isEmpty()) return
         val batch = firestore.batch()
         categorized.forEach { (id, category) -> batch.update(collection.document(id), mapOf("category" to category.name)) }
+        batch.commit().get()
+    }
+
+    override suspend fun deleteAll(ownerId: String) {
+        val snapshot = collection.whereEqualTo("ownerId", ownerId).get().get()
+        if (snapshot.isEmpty) return
+        val batch = firestore.batch()
+        snapshot.documents.forEach { batch.delete(it.reference) }
         batch.commit().get()
     }
 

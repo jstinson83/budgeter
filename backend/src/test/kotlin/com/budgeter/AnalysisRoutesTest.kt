@@ -47,7 +47,7 @@ class AnalysisRoutesTest {
         val client = signInFakeUser()
 
         val today = java.time.LocalDate.now()
-        client.importCsv("$today,Metro Grocery,-42.10\n$today,Payroll,2500.00")
+        client.importCsv("$today,Metro Grocery,42.10,,957.90\n$today,Payroll,,2500.00,3457.90")
 
         val beforeCategorize = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
         assertTrue(beforeCategorize.bodyAsText().contains("Categorize 2 new transaction(s) with Gemini"))
@@ -71,7 +71,7 @@ class AnalysisRoutesTest {
         testModule(transactionCategorizer = categorizer)
         val client = signInFakeUser()
 
-        client.importCsv("${java.time.LocalDate.now()},Metro Grocery,-42.10")
+        client.importCsv("${java.time.LocalDate.now()},Metro Grocery,42.10,,957.90")
         client.post("/analysis/categorize")
         assertEquals(1, categorizer.callCount)
 
@@ -89,7 +89,7 @@ class AnalysisRoutesTest {
 
         val today = java.time.LocalDate.now()
         val twoYearsAgo = today.minusYears(2)
-        client.importCsv("$today,Recent Purchase,-10.00\n$twoYearsAgo,Old Purchase,-20.00")
+        client.importCsv("$today,Recent Purchase,10.00,,990.00\n$twoYearsAgo,Old Purchase,20.00,,1010.00")
 
         val weekView = client.get("/analysis?period=week") { header(HttpHeaders.Accept, "text/html") }
         val body = weekView.bodyAsText()
@@ -109,7 +109,7 @@ class AnalysisRoutesTest {
         testModule(transactionCategorizer = failingCategorizer)
         val client = signInFakeUser()
 
-        client.importCsv("${java.time.LocalDate.now()},Metro Grocery,-42.10")
+        client.importCsv("${java.time.LocalDate.now()},Metro Grocery,42.10,,957.90")
         val response = client.post("/analysis/categorize")
         val redirect = response.headers[HttpHeaders.Location]!!
         assertTrue(redirect.startsWith("/analysis?error="))
