@@ -125,3 +125,17 @@ shape.
   (surfaced as the `/analysis` error banner) rather than an empty result -
   if this bites again, the error banner will say `finishReason=...`, which
   is the thing to check first.
+- Second round: after the above fix, the error banner just said "Gemini
+  returned no candidates" - still no real diagnostic. Root cause: the HTTP
+  response was decoded straight into `GeminiGenerateContentResponse`
+  without checking the status code first. Google's error body
+  (`{"error": {code, message, status}}`) has no `"candidates"` key, and
+  `candidates` defaults to `emptyList()` when that key's absent - so a 4xx
+  (bad/missing API key, API not enabled on the project, quota exceeded,
+  malformed request, ...) decoded "successfully" into a response
+  indistinguishable from a genuine empty one. Fixed by checking
+  `httpResponse.status.isSuccess()` before decoding and, on failure,
+  throwing the raw status + response body (Google's actual error message)
+  instead. If "no candidates" shows up again with the fix in place, it's a
+  real 200-with-empty-candidates case (e.g. safety block) - the error
+  banner will include `promptFeedback=...` for that.

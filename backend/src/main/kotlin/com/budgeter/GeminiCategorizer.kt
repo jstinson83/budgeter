@@ -3,6 +3,7 @@ package com.budgeter
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -81,14 +82,29 @@ class GeminiTransactionCategorizer(
             )
         )
 
-        val response = httpClient.post("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent") {
+        val httpResponse = httpClient.post("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent") {
             header("x-goog-api-key", apiKey)
             contentType(ContentType.Application.Json)
             setBody(requestBody)
-        }.body<GeminiGenerateContentResponse>()
+        }
 
+        // Must check status before decoding: Gemini's error body
+        // ({"error": {code, message, status}}) has no "candidates" key, and
+        // GeminiGenerateContentResponse.candidates defaults to emptyList()
+        // when that key is absent - so decoding an error response straight
+        // into it "succeeds" with zero candidates, indistinguishable from a
+        // real empty response. That swallowed the actual reason (bad key,
+        // API not enabled, quota exceeded, malformed request, ...) behind a
+        // generic "no candidates" message. Read the raw body for the error
+        // case so whatever Google actually said reaches the /analysis
+        // error banner.
+        if (!httpResponse.status.isSuccess()) {
+            error("Gemini API request failed (${httpResponse.status}): ${httpResponse.bodyAsText().take(500)}")
+        }
+
+        val response = httpResponse.body<GeminiGenerateContentResponse>()
         val candidate = response.candidates.firstOrNull()
-            ?: error("Gemini returned no candidates")
+            ?: error("Gemini returned no candidates (promptFeedback=${response.promptFeedback?.blockReason ?: "none"})")
         val text = candidate.content?.parts?.firstOrNull()?.text
         // A missing/blank text part with no exception is exactly how a
         // MAX_TOKENS cutoff (or a safety block) looks - surface it as a
@@ -150,10 +166,16 @@ private data class GeminiSchemaItem(
 private data class GeminiSchemaProperty(val type: String, val enum: List<String>? = null)
 
 @Serializable
-private data class GeminiGenerateContentResponse(val candidates: List<GeminiResponseCandidate> = emptyList())
+private data class GeminiGenerateContentResponse(
+    val candidates: List<GeminiResponseCandidate> = emptyList(),
+    val promptFeedback: GeminiPromptFeedback? = null
+)
 
 @Serializable
 private data class GeminiResponseCandidate(val content: GeminiContent? = null, val finishReason: String? = null)
+
+@Serializable
+private data class GeminiPromptFeedback(val blockReason: String? = null)
 
 @Serializable
 private data class CategorizedItem(val index: Int, val category: String)
