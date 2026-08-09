@@ -103,4 +103,35 @@ class CsvTransactionParserTest {
         assertEquals(2, result.transactions.size)
         assertEquals(emptyList(), result.errors)
     }
+
+    @Test
+    fun testParsesSlashDelimitedDate() {
+        val csv = "07/01/2026,STM MONTREAL RECHARGE,66.19,916.69"
+
+        val result = CsvTransactionParser.parse(csv)
+
+        assertEquals(emptyList(), result.errors)
+        assertEquals(LocalDate.of(2026, 7, 1), result.transactions.single().date)
+    }
+
+    // A real sample export (headerless date,description,amount,balance,
+    // MM/dd/yyyy dates, unsigned "charge" amounts with balance increasing -
+    // a credit-card-style statement, not a chequing account) surfaced the
+    // MM/dd/yyyy gap this test locks in.
+    @Test
+    fun testParsesSampleCreditCardStyleExport() {
+        val csv = """
+            07/01/2026,STM MONTREAL RECHARGE,66.19,916.69
+            07/01/2026,BARBER SHOP DU FORT,52.85,969.54
+            07/11/2026,ONLINE PAYMENT - THANK YOU,-450,3574.68
+            07/04/2026,PHARMAPRIX MONTRÉAL,26.02,1956.35
+        """.trimIndent()
+
+        val result = CsvTransactionParser.parse(csv)
+
+        assertEquals(emptyList(), result.errors)
+        assertEquals(4, result.transactions.size)
+        assertEquals(-450.0, result.transactions[2].amount)
+        assertEquals("PHARMAPRIX MONTRÉAL", result.transactions[3].description)
+    }
 }
