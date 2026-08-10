@@ -5,17 +5,25 @@ useful insight into spending habits.
 
 > **Longer-term direction:** this project's scope is expanding beyond
 > budgeting into a broader "Household OS" concept — see
-> [`docs/HOUSEHOLD_OS.md`](docs/HOUSEHOLD_OS.md) for the vision. Nothing in
-> this codebase has changed yet; this is a note for later, not a rewrite.
+> [`product_spec.md`](product_spec.md) for the full vision (an earlier draft
+> lives at [`docs/HOUSEHOLD_OS.md`](docs/HOUSEHOLD_OS.md)). The codebase
+> itself is still budgeting-app-shaped; this is the direction, not a
+> rewrite that's already happened.
 
 ## Status
 
 - [x] Sign-in (Google OAuth) gating a (currently blank) home page
-- [x] CSV transaction import (headerless `date,description,amount`,
-      Firestore-backed, no analysis yet — see `/transactions`)
+- [x] CSV transaction import (TD's real 5-column debit/credit export,
+      bank and credit-card accounts, Firestore-backed — see `/transactions`)
+- [x] Spending analysis / categorization — `/analysis` shows category totals
+      for the last week/month/year; a button triggers deterministic
+      bank/credit-card transfer matching plus Gemini categorization for
+      everything else. "Quick version": runs synchronously on button press,
+      not precomputed/scheduled yet.
 - [ ] Bank connection via a data aggregator (Plaid / Flinks), as a
       convenience layer on top of CSV import
-- [ ] Spending analysis / categorization
+- [ ] Persistent, precomputed analysis (recompute-on-a-schedule instead of
+      recompute-on-button-press)
 
 ### Why CSV import before a live bank connection
 
@@ -35,6 +43,9 @@ itself so this app never touches TD credentials directly.
   service. (Matches the [`foodie`](https://github.com/jstinson83/foodie)
   project's stack/patterns.)
 - **Auth**: Google OAuth sign-in, signed session cookie.
+- **Storage**: Firestore.
+- **Categorization**: Gemini (`gemini-3.5-flash`), called directly over REST
+  — no Google AI SDK dependency.
 
 ## Local development
 
@@ -66,6 +77,10 @@ Fill in `.env` with the Client ID/Secret from step 1, and a session secret:
 openssl rand -hex 32   # use as SESSION_SECRET
 ```
 
+`GEMINI_API_KEY` is optional for local dev unless you want to exercise the
+"Categorize" button on `/analysis` — without it, that request fails with a
+"GEMINI_API_KEY is not set" error banner but the rest of the app works fine.
+
 ### 3. Run it
 
 ```sh
@@ -83,9 +98,9 @@ cd backend
 ./gradlew test
 ```
 
-Tests use a mocked HTTP client standing in for Google's OAuth endpoints, and
-an in-memory `FakeTransactionRepository` standing in for Firestore, so the
-suite never makes a real network call.
+Tests use a mocked HTTP client standing in for Google's OAuth and Gemini
+endpoints, and an in-memory `FakeTransactionRepository` standing in for
+Firestore, so the suite never makes a real network call.
 
 ## Project layout
 
@@ -94,11 +109,15 @@ backend/src/main/kotlin/com/budgeter/
   Application.kt          wiring: routing, DI defaults, plugin install
   Auth.kt                 Google OAuth + session handling
   TransactionStore.kt     Transaction model, repository interface + Firestore impl
-  CsvTransactionParser.kt headerless CSV -> ParsedTransaction, tolerant of bad rows
-  TransactionRoutes.kt    /transactions (list) and /transactions/import (upload)
+  CsvTransactionParser.kt TD 5-column CSV -> ParsedTransaction, tolerant of bad rows
+  TransactionRoutes.kt    /transactions (list, import, delete-all)
   TransactionPage.kt      Transaction -> FreeMarker view model
+  AnalysisRoutes.kt       /analysis (category totals, categorize button)
+  AnalysisPage.kt         Analysis -> FreeMarker view model
+  GeminiCategorizer.kt    Gemini REST client, categorizes transactions into a fixed enum
+  TransferMatcher.kt      Deterministic bank<->credit-card transfer-pair matching
 backend/src/main/resources/
-  templates/*.ftl  server-rendered pages
+  templates/*.ftl  server-rendered pages (home, transactions, analysis, ...)
   static/          CSS
 ```
 
@@ -114,10 +133,40 @@ one.
 
 ## How CSV import works right now
 
-`/transactions` shows an upload form and the current account's transactions
-(most recent first). `POST /transactions/import` parses the uploaded file as
-headerless `date,description,amount` (ISO-8601 date, one signed amount
-column, an optional 4th balance column is ignored) via
-`CsvTransactionParser`, skips unparseable rows without failing the whole
-import, and reports how many rows landed vs. were skipped. No categorization
-or analysis yet — see `docs/HOUSEHOLD_OS.md` for where this is headed.
+`/transactions` shows an upload form (with a Bank / Credit Card account-type
+selector) and the current account's transactions (most recent first), plus a
+"Delete all transactions" button. `POST /transactions/import` parses the
+uploaded file as TD's real headerless export format —
+`date,description,moneyOut,moneyIn,balance` (5 columns; anything past column
+4 is ignored) — via `CsvTransactionParser`. Exactly one of `moneyOut`/
+`moneyIn` is populated per row; it's collapsed into a single signed `amount`
+(money out is negative/red, money in is positive/green). Dates accept
+ISO-8601 or TD's `MM/dd/yyyy` format. Bad rows are skipped rather than
+failing the whole import, and the import reports how many rows landed,
+were skipped as duplicates, or were skipped as parse errors.
+
+Dedup on re-upload is keyed on `(ownerId, fileHash, rowNumber)`, so
+re-uploading the exact same file is idempotent.
+
+## How spending analysis works right now
+
+`/analysis` shows category totals for the last week/month/year, plus a
+"Categorize" button. Pressing it runs two steps synchronously in the
+request, over any transactions that haven't been categorized yet:
+
+1. **Transfer matching** (`TransferMatcher.kt`) — deterministically pairs up
+   a bank-account "TFR-TO C/C" outflow with the matching credit-card
+   "PAYMENT - THANK YOU" inflow (matching description templates, equal
+   amount, dates within 5 days, only when the pairing is unambiguous), and
+   marks both legs as `TRANSFER` so they're excluded from analysis entirely
+   instead of being double-counted as spending and income.
+2. **Gemini categorization** (`GeminiCategorizer.kt`) — everything transfer
+   matching didn't claim is sent to Gemini and assigned one of a fixed set
+   of categories (groceries, alcohol, dining out, entertainment, mortgage,
+   house expenses, utilities, transportation, health, subscriptions, income,
+   other).
+
+Once a transaction has a category it's permanently excluded from future
+categorize runs, so pressing the button repeatedly never re-processes (or
+re-bills Gemini for) the same transaction twice. Requires the
+`GEMINI_API_KEY` env var — see [Local development](#local-development).
