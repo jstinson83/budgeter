@@ -27,6 +27,7 @@ internal val BUILT_IN_CATEGORIES = listOf(
     "EDUCATION" to "Education",
     "INCOME" to "Income",
     "INVESTMENT" to "Investment",
+    "INTEREST" to "Interest",
     "OTHER" to "Other"
 )
 
@@ -50,6 +51,13 @@ const val TRANSFER_CATEGORY_ID = "TRANSFER"
 // out of the whole period, just narrower: an INVESTMENT row still shows up
 // in the category breakdown, only the net figure excludes it.
 const val INVESTMENT_CATEGORY_ID = "INVESTMENT"
+
+// Also a real per-owner Category row, seeded via BUILT_IN_CATEGORIES like
+// INVESTMENT above. Assigned by TransferMatcher's LOC-interest pairing: the
+// interest charge is real spending (unlike TRANSFER), just deterministically
+// categorized instead of left for Gemini/manual categorization, since the
+// "interest"/"PYT TO:" markers are exact statement-generator templates.
+const val INTEREST_CATEGORY_ID = "INTEREST"
 
 data class Category(
     val id: String,

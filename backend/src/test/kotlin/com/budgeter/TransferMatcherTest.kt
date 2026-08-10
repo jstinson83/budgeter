@@ -104,4 +104,47 @@ class TransferMatcherTest {
             result
         )
     }
+
+    @Test
+    fun testMatchesABankTransferLegWithItsLocPayDownLeg() {
+        // Money leaves the bank account and pays down the LOC.
+        val bank = transaction("bank-1", AccountType.BANK, ".....TFR-TO 1234567", -200.00, LocalDate.of(2026, 7, 1))
+        val loc = transaction("loc-1", AccountType.LOC, ".....TFR-FR 000998877", 200.00, LocalDate.of(2026, 7, 3))
+
+        val result = TransferMatcher.match(listOf(bank, loc))
+
+        assertEquals(mapOf("bank-1" to TRANSFER_CATEGORY_ID, "loc-1" to TRANSFER_CATEGORY_ID), result)
+    }
+
+    @Test
+    fun testMatchesABankTransferLegWithItsLocDrawLeg() {
+        // Money is drawn from the LOC and arrives in the bank account.
+        val bank = transaction("bank-1", AccountType.BANK, ".....TFR-FR 000998877", 200.00, LocalDate.of(2026, 7, 1))
+        val loc = transaction("loc-1", AccountType.LOC, ".....TFR-TO 1234567", -200.00, LocalDate.of(2026, 7, 3))
+
+        val result = TransferMatcher.match(listOf(bank, loc))
+
+        assertEquals(mapOf("bank-1" to TRANSFER_CATEGORY_ID, "loc-1" to TRANSFER_CATEGORY_ID), result)
+    }
+
+    @Test
+    fun testDoesNotMistakeACreditCardTransferForALocTransfer() {
+        // "TFR-TO C/C" contains "TFR-TO" but is a credit-card transfer, not
+        // a LOC one - the "not C/C" guard on the bank-side LOC marker must
+        // exclude it so it's only ever matched against the CC candidate set.
+        val bank = transaction("bank-1", AccountType.BANK, ".....TFR-TO C/C", -200.00, LocalDate.of(2026, 7, 1))
+        val loc = transaction("loc-1", AccountType.LOC, ".....TFR-FR 000998877", 200.00, LocalDate.of(2026, 7, 3))
+
+        assertEquals(emptyMap(), TransferMatcher.match(listOf(bank, loc)))
+    }
+
+    @Test
+    fun testMatchesLocInterestWithItsBankPaymentLegAsInterestNotTransfer() {
+        val bank = transaction("bank-1", AccountType.BANK, "PYT TO: 000998877", -12.34, LocalDate.of(2026, 7, 1))
+        val loc = transaction("loc-1", AccountType.LOC, "INTEREST", -12.34, LocalDate.of(2026, 7, 1))
+
+        val result = TransferMatcher.match(listOf(bank, loc))
+
+        assertEquals(mapOf("bank-1" to TRANSFER_CATEGORY_ID, "loc-1" to INTEREST_CATEGORY_ID), result)
+    }
 }

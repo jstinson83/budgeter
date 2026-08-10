@@ -136,11 +136,11 @@ first pass intentionally doesn't build that yet.
   params, default to the current month) - no rolling-window or
   all-time option.
 
-## Third feature: bank/credit-card account labeling + transfer matching
+## Third feature: bank/credit-card/LOC account labeling + transfer matching
 
-Transactions now carry `accountType: AccountType` (`BANK` or `CREDIT_CARD`,
-`TransactionStore.kt`) - the CSV import format and sign convention are
-identical either way (see `CsvTransactionParser.kt`), so this is purely
+Transactions now carry `accountType: AccountType` (`BANK`, `CREDIT_CARD`, or
+`LOC`, `TransactionStore.kt`) - the CSV import format and sign convention are
+identical across all three (see `CsvTransactionParser.kt`), so this is purely
 caller-supplied metadata, chosen via a radio selector on the `/transactions`
 upload form. Defaults to `BANK` when the field is absent (an API call
 bypassing the form); a present-but-invalid value is a hard error, not
@@ -148,24 +148,43 @@ silently coerced. Firestore documents written before this field existed
 read back as `BANK` (every transaction imported before now came from the
 original bank-only TD export).
 
-The reason for labeling accounts: paying a credit card from the bank
-account shows up as two separate transactions (a bank outflow, a
-credit-card inflow) that both need to be excluded from spending/income
-analysis rather than double-counted. `TransferMatcher.kt` finds these pairs
-and marks both with `TRANSFER_CATEGORY_ID` (`"TRANSFER"`, `CategoryStore.kt`
-- excluded from `/analysis` entirely, not just grouped into its own bucket)
-- deterministically, not via Gemini. It matches on the bank leg's description containing
-`TFR-TO C/C` and the credit-card leg's containing `PAYMENT - THANK YOU`
-(both fixed TD statement-generator templates, confirmed against real
-statements - not guessed), plus amount equality and dates within 5 days.
-Only mutually-unique pairs match; anything with more than one plausible
-counterpart on either side is left uncategorized rather than guessed, since
-a wrong match would silently vanish a real transaction from analysis.
-Runs automatically as the first step of the existing `/analysis/categorize`
-button (`AnalysisRoutes.kt`), before the remaining transactions go to
-Gemini - not a separate button. Currently assumes at most one bank account
-and one credit card (no per-account scoping beyond `accountType`); revisit
-if a second account of either type is ever added.
+The reason for labeling accounts: paying a credit card (or a line of
+credit) from the bank account shows up as two separate transactions (a bank
+outflow, a credit-card/LOC inflow) that both need to be excluded from
+spending/income analysis rather than double-counted. `TransferMatcher.kt`
+finds these pairs deterministically (not via Gemini), on fixed TD
+statement-generator templates confirmed against real statements, plus
+amount equality and dates within 5 days:
+
+- **Bank ↔ credit card**: bank leg's description contains `TFR-TO C/C`,
+  credit-card leg's contains `PAYMENT - THANK YOU`. Credit cards only ever
+  receive payments (one direction).
+- **Bank ↔ LOC**: unlike a credit card, a LOC transfer goes either
+  direction (draw from it or pay it down). The bank leg can't be matched
+  against a fixed account number the way `C/C` is fixed for a credit
+  card - only that *something other than* `C/C` follows `TFR-TO`/`TFR-FR`,
+  since `C/C` specifically means the other leg is a credit-card payment.
+  The LOC leg's description just needs to contain `TFR-TO` (draw) or
+  `TFR-FR` (pay-down).
+- **LOC interest**: unlike a transfer, a LOC's interest charge is real
+  spending - but it's booked as two ledger entries for one economic event
+  (the LOC's own `interest` line and the bank's `PYT TO: <account>` payment
+  covering it), so only the LOC leg is categorized `INTEREST_CATEGORY_ID`
+  (a real, seeded `Category` - see Fifth feature); the bank leg is excluded
+  like any other transfer (`TRANSFER_CATEGORY_ID`) so the same interest
+  isn't counted twice.
+
+All matched-pair categorization (`TRANSFER_CATEGORY_ID`, `"TRANSFER"`,
+`CategoryStore.kt`) is excluded from `/analysis` entirely, not just grouped
+into its own bucket. Only mutually-unique pairs match; anything with more
+than one plausible counterpart on either side is left uncategorized rather
+than guessed, since a wrong match would silently vanish a real transaction
+from analysis. Runs automatically as the first step of the existing
+`/analysis/categorize` button (`AnalysisRoutes.kt`), before the remaining
+transactions go to Gemini - not a separate button. Currently assumes at
+most one bank account, one credit card, and one LOC (no per-account
+scoping beyond `accountType`); revisit if a second account of any of these
+types is ever added.
 
 ### `INVESTMENT` category
 
@@ -234,7 +253,8 @@ compile-time set, so a household can add its own categories from the UI.
 - **Built-ins seeded lazily, per owner, on first read**: `BUILT_IN_CATEGORIES`
   (groceries, alcohol, dining out, entertainment, mortgage, house expenses,
   utilities, transportation, health, subscriptions, clothing, education,
-  income, investment, other) gets written as real `categories` documents the
+  income, investment, interest, other) gets written as real `categories`
+  documents the
   first time `CategoryRepository.all(ownerId)` finds none for that owner.
   Ids intentionally match the old enum constant names exactly
   (`"GROCERIES"`, `"DINING_OUT"`, ...) so `Transaction`/`CategorizationRule`

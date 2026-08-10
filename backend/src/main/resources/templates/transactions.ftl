@@ -20,6 +20,7 @@
     <form method="post" action="/transactions/import" enctype="multipart/form-data" class="upload-form">
       <label><input type="radio" name="accountType" value="BANK" checked> Bank</label>
       <label><input type="radio" name="accountType" value="CREDIT_CARD"> Credit card</label>
+      <label><input type="radio" name="accountType" value="LOC"> Line of credit</label>
       <input type="file" name="file" accept=".csv" required>
       <button type="submit" class="button">Import CSV</button>
     </form>
