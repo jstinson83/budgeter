@@ -23,6 +23,11 @@
       <a href="${nextHref}" class="month-nav-arrow" aria-label="Next month">&rarr;</a>
     </div>
 
+    <div class="month-summary">
+      <span class="month-summary-label">Net change <span class="month-summary-note">(excl. investments)</span></span>
+      <span class="transaction-amount month-summary-amount ${netChangeClass}">${netChange}</span>
+    </div>
+
     <#if uncategorizedCount gt 0>
     <form method="post" action="/analysis/categorize" class="upload-form">
       <input type="hidden" name="year" value="${year?c}">

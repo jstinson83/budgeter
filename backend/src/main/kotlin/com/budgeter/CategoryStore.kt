@@ -38,6 +38,12 @@ internal val BUILT_IN_CATEGORIES = listOf(
 // this feature.
 const val TRANSFER_CATEGORY_ID = "TRANSFER"
 
+// Investment contributions/transfers aren't spending or income either - kept
+// out of the analysis page's net change total the same way TRANSFER is kept
+// out of the whole period, just narrower: an INVESTMENT row still shows up
+// in the category breakdown, only the net figure excludes it.
+const val INVESTMENT_CATEGORY_ID = "INVESTMENT"
+
 data class Category(
     val id: String,
     val ownerId: String,

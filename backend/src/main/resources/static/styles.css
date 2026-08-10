@@ -283,6 +283,36 @@ body {
   text-align: center;
 }
 
+.month-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  background: white;
+}
+
+@media (prefers-color-scheme: dark) {
+  .month-summary {
+    background: #1e2126;
+  }
+}
+
+.month-summary-label {
+  font-weight: 600;
+}
+
+.month-summary-note {
+  font-weight: 400;
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.month-summary-amount {
+  font-size: 1.2rem;
+}
+
 .category-count {
   color: #888;
   font-size: 0.85rem;
