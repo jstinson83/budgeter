@@ -10,11 +10,13 @@ import java.time.LocalDate
 // shape and sign convention (out=-, in=+) are identical either way - see
 // CsvTransactionParser - so this doesn't change parsing. It exists for
 // TransferMatcher (a bank "TFR-TO C/C" row only pairs with a credit-card
-// "PAYMENT - THANK YOU" row) and to keep a credit card's incoming payments
-// from ever being mistaken for income in analysis.
+// "PAYMENT - THANK YOU" row, and a bank "TFR-TO/FR <account-num>" row pairs
+// with a line-of-credit "TFR-FR/TO" row) and to keep a credit card's
+// incoming payments from ever being mistaken for income in analysis.
 enum class AccountType(val label: String) {
     BANK("Bank"),
-    CREDIT_CARD("Credit Card")
+    CREDIT_CARD("Credit Card"),
+    LOC("Line of Credit")
 }
 
 data class Transaction(

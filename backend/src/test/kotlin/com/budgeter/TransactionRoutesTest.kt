@@ -176,6 +176,28 @@ class TransactionRoutesTest {
     }
 
     @Test
+    fun testImportAcceptsExplicitLocAccountType() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val importResponse = client.submitFormWithBinaryData(
+            url = "/transactions/import",
+            formData = formData {
+                append("accountType", "LOC")
+                append("file", "2026-01-15,INTEREST,12.34,,300.00".toByteArray(), Headers.build {
+                    append(HttpHeaders.ContentType, "text/csv")
+                    append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
+                })
+            }
+        )
+
+        val redirectLocation = importResponse.headers[HttpHeaders.Location]
+        assertNotNull(redirectLocation)
+        val listResponse = client.get(redirectLocation)
+        assertTrue(listResponse.bodyAsText().contains("Line of Credit"))
+    }
+
+    @Test
     fun testImportRejectsAnInvalidAccountType() = testApplication {
         testModule()
         val client = signInFakeUser()
