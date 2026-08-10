@@ -83,7 +83,7 @@ fun Application.module(
 
         authenticate(USER_SESSION_PROVIDER_NAME) {
             get("/") {
-                call.respond(FreeMarkerContent("home.ftl", call.currentUserModel()))
+                call.respondRedirect("/analysis")
             }
 
             transactionRoutes(transactionStore)

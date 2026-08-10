@@ -179,6 +179,9 @@ class AnalysisRoutesTest {
         // Back link returns to the same month that was drilled into
         // (rendered value has FreeMarker's HTML-escaped "&amp;").
         assertTrue(body.contains("/analysis?year=2026&amp;month=6"))
+        // Same total shown on this category's row on /analysis - here just
+        // the one June transaction, not the July one outside this month.
+        assertTrue(body.contains("-15.00"), "Category detail page should show the category's total for the month")
     }
 
     @Test
