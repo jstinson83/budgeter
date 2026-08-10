@@ -32,8 +32,10 @@ data class Transaction(
     val amount: Double,
     // Null until a categorization pass (see GeminiTransactionCategorizer)
     // assigns one. Absent from newly-imported transactions on purpose - it's
-    // filled in later, on demand, not at import time.
-    val category: TransactionCategory? = null
+    // filled in later, on demand, not at import time. A Category.id
+    // (CategoryStore.kt) rather than an enum - categories are per-owner and
+    // user-editable now, not a fixed compile-time set.
+    val category: String? = null
 )
 
 data class TransactionImportResult(val stored: List<Transaction>, val duplicateCount: Int)
@@ -76,7 +78,7 @@ interface TransactionRepository {
     // this list for good.
     suspend fun uncategorized(ownerId: String): List<Transaction> = all(ownerId).filter { it.category == null }
 
-    suspend fun updateCategories(ownerId: String, categorized: Map<String, TransactionCategory>)
+    suspend fun updateCategories(ownerId: String, categorized: Map<String, String>)
 
     // Wipes every transaction (and, since categories/analysis live on the
     // transaction record rather than a separate collection, everything
@@ -126,10 +128,10 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
         return snapshot.documents.map { toTransaction(it.id, it.data) }
     }
 
-    override suspend fun updateCategories(ownerId: String, categorized: Map<String, TransactionCategory>) {
+    override suspend fun updateCategories(ownerId: String, categorized: Map<String, String>) {
         if (categorized.isEmpty()) return
         val batch = firestore.batch()
-        categorized.forEach { (id, category) -> batch.update(collection.document(id), mapOf("category" to category.name)) }
+        categorized.forEach { (id, category) -> batch.update(collection.document(id), mapOf("category" to category)) }
         batch.commit().get()
     }
 
@@ -164,6 +166,6 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
         date = LocalDate.parse(data["date"] as? String ?: "1970-01-01"),
         description = data["description"] as? String ?: "",
         amount = (data["amount"] as? Number)?.toDouble() ?: 0.0,
-        category = (data["category"] as? String)?.let { runCatching { TransactionCategory.valueOf(it) }.getOrNull() }
+        category = data["category"] as? String
     )
 }

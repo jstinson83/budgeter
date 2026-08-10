@@ -52,7 +52,8 @@ fun ApplicationTestBuilder.testModule(
     sessionSecret: String = "test-session-secret",
     transactionStore: TransactionRepository = FakeTransactionRepository(),
     transactionCategorizer: TransactionCategorizer = FakeTransactionCategorizer(),
-    categorizationRuleStore: CategorizationRuleRepository = FakeCategorizationRuleRepository()
+    categorizationRuleStore: CategorizationRuleRepository = FakeCategorizationRuleRepository(),
+    categoryStore: CategoryRepository = FakeCategoryRepository()
 ) {
     application {
         module(
@@ -61,7 +62,8 @@ fun ApplicationTestBuilder.testModule(
             sessionSecret = sessionSecret,
             transactionStore = transactionStore,
             transactionCategorizer = transactionCategorizer,
-            categorizationRuleStore = categorizationRuleStore
+            categorizationRuleStore = categorizationRuleStore,
+            categoryStore = categoryStore
         )
     }
 }
@@ -111,7 +113,7 @@ class FakeTransactionRepository : TransactionRepository {
     override suspend fun all(ownerId: String): List<Transaction> =
         transactions.filter { it.ownerId == ownerId }.sortedByDescending { it.date }
 
-    override suspend fun updateCategories(ownerId: String, categorized: Map<String, TransactionCategory>) {
+    override suspend fun updateCategories(ownerId: String, categorized: Map<String, String>) {
         for (i in transactions.indices) {
             val transaction = transactions[i]
             val category = categorized[transaction.id] ?: continue
@@ -131,22 +133,62 @@ class FakeCategorizationRuleRepository : CategorizationRuleRepository {
 
     override suspend fun all(ownerId: String): List<CategorizationRule> = rules.filter { it.ownerId == ownerId }
 
-    override suspend fun add(ownerId: String, pattern: String, matchType: MatchType, category: TransactionCategory): CategorizationRule {
+    override suspend fun add(ownerId: String, pattern: String, matchType: MatchType, category: String): CategorizationRule {
         val rule = CategorizationRule("rule-${nextId++}", ownerId, pattern, matchType, category)
         rules += rule
         return rule
+    }
+
+    override suspend fun update(ownerId: String, id: String, pattern: String, matchType: MatchType, category: String): CategorizationRule? {
+        val index = rules.indexOfFirst { it.id == id && it.ownerId == ownerId }
+        if (index == -1) return null
+        val updated = CategorizationRule(id, ownerId, pattern, matchType, category)
+        rules[index] = updated
+        return updated
+    }
+
+    override suspend fun delete(ownerId: String, id: String) {
+        rules.removeAll { it.id == id && it.ownerId == ownerId }
+    }
+}
+
+// In-memory stand-in for FirestoreCategoryStore - mirrors its lazy
+// per-owner seeding (BUILT_IN_CATEGORIES) and slug generation so tests
+// exercise the same ids/behavior the real store would.
+class FakeCategoryRepository : CategoryRepository {
+    private val categories = mutableListOf<Category>()
+
+    override suspend fun all(ownerId: String): List<Category> {
+        val existing = categories.filter { it.ownerId == ownerId }
+        if (existing.isNotEmpty()) return existing
+        val seeded = BUILT_IN_CATEGORIES.map { (id, label) -> Category(id, ownerId, label, active = true) }
+        categories += seeded
+        return seeded
+    }
+
+    override suspend fun add(ownerId: String, label: String): Category {
+        val existingIds = all(ownerId).map { it.id }.toSet()
+        val category = Category(uniqueSlug(label, existingIds), ownerId, label, active = true)
+        categories += category
+        return category
+    }
+
+    override suspend fun setActive(ownerId: String, id: String, active: Boolean) {
+        all(ownerId) // ensures seeding has happened before the lookup below
+        val index = categories.indexOfFirst { it.ownerId == ownerId && it.id == id }
+        if (index != -1) categories[index] = categories[index].copy(active = active)
     }
 }
 
 // Counts how many times categorize() is actually called, so tests can
 // assert that already-categorized transactions never get re-sent to
 // Gemini - the "don't duplicate analysis" requirement.
-class FakeTransactionCategorizer(private val category: TransactionCategory = TransactionCategory.OTHER) : TransactionCategorizer {
+class FakeTransactionCategorizer(private val categoryId: String = "OTHER") : TransactionCategorizer {
     var callCount: Int = 0
         private set
 
-    override suspend fun categorize(transactions: List<Transaction>): Map<String, TransactionCategory> {
+    override suspend fun categorize(transactions: List<Transaction>, categories: List<Category>): Map<String, String> {
         callCount++
-        return transactions.associate { it.id to category }
+        return transactions.associate { it.id to categoryId }
     }
 }

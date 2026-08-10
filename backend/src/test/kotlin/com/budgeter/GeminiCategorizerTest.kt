@@ -15,6 +15,9 @@ class GeminiCategorizerTest {
     private fun transaction(id: String, description: String, amount: Double): Transaction =
         Transaction(id, "owner", AccountType.BANK, LocalDate.of(2026, 1, 15), description, amount)
 
+    private fun categories(vararg ids: String): List<Category> =
+        ids.map { Category(it, "owner", it) }
+
     // encodeDefaults = true here mirrors Application.kt's real
     // geminiHttpClient config - see testRequestBodyIncludesSchemaTypeFields...
     // below for why that setting matters.
@@ -37,10 +40,10 @@ class GeminiCategorizerTest {
             """{"candidates":[{"content":{"parts":[{"text":"[{\"index\":0,\"category\":\"GROCERIES\"},{\"index\":1,\"category\":\"INCOME\"}]"}]},"finishReason":"STOP"}]}"""
         )
 
-        val result = GeminiTransactionCategorizer(client, "fake-key").categorize(transactions)
+        val result = GeminiTransactionCategorizer(client, "fake-key").categorize(transactions, categories("GROCERIES", "INCOME"))
 
-        assertEquals(TransactionCategory.GROCERIES, result["tx-1"])
-        assertEquals(TransactionCategory.INCOME, result["tx-2"])
+        assertEquals("GROCERIES", result["tx-1"])
+        assertEquals("INCOME", result["tx-2"])
     }
 
     @Test
@@ -54,7 +57,7 @@ class GeminiCategorizerTest {
         val client = mockClientRespondingWith("""{"candidates":[{"finishReason":"MAX_TOKENS"}]}""")
 
         val exception = assertFailsWith<IllegalStateException> {
-            GeminiTransactionCategorizer(client, "fake-key").categorize(transactions)
+            GeminiTransactionCategorizer(client, "fake-key").categorize(transactions, categories("GROCERIES"))
         }
         assertTrue(exception.message!!.contains("MAX_TOKENS"))
     }
@@ -66,7 +69,7 @@ class GeminiCategorizerTest {
             """{"candidates":[{"content":{"parts":[{"text":"[{\"index\":5,\"category\":\"GROCERIES\"}]"}]},"finishReason":"STOP"}]}"""
         )
 
-        val result = GeminiTransactionCategorizer(client, "fake-key").categorize(transactions)
+        val result = GeminiTransactionCategorizer(client, "fake-key").categorize(transactions, categories("GROCERIES"))
 
         assertTrue(result.isEmpty())
     }
@@ -87,7 +90,7 @@ class GeminiCategorizerTest {
         )
 
         val exception = assertFailsWith<IllegalStateException> {
-            GeminiTransactionCategorizer(client, "fake-key").categorize(transactions)
+            GeminiTransactionCategorizer(client, "fake-key").categorize(transactions, categories("GROCERIES"))
         }
         assertTrue(exception.message!!.contains("400"))
         assertTrue(exception.message!!.contains("API key not valid"))
@@ -120,7 +123,7 @@ class GeminiCategorizerTest {
             }
         }
 
-        GeminiTransactionCategorizer(client, "fake-key").categorize(transactions)
+        GeminiTransactionCategorizer(client, "fake-key").categorize(transactions, categories("GROCERIES"))
 
         val body = assertNotNull(capturedRequestBody)
         assertTrue(body.contains(""""type":"ARRAY""""), "expected the outer response schema's type to be present: $body")
@@ -129,10 +132,13 @@ class GeminiCategorizerTest {
     }
 
     @Test
-    fun testTransferCategoryIsNotOfferedToGemini() = runBlocking {
-        // TRANSFER is assigned deterministically by TransferMatcher from a
-        // description+amount+date match, never guessed by Gemini from free
-        // text - it must not appear in the schema's allowed enum values.
+    fun testSchemaEnumReflectsExactlyTheGivenCategoriesNothingHardcoded() = runBlocking {
+        // Categories are per-owner and dynamic now (CategoryStore.kt), not
+        // a fixed enum the categorizer knows about - the schema's allowed
+        // values must come entirely from what the caller passes in.
+        // TRANSFER in particular is never a real Category row (assigned
+        // only by TransferMatcher), so a caller would never pass it, and it
+        // must not leak in some other way.
         var capturedRequestBody: String? = null
         val transactions = listOf(transaction("tx-1", "Metro Grocery", -42.10))
         val client = HttpClient(MockEngine) {
@@ -149,10 +155,13 @@ class GeminiCategorizerTest {
             }
         }
 
-        GeminiTransactionCategorizer(client, "fake-key").categorize(transactions)
+        GeminiTransactionCategorizer(client, "fake-key").categorize(transactions, categories("GROCERIES", "DINING_OUT"))
 
         val body = assertNotNull(capturedRequestBody)
-        assertFalse(body.contains("TRANSFER"), "expected TRANSFER to be excluded from the enum sent to Gemini: $body")
+        assertTrue(body.contains("GROCERIES"))
+        assertTrue(body.contains("DINING_OUT"))
+        assertFalse(body.contains("TRANSFER"), "expected TRANSFER to never appear in the enum sent to Gemini: $body")
+        assertFalse(body.contains("INCOME"), "expected only the given categories to appear in the enum sent to Gemini: $body")
     }
 
     @Test
@@ -163,7 +172,7 @@ class GeminiCategorizerTest {
         }
 
         val exception = assertFailsWith<IllegalStateException> {
-            GeminiTransactionCategorizer(client, "").categorize(transactions)
+            GeminiTransactionCategorizer(client, "").categorize(transactions, categories("GROCERIES"))
         }
         assertTrue(exception.message!!.contains("GEMINI_API_KEY"))
     }

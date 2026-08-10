@@ -26,8 +26,8 @@ object TransferMatcher {
     private const val DATE_WINDOW_DAYS = 5L
 
     // Keyed by transaction id; every matched transaction (both legs of every
-    // matched pair) maps to TransactionCategory.TRANSFER.
-    fun match(transactions: List<Transaction>): Map<String, TransactionCategory> {
+    // matched pair) maps to TRANSFER_CATEGORY_ID.
+    fun match(transactions: List<Transaction>): Map<String, String> {
         val bankCandidates = transactions.filter {
             it.accountType == AccountType.BANK && it.amount < 0 &&
                 it.description.contains(BANK_TRANSFER_MARKER, ignoreCase = true)
@@ -44,11 +44,11 @@ object TransferMatcher {
         val bankMatchCounts = plausiblePairs.groupingBy { it.first.id }.eachCount()
         val creditCardMatchCounts = plausiblePairs.groupingBy { it.second.id }.eachCount()
 
-        val matches = mutableMapOf<String, TransactionCategory>()
+        val matches = mutableMapOf<String, String>()
         for ((bank, creditCard) in plausiblePairs) {
             if (bankMatchCounts[bank.id] == 1 && creditCardMatchCounts[creditCard.id] == 1) {
-                matches[bank.id] = TransactionCategory.TRANSFER
-                matches[creditCard.id] = TransactionCategory.TRANSFER
+                matches[bank.id] = TRANSFER_CATEGORY_ID
+                matches[creditCard.id] = TRANSFER_CATEGORY_ID
             }
         }
         return matches
