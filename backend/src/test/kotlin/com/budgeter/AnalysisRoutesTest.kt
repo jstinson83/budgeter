@@ -67,6 +67,42 @@ class AnalysisRoutesTest {
     }
 
     @Test
+    fun testNetChangeExcludesInvestmentsFromTheMonthTotal() = testApplication {
+        val categorizer = FakeTransactionCategorizer("OTHER")
+        testModule(transactionCategorizer = categorizer)
+        val client = signInFakeUser()
+
+        client.importCsv(
+            "2026-06-05,Metro Grocery,42.10,,957.90\n" +
+                "2026-06-10,Payroll,,2500.00,3457.90\n" +
+                "2026-06-15,Brokerage Contribution,300.00,,3157.90"
+        )
+        client.post("/analysis/categorize")
+
+        // Move the investment contribution out of OTHER (where the fake
+        // categorizer dumped everything) and into INVESTMENT, the only
+        // category the net change figure should ignore.
+        val otherPage = client.get("/analysis/category/other?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        val investmentItem = Regex("""<div class="transaction-item">.*?</form>""", RegexOption.DOT_MATCHES_ALL)
+            .findAll(otherPage.bodyAsText())
+            .map { it.value }
+            .first { it.contains("Brokerage Contribution") }
+        val transactionId = Regex("""name="transactionId" value="([^"]+)"""").find(investmentItem)!!.groupValues[1]
+        client.post("/analysis/recategorize") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("transactionId=$transactionId&category=INVESTMENT&matchType=EXACT&pattern=Brokerage Contribution&fromSlug=other&year=2026&month=6")
+        }
+
+        val page = client.get("/analysis?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        val body = page.bodyAsText()
+        // Grocery (-42.10) and payroll (+2500.00) net to +2457.90; the $300
+        // investment contribution is excluded from this figure even though
+        // it still shows as its own category row below.
+        assertTrue(body.contains("""<span class="transaction-amount month-summary-amount transaction-amount-positive">+2457.90</span>"""))
+        assertTrue(body.contains("Investment"))
+    }
+
+    @Test
     fun testCategorizingTwiceDoesNotReanalyzeAlreadyCategorizedTransactions() = testApplication {
         val categorizer = FakeTransactionCategorizer("GROCERIES")
         testModule(transactionCategorizer = categorizer)
