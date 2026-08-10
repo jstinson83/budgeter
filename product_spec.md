@@ -167,7 +167,8 @@ Household
 │   ├── Expenses
 │   ├── Investments
 │   ├── Debt
-│   └── Cash Flow
+│   ├── Cash Flow
+│   └── Budgets & Goals
 │
 ├── Projects
 │   ├── Renovations
@@ -207,6 +208,23 @@ Instead of browsing records, users ask questions.
 Not: "Housing increased 4%."
 
 Instead: "Your expenses increased primarily because of the kitchen renovation and higher insurance premiums. Your baseline spending excluding projects has remained stable."
+
+### Budgeting assistant
+
+Goals are user-set targets on top of the financial model, not another derived insight - "don't spend more than $X in this category this month," a savings target, a debt paydown pace.
+
+**Q:** "How are we doing on our grocery budget this month?"
+
+**A:** "You've spent $612 of your $700 grocery budget with 9 days left in the month - on pace to come in under, unless the last week runs above your usual rate."
+
+Proactively, not just on request: "You're at 90% of your dining-out budget with a week left in the month."
+
+It knows:
+
+- category spending limits (monthly, recurring)
+- savings/investment targets
+- debt payoff goals and pace
+- progress against each, computed from the same categorized transaction history the financial assistant already reasons over
 
 ### Decision assistant
 
@@ -354,6 +372,7 @@ Add:
 
 - proactive reminders
 - financial insights
+- budgeting goals (category spending limits, savings/debt targets, progress tracking)
 - renovation planning
 - vendor recommendations
 
