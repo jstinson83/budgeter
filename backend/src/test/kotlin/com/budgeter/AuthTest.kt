@@ -49,16 +49,12 @@ class AuthTest {
 
         val client = signInFakeUser()
 
-        // "/" is now just a redirect to the /analysis landing page for a
-        // signed-in user - the actual page content lives at /analysis.
+        // "/" now renders the dashboard directly for a signed-in user
+        // (DashboardRoutes.kt) rather than redirecting to /analysis.
         val homeResponse = client.get("/") { header(HttpHeaders.Accept, "text/html") }
-        assertEquals(HttpStatusCode.Found, homeResponse.status)
-        assertEquals("/analysis", homeResponse.headers[HttpHeaders.Location])
-
-        val analysisResponse = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
-        assertEquals(HttpStatusCode.OK, analysisResponse.status)
-        assertTrue(analysisResponse.bodyAsText().contains("Sign out"), "Nav should show sign-out once authenticated")
-        assertTrue(analysisResponse.bodyAsText().contains("Person"), "Nav should show the signed-in user's name")
+        assertEquals(HttpStatusCode.OK, homeResponse.status)
+        assertTrue(homeResponse.bodyAsText().contains("Sign out"), "Nav should show sign-out once authenticated")
+        assertTrue(homeResponse.bodyAsText().contains("Person"), "Nav should show the signed-in user's name")
     }
 
     @Test

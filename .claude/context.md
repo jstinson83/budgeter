@@ -299,6 +299,49 @@ compile-time set, so a household can add its own categories from the UI.
   (`/analysis/recategorize` and `/categories/rules`) apply the same "target
   must be one of the owner's own active categories" validation.
 
+## Sixth feature: dashboard landing page (`/`)
+
+`/` now renders a real summary page (`DashboardPage.kt`/`DashboardRoutes.kt`,
+`dashboard.ftl`) instead of just redirecting to `/analysis` - the first
+"section" of the Household OS dashboard concept from `product_spec.md`, with
+room for other domains (assets, maintenance, ...) to become additional
+sections later rather than additional top-level pages. `/analysis` is
+unchanged and still does the calendar-month category breakdown/drill-down;
+the dashboard links out to it rather than replacing it.
+
+Three parts, all computed on the fly from `all(ownerId)` (no new
+precomputed/cron layer, same "quick version first" posture as `/analysis`):
+
+- **Net position**: `Transaction.balance` (see below) on each account type's
+  most-recent-dated row is that account's "current" balance. Net position =
+  Bank balance (an asset) minus Credit Card and LOC balances (liabilities,
+  matching how TD's own statement export reports them) -
+  `DashboardPage.kt`'s `netPosition`/`latestBalances`. An account type with
+  no captured balance yet is left out of the total rather than assumed to be
+  zero.
+- **Coverage**: per account type, earliest/latest transaction date, days
+  since the last import (flagged stale past 35 days), and any internal gap
+  longer than 21 days between consecutive transactions surfaced as a
+  "possible missing statement" - a proxy, not a certainty, since a real
+  account can legitimately go quiet for a few weeks (`accountCoverage`).
+- **Trends**: deterministic, not Gemini-generated - a 6-month net-change bar
+  series (same TRANSFER/INVESTMENT exclusions as `/analysis`'s net change),
+  categories whose current-month spend jumped meaningfully vs. their own
+  trailing 3-month average (`categoryMovers`, with a $20 baseline floor so a
+  tiny category's noise doesn't read as a dramatic swing), and the single
+  biggest expense this month (`biggestExpense`).
+
+**`Transaction.balance: Double?`** (`TransactionStore.kt`) is new - the CSV's
+5th column, previously parsed and discarded entirely
+(`CsvTransactionParser.kt`), is now kept as the account's running balance as
+of that row. Nullable rather than a parse error on a bad/missing value -
+it's a dashboard-summary convenience, not something import correctness
+depends on. Existing Firestore documents written before this field existed
+read back as `null`, so net position won't show for an account until its
+statement is re-imported at least once past this change - a "going forward"
+gap in the same shape as the CSV import format's other backward-compat
+fallbacks (see `CLAUDE.md`'s Firestore gotchas section), not a bug to chase.
+
 ## Configuration reference
 
 Concrete IDs and config values — the single source of truth for these

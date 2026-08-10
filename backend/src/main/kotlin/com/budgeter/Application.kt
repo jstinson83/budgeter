@@ -82,9 +82,7 @@ fun Application.module(
         authRoutes(oauthClient)
 
         authenticate(USER_SESSION_PROVIDER_NAME) {
-            get("/") {
-                call.respondRedirect("/analysis")
-            }
+            dashboardRoutes(transactionStore, categoryStore)
 
             transactionRoutes(transactionStore)
             analysisRoutes(transactionStore, transactionCategorizer, categorizationRuleStore, categoryStore)

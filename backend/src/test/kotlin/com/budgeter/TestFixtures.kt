@@ -103,7 +103,7 @@ class FakeTransactionRepository : TransactionRepository {
                 duplicateCount++
                 continue
             }
-            val transaction = Transaction(fingerprint, ownerId, parsed.accountType, parsed.date, parsed.description, parsed.amount)
+            val transaction = Transaction(fingerprint, ownerId, parsed.accountType, parsed.date, parsed.description, parsed.amount, balance = parsed.balance)
             stored += transaction
             this.transactions += transaction
         }

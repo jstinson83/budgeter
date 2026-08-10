@@ -7,7 +7,19 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
-data class ParsedTransaction(val rowNumber: Int, val accountType: AccountType, val date: LocalDate, val description: String, val amount: Double)
+// balance is the account's running balance as of this row, straight off the
+// statement - nullable (rather than a parse error) since it's a
+// dashboard-summary convenience, not something the import itself depends on;
+// an unparseable or absent value just means no balance snapshot for this row,
+// same as pre-this-feature behavior for every existing row.
+data class ParsedTransaction(
+    val rowNumber: Int,
+    val accountType: AccountType,
+    val date: LocalDate,
+    val description: String,
+    val amount: Double,
+    val balance: Double? = null
+)
 
 data class CsvRowError(val rowNumber: Int, val rawLine: String, val reason: String)
 
@@ -20,7 +32,9 @@ data class CsvParseResult(val transactions: List<ParsedTransaction>, val errors:
 // row - the other is blank. moneyOut becomes a negative amount (money
 // leaving the account - a purchase, on either account type), moneyIn a
 // positive one (money coming in - a deposit on a bank account, a payment on
-// a credit card); balance is discarded. The CSV itself never states which
+// a credit card); balance is kept as the row's running balance (see
+// ParsedTransaction.balance) rather than discarded, for the dashboard's net
+// position summary. The CSV itself never states which
 // account it came from, so the caller passes accountType based on what the
 // user selected at upload time.
 //
@@ -108,7 +122,9 @@ object CsvTransactionParser {
                     continue
                 }
 
-                transactions += ParsedTransaction(rowNumber, accountType, date, record.get(1), amount)
+                val balance = record.get(4).toDoubleOrNull()
+
+                transactions += ParsedTransaction(rowNumber, accountType, date, record.get(1), amount, balance)
             }
         }
 
