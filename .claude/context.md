@@ -89,10 +89,16 @@ photo/document-capture features will reuse.
 
 `/analysis` — category totals for a calendar month, paged one month at a
 time (Prev/Next), with a button to categorize any new transactions via
-Gemini. Clicking a category total drills into
-`/analysis/category/{slug}?year=&month=` (`{slug}` is the category's
-lowercase enum name, or the literal `uncategorized` for a null category),
-listing that category's individual transactions for the same month -
+Gemini. It's also the app's landing page: `GET /` (`Application.kt`) just
+redirects here rather than rendering its own content - `home.ftl` was
+deleted as unused once nothing pointed at it. Clicking a category total
+drills into `/analysis/category/{slug}?year=&month=` (`{slug}` is the
+category's lowercase enum name, or the literal `uncategorized` for a null
+category), listing that category's individual transactions for the same
+month, with the same category total repeated at the top of the page
+(`analysisCategoryPageModel` in `AnalysisPage.kt` recomputes it from the
+same filtered transaction list, rather than passing it through from
+`/analysis`) -
 `AnalysisRoutes.kt`'s `resolveYearMonth` is the single place both routes
 (and the categorize POST, which carries the viewed month via hidden form
 fields so its redirect doesn't jump back to the current month) resolve

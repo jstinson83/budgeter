@@ -66,17 +66,25 @@ fun analysisCategoryPageModel(
     month: Int,
     categorySlug: String,
     categoryOptions: List<Category>
-): Map<String, Any?> = mapOf(
-    "transactions" to transactions.sortedByDescending { it.date }.map(::transactionRowModel),
-    "categoryLabel" to categoryLabel,
-    "monthLabel" to monthLabel,
-    "backHref" to backHref,
-    "year" to year,
-    "month" to month,
-    "categorySlug" to categorySlug,
-    // Only active categories are offered as a recategorize target - a
-    // disabled category can still be viewed (its past transactions keep
-    // their assignment) but shouldn't collect new ones. TRANSFER never
-    // appears here since it isn't a real Category row to begin with.
-    "categoryOptions" to categoryOptions.filter { it.active }.map { mapOf("name" to it.id, "label" to it.label) }
-)
+): Map<String, Any?> {
+    val total = transactions.sumOf { it.amount }
+    return mapOf(
+        "transactions" to transactions.sortedByDescending { it.date }.map(::transactionRowModel),
+        "categoryLabel" to categoryLabel,
+        "monthLabel" to monthLabel,
+        "backHref" to backHref,
+        "year" to year,
+        "month" to month,
+        "categorySlug" to categorySlug,
+        // Same total shown on this category's row on /analysis - recomputed
+        // here from the same filtered transaction list rather than passed
+        // through, since the route already has it in scope.
+        "total" to formatSignedAmount(total),
+        "totalClass" to amountClass(total),
+        // Only active categories are offered as a recategorize target - a
+        // disabled category can still be viewed (its past transactions keep
+        // their assignment) but shouldn't collect new ones. TRANSFER never
+        // appears here since it isn't a real Category row to begin with.
+        "categoryOptions" to categoryOptions.filter { it.active }.map { mapOf("name" to it.id, "label" to it.label) }
+    )
+}

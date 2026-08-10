@@ -11,7 +11,7 @@
     <#include "_nav.ftl">
 
     <a href="${backHref}" class="back-link">&larr; ${monthLabel}</a>
-    <h1>${categoryLabel}</h1>
+    <h1>${categoryLabel} <span class="transaction-amount ${totalClass}">${total}</span></h1>
 
     <#if (transactions?size == 0)>
     <p class="empty-state">No transactions in this category for this period.</p>
