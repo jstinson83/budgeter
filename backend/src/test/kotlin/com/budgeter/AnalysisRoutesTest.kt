@@ -83,11 +83,15 @@ class AnalysisRoutesTest {
         // categorizer dumped everything) and into INVESTMENT, the only
         // category the net change figure should ignore.
         val otherPage = client.get("/analysis/category/other?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
-        val investmentItem = Regex("""<div class="transaction-item">.*?</form>""", RegexOption.DOT_MATCHES_ALL)
-            .findAll(otherPage.bodyAsText())
-            .map { it.value }
-            .first { it.contains("Brokerage Contribution") }
-        val transactionId = Regex("""name="transactionId" value="([^"]+)"""").find(investmentItem)!!.groupValues[1]
+        // Each row is a button that opens its own dialog by id
+        // (data-open-dialog="recategorize-{transactionId}") - matching that
+        // attribute right before the row's own description text finds the
+        // id for this specific transaction rather than just the first one
+        // on the page.
+        val transactionId = Regex(
+            """data-open-dialog="recategorize-([^"]+)">.*?Brokerage Contribution""",
+            RegexOption.DOT_MATCHES_ALL
+        ).find(otherPage.bodyAsText())!!.groupValues[1]
         client.post("/analysis/recategorize") {
             contentType(ContentType.Application.FormUrlEncoded)
             setBody("transactionId=$transactionId&category=INVESTMENT&matchType=EXACT&pattern=Brokerage Contribution&fromSlug=other&year=2026&month=6")
@@ -100,6 +104,9 @@ class AnalysisRoutesTest {
         // it still shows as its own category row below.
         assertTrue(body.contains("""<span class="transaction-amount month-summary-amount transaction-amount-positive">+2457.90</span>"""))
         assertTrue(body.contains("Investment"))
+        // The investment row itself is a real (negative) outflow, but it
+        // shouldn't be styled like an expense - neutral color, not red.
+        assertTrue(body.contains("""<span class="transaction-amount transaction-amount-neutral">-300.00</span>"""))
     }
 
     @Test

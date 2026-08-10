@@ -39,7 +39,12 @@ fun analysisPageModel(
                 "category" to (categoryId?.let { labelById[it] ?: it } ?: "Uncategorized"),
                 "total" to formatSignedAmount(total),
                 "count" to count,
-                "totalClass" to amountClass(total),
+                // INVESTMENT total is a checking-account outflow, so it's
+                // always negative - but red/"expense" styling reads as
+                // spending, which it isn't (already excluded from
+                // netChange above). Neutral color instead of amountClass's
+                // red/green so the row doesn't look like a loss.
+                "totalClass" to if (categoryId == INVESTMENT_CATEGORY_ID) "transaction-amount-neutral" else amountClass(total),
                 "href" to "/analysis/category/$slug?year=$year&month=$month"
             )
         }
@@ -77,6 +82,10 @@ fun analysisCategoryPageModel(
     categoryOptions: List<Category>
 ): Map<String, Any?> {
     val total = transactions.sumOf { it.amount }
+    // Same neutral-styling reasoning as the category row on /analysis
+    // itself (analysisPageModel above) - this drill-down's own total
+    // shouldn't read as an expense either.
+    val isInvestment = categorySlug.equals(INVESTMENT_CATEGORY_ID, ignoreCase = true)
     return mapOf(
         "transactions" to transactions.sortedByDescending { it.date }.map(::transactionRowModel),
         "categoryLabel" to categoryLabel,
@@ -89,7 +98,7 @@ fun analysisCategoryPageModel(
         // here from the same filtered transaction list rather than passed
         // through, since the route already has it in scope.
         "total" to formatSignedAmount(total),
-        "totalClass" to amountClass(total),
+        "totalClass" to if (isInvestment) "transaction-amount-neutral" else amountClass(total),
         // Only active categories are offered as a recategorize target - a
         // disabled category can still be viewed (its past transactions keep
         // their assignment) but shouldn't collect new ones. TRANSFER never
