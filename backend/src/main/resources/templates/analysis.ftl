@@ -17,14 +17,16 @@
     <p class="banner-error">${error}</p>
     </#if>
 
-    <div class="period-tabs">
-      <a href="/analysis?period=week" class="period-tab<#if period == 'week'> period-tab-active</#if>">Last week</a>
-      <a href="/analysis?period=month" class="period-tab<#if period == 'month'> period-tab-active</#if>">Last month</a>
-      <a href="/analysis?period=year" class="period-tab<#if period == 'year'> period-tab-active</#if>">Last year</a>
+    <div class="month-nav">
+      <a href="${prevHref}" class="month-nav-arrow" aria-label="Previous month">&larr;</a>
+      <span class="month-nav-label">${monthLabel}</span>
+      <a href="${nextHref}" class="month-nav-arrow" aria-label="Next month">&rarr;</a>
     </div>
 
     <#if uncategorizedCount gt 0>
     <form method="post" action="/analysis/categorize" class="upload-form">
+      <input type="hidden" name="year" value="${year?c}">
+      <input type="hidden" name="month" value="${month?c}">
       <button type="submit" class="button">Process ${uncategorizedCount} new transaction(s)</button>
     </form>
     </#if>
@@ -34,10 +36,10 @@
     <#else>
     <div class="transaction-list">
       <#list categoryTotals as row>
-      <div class="transaction-row">
+      <a href="${row.href}" class="transaction-row transaction-row-link">
         <span class="transaction-description">${row.category} <span class="category-count">(${row.count})</span></span>
         <span class="transaction-amount ${row.totalClass}">${row.total}</span>
-      </div>
+      </a>
       </#list>
     </div>
     </#if>

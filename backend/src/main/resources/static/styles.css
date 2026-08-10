@@ -255,14 +255,15 @@ body {
 
 /* Analysis */
 
-.period-tabs {
+.month-nav {
   display: flex;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 1rem;
   margin-bottom: 1.5rem;
 }
 
-.period-tab {
-  padding: 0.4rem 0.8rem;
+.month-nav-arrow {
+  padding: 0.3rem 0.7rem;
   border-radius: 999px;
   text-decoration: none;
   color: inherit;
@@ -271,17 +272,30 @@ body {
 }
 
 @media (prefers-color-scheme: dark) {
-  .period-tab {
+  .month-nav-arrow {
     background: #1e2126;
   }
 }
 
-.period-tab-active {
-  background: #2563eb;
-  color: white;
+.month-nav-label {
+  font-weight: 600;
+  min-width: 10rem;
+  text-align: center;
 }
 
 .category-count {
   color: #888;
   font-size: 0.85rem;
+}
+
+.transaction-row-link {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 1rem;
+  color: inherit;
 }

@@ -9,19 +9,21 @@ fun amountClass(amount: Double): String = if (amount < 0) "transaction-amount-ne
 
 // FreeMarker's default object wrapper can't stringify java.time.LocalDate
 // (or Kotlin data classes generally) on its own, so - same as foodie's
-// *PageModel builders - this flattens each Transaction into a plain
-// Map<String, Any?> of already-display-ready values before it reaches the
-// template.
+// *PageModel builders - this flattens a Transaction into a plain
+// Map<String, Any?> of already-display-ready values before it reaches a
+// template. Shared between transactionsPageModel and
+// AnalysisPage.kt's analysisCategoryPageModel - both render the same
+// date/description/account/amount row shape.
+fun transactionRowModel(transaction: Transaction): Map<String, Any?> = mapOf(
+    "date" to transaction.date.toString(),
+    "description" to transaction.description,
+    "accountType" to transaction.accountType.label,
+    "amount" to formatSignedAmount(transaction.amount),
+    "amountClass" to amountClass(transaction.amount)
+)
+
 fun transactionsPageModel(transactions: List<Transaction>, message: String?, error: String?): Map<String, Any?> = mapOf(
-    "transactions" to transactions.map {
-        mapOf(
-            "date" to it.date.toString(),
-            "description" to it.description,
-            "accountType" to it.accountType.label,
-            "amount" to formatSignedAmount(it.amount),
-            "amountClass" to amountClass(it.amount)
-        )
-    },
+    "transactions" to transactions.map(::transactionRowModel),
     "message" to message,
     "error" to error
 )

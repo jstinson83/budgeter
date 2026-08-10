@@ -87,12 +87,23 @@ photo/document-capture features will reuse.
   the mechanics and the formatting-change tradeoff.
 ## Second feature: Gemini spending analysis
 
-`/analysis` — category totals for the last week/month/year, with a button
-to categorize any new transactions via Gemini. Deliberately a "quick
-version": categorization is triggered by a button press and runs
-synchronously in the request, not a background/cron job. The maintainer
-has said they want a persistent, precomputed version later (a cron-job-like
-thing); this first pass intentionally doesn't build that yet.
+`/analysis` — category totals for a calendar month, paged one month at a
+time (Prev/Next), with a button to categorize any new transactions via
+Gemini. Clicking a category total drills into
+`/analysis/category/{slug}?year=&month=` (`{slug}` is the category's
+lowercase enum name, or the literal `uncategorized` for a null category),
+listing that category's individual transactions for the same month -
+`AnalysisRoutes.kt`'s `resolveYearMonth` is the single place both routes
+(and the categorize POST, which carries the viewed month via hidden form
+fields so its redirect doesn't jump back to the current month) resolve
+`year`/`month` from. Originally shipped as rolling "last week/month/year"
+windows from `LocalDate.now()`; replaced with calendar-month paging plus
+the drill-down page since the rolling windows were too coarse to actually
+browse spending by. Deliberately a "quick version" otherwise:
+categorization is triggered by a button press and runs synchronously in
+the request, not a background/cron job. The maintainer has said they want
+a persistent, precomputed version later (a cron-job-like thing); this
+first pass intentionally doesn't build that yet.
 
 - `Transaction.category: TransactionCategory?` (`TransactionStore.kt`) is
   null until categorized. `TransactionCategory` is a fixed enum (groceries,
@@ -116,9 +127,9 @@ thing); this first pass intentionally doesn't build that yet.
   (see `CLAUDE.md`'s deploy pipeline section - same manual-env-var pattern
   as the OAuth secrets). Thinking is explicitly disabled
   (`thinkingConfig.thinkingBudget = 0`) - see CLAUDE.md gotcha.
-- Periods ("last week/month/year") are rolling windows from today
-  (`LocalDate.now().minusWeeks(1)` etc.), not calendar-aligned (not
-  "this calendar month").
+- The viewed period is always one calendar month (`year`/`month` query
+  params, default to the current month) - no rolling-window or
+  all-time option.
 
 ## Third feature: bank/credit-card account labeling + transfer matching
 
