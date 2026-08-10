@@ -47,15 +47,30 @@ fun analysisPageModel(
 
 // Drill-down page behind a category row on /analysis - same
 // per-transaction row shape as /transactions (transactionRowModel), just
-// scoped to one category and month instead of everything.
+// scoped to one category and month instead of everything. Also carries what
+// the inline "Recategorize" form (see analysis-category.ftl and
+// AnalysisRoutes.kt's POST /analysis/recategorize) needs: year/month and
+// this page's own category slug to redirect back here afterward, plus the
+// pickable category list for its dropdown.
 fun analysisCategoryPageModel(
     transactions: List<Transaction>,
     categoryLabel: String,
     monthLabel: String,
-    backHref: String
+    backHref: String,
+    year: Int,
+    month: Int,
+    categorySlug: String
 ): Map<String, Any?> = mapOf(
     "transactions" to transactions.sortedByDescending { it.date }.map(::transactionRowModel),
     "categoryLabel" to categoryLabel,
     "monthLabel" to monthLabel,
-    "backHref" to backHref
+    "backHref" to backHref,
+    "year" to year,
+    "month" to month,
+    "categorySlug" to categorySlug,
+    // TRANSFER excluded - it's assigned only by TransferMatcher's
+    // deterministic amount/date pairing, never a manual/rule-based pick.
+    "categoryOptions" to TransactionCategory.entries
+        .filter { it != TransactionCategory.TRANSFER }
+        .map { mapOf("name" to it.name, "label" to it.label) }
 )

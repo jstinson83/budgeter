@@ -51,7 +51,8 @@ fun ApplicationTestBuilder.testModule(
     oauthRedirectBaseUrl: String = "http://localhost:8080",
     sessionSecret: String = "test-session-secret",
     transactionStore: TransactionRepository = FakeTransactionRepository(),
-    transactionCategorizer: TransactionCategorizer = FakeTransactionCategorizer()
+    transactionCategorizer: TransactionCategorizer = FakeTransactionCategorizer(),
+    categorizationRuleStore: CategorizationRuleRepository = FakeCategorizationRuleRepository()
 ) {
     application {
         module(
@@ -59,7 +60,8 @@ fun ApplicationTestBuilder.testModule(
             oauthRedirectBaseUrl = oauthRedirectBaseUrl,
             sessionSecret = sessionSecret,
             transactionStore = transactionStore,
-            transactionCategorizer = transactionCategorizer
+            transactionCategorizer = transactionCategorizer,
+            categorizationRuleStore = categorizationRuleStore
         )
     }
 }
@@ -119,6 +121,20 @@ class FakeTransactionRepository : TransactionRepository {
 
     override suspend fun deleteAll(ownerId: String) {
         transactions.removeAll { it.ownerId == ownerId }
+    }
+}
+
+// In-memory stand-in for FirestoreCategorizationRuleStore.
+class FakeCategorizationRuleRepository : CategorizationRuleRepository {
+    private val rules = mutableListOf<CategorizationRule>()
+    private var nextId = 0
+
+    override suspend fun all(ownerId: String): List<CategorizationRule> = rules.filter { it.ownerId == ownerId }
+
+    override suspend fun add(ownerId: String, pattern: String, matchType: MatchType, category: TransactionCategory): CategorizationRule {
+        val rule = CategorizationRule("rule-${nextId++}", ownerId, pattern, matchType, category)
+        rules += rule
+        return rule
     }
 }
 

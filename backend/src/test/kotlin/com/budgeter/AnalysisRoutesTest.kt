@@ -219,6 +219,74 @@ class AnalysisRoutesTest {
     }
 
     @Test
+    fun testRecategorizeUpdatesTheTransactionAndSavesARuleForFutureImports() = testApplication {
+        val categorizer = FakeTransactionCategorizer(TransactionCategory.OTHER)
+        testModule(transactionCategorizer = categorizer)
+        val client = signInFakeUser()
+
+        client.importCsv("2026-06-15,COFFEE SHOP 1234,4.50,,995.50")
+        client.post("/analysis/categorize")
+
+        val otherPage = client.get("/analysis/category/other?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        val transactionId = Regex("""name="transactionId" value="([^"]+)"""").find(otherPage.bodyAsText())!!.groupValues[1]
+
+        val recategorizeResponse = client.post("/analysis/recategorize") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("transactionId=$transactionId&category=DINING_OUT&matchType=SUBSTRING&pattern=COFFEE SHOP&fromSlug=other&year=2026&month=6")
+        }
+        val redirect = recategorizeResponse.headers[HttpHeaders.Location]!!
+        assertTrue(redirect.startsWith("/analysis/category/other"))
+        assertEquals("Recategorized as Dining Out", Url(redirect).parameters["message"])
+
+        val diningOutPage = client.get("/analysis/category/dining_out?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        assertTrue(diningOutPage.bodyAsText().contains("COFFEE SHOP 1234"))
+
+        // A second, differently-worded coffee-shop transaction should now be
+        // caught by the saved rule instead of falling through to Gemini.
+        client.importCsv("2026-06-20,COFFEE SHOP 5678,5.25,,990.25")
+        val secondCategorize = client.post("/analysis/categorize") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("year=2026&month=6")
+        }
+        val secondRedirect = secondCategorize.headers[HttpHeaders.Location]!!
+        assertEquals("Applied 1 rule(s)", Url(secondRedirect).parameters["message"])
+        // Called once for the first coffee transaction (no rule existed
+        // yet at that point) - not called again for the second, which the
+        // rule created from the first catches instead.
+        assertEquals(1, categorizer.callCount)
+    }
+
+    @Test
+    fun testRecategorizeRejectsATransactionThatDoesNotBelongToTheCaller() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.post("/analysis/recategorize") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("transactionId=not-mine&category=DINING_OUT&matchType=EXACT&pattern=COFFEE&fromSlug=other&year=2026&month=6")
+        }
+        val redirect = response.headers[HttpHeaders.Location]!!
+        assertEquals("Transaction not found", Url(redirect).parameters["error"])
+    }
+
+    @Test
+    fun testRecategorizeRejectsTransferAsATargetCategory() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        client.importCsv("2026-06-15,COFFEE SHOP,4.50,,995.50")
+        val otherPage = client.get("/analysis/category/uncategorized?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        val transactionId = Regex("""name="transactionId" value="([^"]+)"""").find(otherPage.bodyAsText())!!.groupValues[1]
+
+        val response = client.post("/analysis/recategorize") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("transactionId=$transactionId&category=TRANSFER&matchType=EXACT&pattern=COFFEE SHOP&fromSlug=uncategorized&year=2026&month=6")
+        }
+        val redirect = response.headers[HttpHeaders.Location]!!
+        assertEquals("Invalid recategorize request", Url(redirect).parameters["error"])
+    }
+
+    @Test
     fun testCategorizationFailureShowsErrorBanner() = testApplication {
         val failingCategorizer = object : TransactionCategorizer {
             override suspend fun categorize(transactions: List<Transaction>): Map<String, TransactionCategory> =

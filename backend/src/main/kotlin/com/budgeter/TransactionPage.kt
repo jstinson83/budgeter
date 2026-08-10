@@ -15,6 +15,7 @@ fun amountClass(amount: Double): String = if (amount < 0) "transaction-amount-ne
 // AnalysisPage.kt's analysisCategoryPageModel - both render the same
 // date/description/account/amount row shape.
 fun transactionRowModel(transaction: Transaction): Map<String, Any?> = mapOf(
+    "id" to transaction.id,
     "date" to transaction.date.toString(),
     "description" to transaction.description,
     "accountType" to transaction.accountType.label,

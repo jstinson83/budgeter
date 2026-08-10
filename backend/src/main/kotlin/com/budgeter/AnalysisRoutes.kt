@@ -32,7 +32,11 @@ private fun resolveYearMonth(params: Parameters): Pair<Int, Int> {
 private fun monthLabel(monthStart: LocalDate): String =
     "${monthStart.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${monthStart.year}"
 
-fun Route.analysisRoutes(transactionStore: TransactionRepository, transactionCategorizer: TransactionCategorizer) {
+fun Route.analysisRoutes(
+    transactionStore: TransactionRepository,
+    transactionCategorizer: TransactionCategorizer,
+    categorizationRuleStore: CategorizationRuleRepository
+) {
     get("/analysis") {
         val ownerId = call.requireUserId()
         val (year, month) = resolveYearMonth(call.request.queryParameters)
@@ -95,7 +99,10 @@ fun Route.analysisRoutes(transactionStore: TransactionRepository, transactionCat
             transactions,
             categoryLabel,
             monthLabel(monthStart),
-            backHref = "/analysis?year=$year&month=$month"
+            backHref = "/analysis?year=$year&month=$month",
+            year = year,
+            month = month,
+            categorySlug = slug
         ) + call.currentUserModel()
         call.respond(FreeMarkerContent("analysis-category.ftl", model))
     }
@@ -129,7 +136,19 @@ fun Route.analysisRoutes(transactionStore: TransactionRepository, transactionCat
             transactionStore.updateCategories(ownerId, transferMatches)
         }
 
-        val remaining = pending.filterNot { it.id in transferMatches }
+        // Household-defined rules (see CategorizationRuleMatcher) run next,
+        // also before Gemini - same "deterministic and free beats a guess
+        // that costs an API call" reasoning, just for patterns the user
+        // picked via the /analysis/category/{slug} "Recategorize" action
+        // instead of TransferMatcher's fixed templates.
+        val afterTransferMatch = pending.filterNot { it.id in transferMatches }
+        val rules = categorizationRuleStore.all(ownerId)
+        val ruleMatches = CategorizationRuleMatcher.match(rules, afterTransferMatch)
+        if (ruleMatches.isNotEmpty()) {
+            transactionStore.updateCategories(ownerId, ruleMatches)
+        }
+
+        val remaining = afterTransferMatch.filterNot { it.id in ruleMatches }
         val categorized = if (remaining.isEmpty()) emptyMap() else try {
             transactionCategorizer.categorize(remaining)
         } catch (e: Exception) {
@@ -141,16 +160,52 @@ fun Route.analysisRoutes(transactionStore: TransactionRepository, transactionCat
         }
 
         // transferMatches holds both legs of every matched pair, so its
-        // size is always even - divide by 2 for the pair count. Comma +
-        // lowercase continuation mirrors TransactionRoutes' "Imported N,
-        // skipped M" message style.
-        val message = buildString {
-            if (transferMatches.isNotEmpty()) append("Matched ${transferMatches.size / 2} transfer(s)")
-            if (remaining.isNotEmpty()) {
-                if (transferMatches.isNotEmpty()) append(", categorized ${categorized.size} of ${remaining.size} transaction(s)")
-                else append("Categorized ${categorized.size} of ${remaining.size} transaction(s)")
-            }
-        }
+        // size is always even - divide by 2 for the pair count.
+        val messageParts = mutableListOf<String>()
+        if (transferMatches.isNotEmpty()) messageParts += "Matched ${transferMatches.size / 2} transfer(s)"
+        if (ruleMatches.isNotEmpty()) messageParts += "Applied ${ruleMatches.size} rule(s)"
+        if (remaining.isNotEmpty()) messageParts += "Categorized ${categorized.size} of ${remaining.size} transaction(s)"
+        val message = messageParts.joinToString(", ")
         call.respondRedirect("/analysis?$monthParams&message=${message.encodeURLQueryComponent()}")
+    }
+
+    // Inline "Recategorize" action from an /analysis/category/{slug}
+    // drill-down row (analysis-category.ftl): fixes this one transaction
+    // immediately (it's already categorized - OTHER, or whatever the
+    // pending-transaction pass picked - so it won't come back through
+    // /analysis/categorize's uncategorized() pass on its own) and saves a
+    // CategorizationRule so the same description auto-applies going
+    // forward, without redoing this by hand every month.
+    post("/analysis/recategorize") {
+        val ownerId = call.requireUserId()
+        val formParams = call.receiveParameters()
+        val fromSlug = formParams["fromSlug"] ?: "uncategorized"
+        val (year, month) = resolveYearMonth(formParams)
+        val backHref = "/analysis/category/$fromSlug?year=$year&month=$month"
+
+        val transactionId = formParams["transactionId"]
+        val category = formParams["category"]?.let { runCatching { TransactionCategory.valueOf(it) }.getOrNull() }
+        val matchType = formParams["matchType"]?.let { runCatching { MatchType.valueOf(it) }.getOrNull() }
+        val pattern = formParams["pattern"]?.trim().orEmpty()
+
+        if (transactionId == null || category == null || category == TransactionCategory.TRANSFER || matchType == null || pattern.isEmpty()) {
+            call.respondRedirect("$backHref&error=${"Invalid recategorize request".encodeURLQueryComponent()}")
+            return@post
+        }
+
+        // Confirms the transaction is actually this owner's before touching
+        // it - transactionId is client-supplied (a form field), unlike the
+        // ids TransferMatcher/the categorizer work with, which only ever
+        // come from this owner's own uncategorized() list.
+        val transaction = transactionStore.all(ownerId).find { it.id == transactionId }
+        if (transaction == null) {
+            call.respondRedirect("$backHref&error=${"Transaction not found".encodeURLQueryComponent()}")
+            return@post
+        }
+
+        categorizationRuleStore.add(ownerId, pattern, matchType, category)
+        transactionStore.updateCategories(ownerId, mapOf(transactionId to category))
+
+        call.respondRedirect("$backHref&message=${"Recategorized as ${category.label}".encodeURLQueryComponent()}")
     }
 }

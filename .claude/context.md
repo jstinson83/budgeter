@@ -162,6 +162,46 @@ Gemini - not a separate button. Currently assumes at most one bank account
 and one credit card (no per-account scoping beyond `accountType`); revisit
 if a second account of either type is ever added.
 
+## Fourth feature: manual recategorization + household rules
+
+Gemini inevitably dumps some recurring merchants into `OTHER` (or leaves
+them uncategorized) that the household knows how to bucket better than a
+guess. Each transaction row on an `/analysis/category/{slug}` drill-down
+page (`analysis-category.ftl`) has an inline "Recategorize" form: pick a
+target category, a match type (`EXACT` or `SUBSTRING`), and a pattern text
+box pre-filled with the transaction's own description (editable, so a
+`SUBSTRING` rule can be trimmed down to just the stable merchant-name
+fragment of a description that otherwise varies per transaction - order
+numbers, per-visit reference codes, etc.).
+
+Submitting it (`POST /analysis/recategorize`, `AnalysisRoutes.kt`) does two
+things: recategorizes that one transaction immediately (it's often already
+categorized as `OTHER`, not null, so it wouldn't be picked up by the
+uncategorized-only `/analysis/categorize` pass on its own), and saves a
+`CategorizationRule` (`CategorizationRuleStore.kt` -
+`pattern`/`matchType`/`category`, Firestore collection
+`categorizationRules`, single-field `ownerId` equality query - no composite
+index needed, unlike `TransactionRepository.all()`). `TRANSFER` is rejected
+as a target category - that's assigned only by `TransferMatcher`'s
+deterministic pairing, never picked by hand.
+
+Saved rules apply **going forward only**, not retroactively: on every
+future `/analysis/categorize` run, `CategorizationRuleMatcher.kt` checks
+the household's saved rules against that run's still-uncategorized
+transactions - after `TransferMatcher`, before Gemini, same "deterministic
+and free beats a guessed API call" reasoning. A transaction matching
+multiple rules takes the first match in `all(ownerId)`'s return order;
+rules aren't required to be mutually exclusive. Transactions already sorted
+into some other category before a rule existed are untouched by that rule
+unless recategorized by hand again - deliberately, so creating a rule can't
+silently rewrite past analysis totals.
+
+`transactionId` on the recategorize form is client-supplied (unlike the ids
+`TransferMatcher`/the categorizer work with, which only ever come from that
+owner's own `uncategorized()` list) - the handler re-fetches
+`transactionStore.all(ownerId)` and confirms the id belongs to the caller
+before touching it, rather than trusting the form value directly.
+
 ## Configuration reference
 
 Concrete IDs and config values — the single source of truth for these
