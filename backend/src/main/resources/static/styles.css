@@ -255,7 +255,10 @@ h1, h2 {
   border-bottom: 1px solid var(--border);
 }
 
-.transaction-list .transaction-row:last-child {
+/* :last-of-type, not :last-child - analysis-category.ftl interleaves each
+   row's <dialog> as a sibling, so the row itself isn't always the last DOM
+   child even when it's visually the last row. */
+.transaction-list .transaction-row:last-of-type {
   border-bottom: none;
 }
 
@@ -298,6 +301,13 @@ h1, h2 {
 
 .transaction-amount-positive {
   color: var(--brass);
+}
+
+/* Used for INVESTMENT category totals on /analysis: the amount is a real
+   checking-account outflow (so it's negative), but it isn't spending, and
+   red/green expense-style coloring reads that way. */
+.transaction-amount-neutral {
+  color: var(--text-dim);
 }
 
 /* Analysis */
@@ -399,32 +409,137 @@ h1, h2 {
   padding-bottom: 0;
 }
 
-.recategorize-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0 0.15rem 0.6rem;
-  font-size: 0.85rem;
-}
-
-.recategorize-form select,
-.recategorize-form input[type="text"] {
-  padding: 0.3rem 0.5rem;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  font-size: 0.85rem;
-  background: var(--surface);
-  color: var(--text);
-}
-
-.recategorize-pattern {
-  flex: 1;
-  min-width: 8rem;
-}
-
 .button-small {
   padding: 0.3rem 0.6rem;
   font-size: 0.8rem;
   margin-bottom: 0;
+}
+
+/* Recategorize modal (analysis-category.ftl) - each transaction row is a
+   <button> that opens its own <dialog>, replacing what used to be an
+   always-visible inline form under every row. */
+
+.transaction-row-button {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.transaction-row-button:hover {
+  background: var(--surface);
+}
+
+.recategorize-dialog {
+  width: min(24rem, calc(100vw - 2.5rem));
+  padding: 1.25rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.recategorize-dialog::backdrop {
+  background: rgba(38, 36, 31, 0.45);
+}
+
+.recategorize-dialog-title {
+  margin: 0 0 0.15rem;
+  font-family: var(--serif);
+  font-size: 1.2rem;
+}
+
+.recategorize-dialog-description {
+  margin: 0 0 1rem;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+/* Scoped to .recategorize-dialog rather than the bare .recategorize-form
+   class - categories.ftl reuses .recategorize-form for its own (non-modal)
+   rule rows and shouldn't pick up the modal's vertical layout. */
+.recategorize-dialog .recategorize-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.field-label {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-top: 0.5rem;
+}
+
+.recategorize-dialog select,
+.recategorize-dialog input[type="text"] {
+  width: 100%;
+  padding: 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  font-size: 0.9rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Segmented toggle standing in for the old bare radio buttons - the
+   inputs stay in the DOM (and keep working with no JS) but are visually
+   hidden in favor of their styled <label>s. */
+.segmented-control {
+  display: flex;
+  margin-top: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.segmented-control input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented-control label {
+  flex: 1;
+  text-align: center;
+  padding: 0.45rem 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.segmented-control label:first-of-type {
+  border-right: 1px solid var(--border);
+}
+
+.segmented-control input[type="radio"]:checked + label {
+  background: var(--brass-fill);
+  color: var(--brass-fill-text);
+  font-weight: 600;
+}
+
+.segmented-control input[type="radio"]:focus-visible + label {
+  outline: 2px solid var(--brass);
+  outline-offset: -2px;
+}
+
+.recategorize-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.recategorize-dialog-actions .button {
+  margin-bottom: 0;
+}
+
+.button-secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
 }
