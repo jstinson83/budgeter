@@ -130,21 +130,92 @@ class AnalysisRoutesTest {
     }
 
     @Test
-    fun testPeriodFilterExcludesOlderTransactions() = testApplication {
+    fun testMonthFilterExcludesTransactionsOutsideTheSelectedCalendarMonth() = testApplication {
         testModule()
         val client = signInFakeUser()
 
         val today = java.time.LocalDate.now()
-        val twoYearsAgo = today.minusYears(2)
-        client.importCsv("$today,Recent Purchase,10.00,,990.00\n$twoYearsAgo,Old Purchase,20.00,,1010.00")
+        val twoMonthsAgo = today.minusMonths(2)
+        client.importCsv("$today,Recent Purchase,10.00,,990.00\n$twoMonthsAgo,Old Purchase,20.00,,1010.00")
 
-        val weekView = client.get("/analysis?period=week") { header(HttpHeaders.Accept, "text/html") }
-        val body = weekView.bodyAsText()
-        // Only the recent transaction falls within the last-week window, so
+        // No year/month params - defaults to the current calendar month.
+        val currentMonthView = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
+        val body = currentMonthView.bodyAsText()
+        // Only the recent transaction falls within the current month, so
         // the "Uncategorized" bucket total should reflect just its -10.00,
         // not both transactions combined (-30.00).
         assertTrue(body.contains("-10.00"))
         assertFalse(body.contains("-30.00"))
+    }
+
+    @Test
+    fun testMonthNavLinksToAdjacentMonthsPreservingTheSelectedYear() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.get("/analysis?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        val body = response.bodyAsText()
+        // FreeMarker's HTML output format escapes "&" to "&amp;" inside
+        // attribute values, so the rendered href isn't a literal query
+        // string.
+        assertTrue(body.contains("/analysis?year=2026&amp;month=5"))
+        assertTrue(body.contains("/analysis?year=2026&amp;month=7"))
+        assertTrue(body.contains("June 2026"))
+    }
+
+    @Test
+    fun testDrillingIntoACategoryShowsOnlyItsTransactionsForTheSelectedMonth() = testApplication {
+        val categorizer = FakeTransactionCategorizer(TransactionCategory.GROCERIES)
+        testModule(transactionCategorizer = categorizer)
+        val client = signInFakeUser()
+
+        client.importCsv("2026-06-15,June Groceries,15.00,,985.00\n2026-07-15,July Groceries,25.00,,960.00")
+        client.post("/analysis/categorize")
+
+        val juneCategory = client.get("/analysis/category/groceries?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        val body = juneCategory.bodyAsText()
+        assertTrue(body.contains("June Groceries"))
+        assertFalse(body.contains("July Groceries"))
+        // Back link returns to the same month that was drilled into
+        // (rendered value has FreeMarker's HTML-escaped "&amp;").
+        assertTrue(body.contains("/analysis?year=2026&amp;month=6"))
+    }
+
+    @Test
+    fun testDrillingIntoUncategorizedShowsTransactionsWithNoCategory() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        client.importCsv("2026-06-15,Mystery Charge,15.00,,985.00")
+
+        val response = client.get("/analysis/category/uncategorized?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        assertTrue(response.bodyAsText().contains("Mystery Charge"))
+    }
+
+    @Test
+    fun testDrillingIntoAnUnknownOrTransferCategorySlugIs404() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        assertEquals(HttpStatusCode.NotFound, client.get("/analysis/category/not-a-real-category").status)
+        assertEquals(HttpStatusCode.NotFound, client.get("/analysis/category/transfer").status)
+    }
+
+    @Test
+    fun testCategorizeRedirectPreservesTheMonthBeingViewed() = testApplication {
+        val categorizer = FakeTransactionCategorizer(TransactionCategory.GROCERIES)
+        testModule(transactionCategorizer = categorizer)
+        val client = signInFakeUser()
+
+        client.importCsv("2026-06-15,June Groceries,15.00,,985.00")
+
+        val response = client.post("/analysis/categorize") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("year=2026&month=6")
+        }
+        val redirect = response.headers[HttpHeaders.Location]!!
+        assertEquals("2026", Url(redirect).parameters["year"])
+        assertEquals("6", Url(redirect).parameters["month"])
     }
 
     @Test
@@ -159,7 +230,7 @@ class AnalysisRoutesTest {
         client.importCsv("${java.time.LocalDate.now()},Metro Grocery,42.10,,957.90")
         val response = client.post("/analysis/categorize")
         val redirect = response.headers[HttpHeaders.Location]!!
-        assertTrue(redirect.startsWith("/analysis?error="))
+        assertTrue(Url(redirect).parameters["error"] != null)
 
         val page = client.get(redirect)
         assertTrue(page.bodyAsText().contains("Categorization failed"))

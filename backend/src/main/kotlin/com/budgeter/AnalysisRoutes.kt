@@ -3,42 +3,119 @@ package com.budgeter
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.freemarker.*
+import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import java.time.DateTimeException
 import java.time.LocalDate
+import java.time.format.TextStyle
+import java.util.Locale
 
-private val SUPPORTED_PERIODS = setOf("week", "month", "year")
-
-private fun periodStart(period: String): LocalDate = when (period) {
-    "week" -> LocalDate.now().minusWeeks(1)
-    "year" -> LocalDate.now().minusYears(1)
-    else -> LocalDate.now().minusMonths(1)
+// Resolves the calendar month being viewed from either query params (GET)
+// or form params (POST, see /analysis/categorize) - both are a Ktor
+// Parameters, so one helper covers both call sites. Falls back to the
+// current month on anything missing, unparseable, or out of range
+// (including a year extreme enough that LocalDate.of itself throws)
+// rather than erroring the whole page over a malformed link.
+private fun resolveYearMonth(params: Parameters): Pair<Int, Int> {
+    val today = LocalDate.now()
+    val year = params["year"]?.toIntOrNull() ?: today.year
+    val month = params["month"]?.toIntOrNull()?.takeIf { it in 1..12 } ?: today.monthValue
+    return try {
+        LocalDate.of(year, month, 1)
+        year to month
+    } catch (e: DateTimeException) {
+        today.year to today.monthValue
+    }
 }
+
+private fun monthLabel(monthStart: LocalDate): String =
+    "${monthStart.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${monthStart.year}"
 
 fun Route.analysisRoutes(transactionStore: TransactionRepository, transactionCategorizer: TransactionCategorizer) {
     get("/analysis") {
         val ownerId = call.requireUserId()
-        val period = call.request.queryParameters["period"]?.takeIf { it in SUPPORTED_PERIODS } ?: "month"
+        val (year, month) = resolveYearMonth(call.request.queryParameters)
+        val monthStart = LocalDate.of(year, month, 1)
+        val monthEnd = monthStart.plusMonths(1)
 
         val all = transactionStore.all(ownerId)
-        val since = periodStart(period)
         // TRANSFER excluded here, not just left out of a bucket - it's
         // money moving between the user's own accounts, not spending or
         // income, so it shouldn't appear in analysis at all.
-        val periodTransactions = all.filter { !it.date.isBefore(since) && it.category != TransactionCategory.TRANSFER }
+        val periodTransactions = all.filter {
+            !it.date.isBefore(monthStart) && it.date.isBefore(monthEnd) && it.category != TransactionCategory.TRANSFER
+        }
         val uncategorizedCount = all.count { it.category == null }
+
+        val prev = monthStart.minusMonths(1)
+        val next = monthStart.plusMonths(1)
 
         val message = call.request.queryParameters["message"]
         val error = call.request.queryParameters["error"]
-        val model = analysisPageModel(periodTransactions, period, uncategorizedCount, message, error) + call.currentUserModel()
+        val model = analysisPageModel(
+            periodTransactions,
+            year,
+            month,
+            monthLabel(monthStart),
+            prevHref = "/analysis?year=${prev.year}&month=${prev.monthValue}",
+            nextHref = "/analysis?year=${next.year}&month=${next.monthValue}",
+            uncategorizedCount,
+            message,
+            error
+        ) + call.currentUserModel()
         call.respond(FreeMarkerContent("analysis.ftl", model))
+    }
+
+    get("/analysis/category/{category}") {
+        val ownerId = call.requireUserId()
+        val (year, month) = resolveYearMonth(call.request.queryParameters)
+        val monthStart = LocalDate.of(year, month, 1)
+        val monthEnd = monthStart.plusMonths(1)
+
+        val slug = call.parameters["category"] ?: ""
+        // null stands for "Uncategorized" - it has no TransactionCategory
+        // name to parse, so it's special-cased rather than run through
+        // valueOf. TRANSFER is deliberately rejected too: it's excluded
+        // from analysis entirely (see the TRANSFER filter above), so no
+        // category row ever links here with that slug - a request for it
+        // is either a stale link or a guess, not a legitimate drill-down.
+        val category = when {
+            slug == "uncategorized" -> null
+            else -> runCatching { TransactionCategory.valueOf(slug.uppercase()) }.getOrNull()
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+        }
+        if (category == TransactionCategory.TRANSFER) return@get call.respond(HttpStatusCode.NotFound)
+
+        val transactions = transactionStore.all(ownerId).filter {
+            it.category == category && !it.date.isBefore(monthStart) && it.date.isBefore(monthEnd)
+        }
+        val categoryLabel = category?.label ?: "Uncategorized"
+        val model = analysisCategoryPageModel(
+            transactions,
+            categoryLabel,
+            monthLabel(monthStart),
+            backHref = "/analysis?year=$year&month=$month"
+        ) + call.currentUserModel()
+        call.respond(FreeMarkerContent("analysis-category.ftl", model))
     }
 
     post("/analysis/categorize") {
         val ownerId = call.requireUserId()
+        // The categorize button's form always submits hidden year/month
+        // fields (see analysis.ftl), but a bare POST with no body - as
+        // every pre-existing test in this file sends - isn't
+        // form-urlencoded at all, and receiveParameters() throws on that
+        // rather than returning empty. Falling back to Parameters.Empty
+        // just means resolveYearMonth defaults to the current month, same
+        // as if the fields were present but blank.
+        val formParams = try { call.receiveParameters() } catch (e: Exception) { Parameters.Empty }
+        val (year, month) = resolveYearMonth(formParams)
+        val monthParams = "year=$year&month=$month"
+
         val pending = transactionStore.uncategorized(ownerId)
         if (pending.isEmpty()) {
-            call.respondRedirect("/analysis?message=${"No new transactions to categorize".encodeURLQueryComponent()}")
+            call.respondRedirect("/analysis?$monthParams&message=${"No new transactions to categorize".encodeURLQueryComponent()}")
             return@post
         }
 
@@ -56,7 +133,7 @@ fun Route.analysisRoutes(transactionStore: TransactionRepository, transactionCat
         val categorized = if (remaining.isEmpty()) emptyMap() else try {
             transactionCategorizer.categorize(remaining)
         } catch (e: Exception) {
-            call.respondRedirect("/analysis?error=${"Categorization failed: ${e.message}".encodeURLQueryComponent()}")
+            call.respondRedirect("/analysis?$monthParams&error=${"Categorization failed: ${e.message}".encodeURLQueryComponent()}")
             return@post
         }
         if (categorized.isNotEmpty()) {
@@ -74,6 +151,6 @@ fun Route.analysisRoutes(transactionStore: TransactionRepository, transactionCat
                 else append("Categorized ${categorized.size} of ${remaining.size} transaction(s)")
             }
         }
-        call.respondRedirect("/analysis?message=${message.encodeURLQueryComponent()}")
+        call.respondRedirect("/analysis?$monthParams&message=${message.encodeURLQueryComponent()}")
     }
 }

@@ -5,29 +5,57 @@ package com.budgeter
 // this pre-formats everything the template needs.
 fun analysisPageModel(
     periodTransactions: List<Transaction>,
-    period: String,
+    year: Int,
+    month: Int,
+    monthLabel: String,
+    prevHref: String,
+    nextHref: String,
     uncategorizedCount: Int,
     message: String?,
     error: String?
 ): Map<String, Any?> {
     val categoryTotals = periodTransactions
-        .groupBy { it.category?.label ?: "Uncategorized" }
-        .map { (label, transactions) -> Triple(label, transactions.sumOf { it.amount }, transactions.size) }
+        .groupBy { it.category }
+        .map { (category, transactions) -> Triple(category, transactions.sumOf { it.amount }, transactions.size) }
         .sortedBy { (_, total, _) -> total }
-        .map { (label, total, count) ->
+        .map { (category, total, count) ->
+            // "uncategorized" is a synthetic slug (null has no enum name) -
+            // AnalysisRoutes.kt's category drill-down route special-cases it
+            // back to a null category filter.
+            val slug = category?.name?.lowercase() ?: "uncategorized"
             mapOf(
-                "category" to label,
+                "category" to (category?.label ?: "Uncategorized"),
                 "total" to formatSignedAmount(total),
                 "count" to count,
-                "totalClass" to amountClass(total)
+                "totalClass" to amountClass(total),
+                "href" to "/analysis/category/$slug?year=$year&month=$month"
             )
         }
 
     return mapOf(
         "categoryTotals" to categoryTotals,
-        "period" to period,
+        "year" to year,
+        "month" to month,
+        "monthLabel" to monthLabel,
+        "prevHref" to prevHref,
+        "nextHref" to nextHref,
         "uncategorizedCount" to uncategorizedCount,
         "message" to message,
         "error" to error
     )
 }
+
+// Drill-down page behind a category row on /analysis - same
+// per-transaction row shape as /transactions (transactionRowModel), just
+// scoped to one category and month instead of everything.
+fun analysisCategoryPageModel(
+    transactions: List<Transaction>,
+    categoryLabel: String,
+    monthLabel: String,
+    backHref: String
+): Map<String, Any?> = mapOf(
+    "transactions" to transactions.sortedByDescending { it.date }.map(::transactionRowModel),
+    "categoryLabel" to categoryLabel,
+    "monthLabel" to monthLabel,
+    "backHref" to backHref
+)
