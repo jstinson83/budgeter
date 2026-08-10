@@ -299,3 +299,47 @@ body {
   margin-bottom: 1rem;
   color: inherit;
 }
+
+.transaction-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.recategorize-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.75rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+.recategorize-form select,
+.recategorize-form input[type="text"] {
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #dadce0;
+  font-size: 0.85rem;
+  background: white;
+  color: inherit;
+}
+
+.recategorize-pattern {
+  flex: 1;
+  min-width: 8rem;
+}
+
+.button-small {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+  margin-bottom: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .recategorize-form select,
+  .recategorize-form input[type="text"] {
+    background: #1e2126;
+    border-color: #3a3f47;
+  }
+}

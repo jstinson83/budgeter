@@ -64,7 +64,8 @@ fun Application.module(
     oauthRedirectBaseUrl: String = System.getenv("OAUTH_REDIRECT_BASE_URL") ?: "http://localhost:8080",
     sessionSecret: String = System.getenv("SESSION_SECRET") ?: "dev-only-insecure-session-secret-change-me",
     transactionStore: TransactionRepository = FirestoreTransactionStore(firestoreClient),
-    transactionCategorizer: TransactionCategorizer = geminiCategorizer
+    transactionCategorizer: TransactionCategorizer = geminiCategorizer,
+    categorizationRuleStore: CategorizationRuleRepository = FirestoreCategorizationRuleStore(firestoreClient)
 ) {
     install(FreeMarker) {
         templateLoader = ClassTemplateLoader(this::class.java.classLoader, "templates")
@@ -85,7 +86,7 @@ fun Application.module(
             }
 
             transactionRoutes(transactionStore)
-            analysisRoutes(transactionStore, transactionCategorizer)
+            analysisRoutes(transactionStore, transactionCategorizer, categorizationRuleStore)
         }
     }
 }
