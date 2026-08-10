@@ -1,0 +1,143 @@
+package com.budgeter
+
+import java.time.LocalDate
+import java.time.YearMonth
+import kotlin.test.*
+
+class DashboardPageTest {
+    private fun tx(
+        id: String,
+        accountType: AccountType = AccountType.BANK,
+        date: LocalDate,
+        description: String = "Transaction",
+        amount: Double,
+        category: String? = null,
+        balance: Double? = null
+    ): Transaction = Transaction(id, "owner", accountType, date, description, amount, category, balance)
+
+    @Test
+    fun testLatestBalancesPicksTheMostRecentDatedRowPerAccountType() {
+        val transactions = listOf(
+            tx("1", AccountType.BANK, date = LocalDate.of(2026, 6, 1), amount = -10.0, balance = 900.0),
+            tx("2", AccountType.BANK, date = LocalDate.of(2026, 6, 15), amount = -5.0, balance = 895.0),
+            tx("3", AccountType.CREDIT_CARD, date = LocalDate.of(2026, 6, 10), amount = 20.0, balance = 300.0),
+            // No balance captured on this row (e.g. imported before balance capture) - ignored, not treated as zero.
+            tx("4", AccountType.LOC, date = LocalDate.of(2026, 6, 20), amount = -50.0, balance = null)
+        )
+
+        val balances = latestBalances(transactions)
+
+        assertEquals(2, balances.size)
+        val bank = balances.single { it.accountType == AccountType.BANK }
+        assertEquals(895.0, bank.balance)
+        assertEquals(LocalDate.of(2026, 6, 15), bank.asOf)
+        assertEquals(300.0, balances.single { it.accountType == AccountType.CREDIT_CARD }.balance)
+    }
+
+    @Test
+    fun testNetPositionTreatsBankAsAnAssetAndCreditCardAndLocAsLiabilities() {
+        val balances = listOf(
+            AccountBalance(AccountType.BANK, 1000.0, LocalDate.of(2026, 6, 15)),
+            AccountBalance(AccountType.CREDIT_CARD, 300.0, LocalDate.of(2026, 6, 15)),
+            AccountBalance(AccountType.LOC, 200.0, LocalDate.of(2026, 6, 15))
+        )
+
+        assertEquals(500.0, netPosition(balances))
+    }
+
+    @Test
+    fun testAccountCoverageReportsEarliestLatestAndDaysSinceLastImport() {
+        val transactions = listOf(
+            tx("1", AccountType.BANK, date = LocalDate.of(2026, 5, 1), amount = -10.0),
+            tx("2", AccountType.BANK, date = LocalDate.of(2026, 6, 1), amount = -10.0)
+        )
+
+        val coverage = accountCoverage(transactions, today = LocalDate.of(2026, 6, 11))
+
+        val bank = coverage.single()
+        assertEquals(LocalDate.of(2026, 5, 1), bank.earliest)
+        assertEquals(LocalDate.of(2026, 6, 1), bank.latest)
+        assertEquals(10L, bank.daysSinceLastImport)
+    }
+
+    @Test
+    fun testAccountCoverageFlagsAGapLongerThanTheThresholdButNotAShortOne() {
+        val withGap = accountCoverage(
+            listOf(
+                tx("1", date = LocalDate.of(2026, 1, 1), amount = -10.0),
+                tx("2", date = LocalDate.of(2026, 3, 1), amount = -10.0)
+            ),
+            today = LocalDate.of(2026, 3, 5)
+        ).single()
+        assertEquals(1, withGap.gaps.size)
+
+        val withoutGap = accountCoverage(
+            listOf(
+                tx("1", date = LocalDate.of(2026, 1, 1), amount = -10.0),
+                tx("2", date = LocalDate.of(2026, 1, 10), amount = -10.0)
+            ),
+            today = LocalDate.of(2026, 1, 15)
+        ).single()
+        assertEquals(emptyList(), withoutGap.gaps)
+    }
+
+    @Test
+    fun testMonthlyNetChangeExcludesTransfersAndInvestmentsAndCoversTheRequestedMonths() {
+        val transactions = listOf(
+            tx("1", date = LocalDate.of(2026, 6, 5), amount = -50.0),
+            tx("2", date = LocalDate.of(2026, 6, 10), amount = 200.0),
+            tx("3", date = LocalDate.of(2026, 6, 15), amount = -1000.0, category = TRANSFER_CATEGORY_ID),
+            tx("4", date = LocalDate.of(2026, 6, 20), amount = -300.0, category = INVESTMENT_CATEGORY_ID),
+            tx("5", date = LocalDate.of(2026, 5, 5), amount = 100.0)
+        )
+
+        val series = monthlyNetChange(transactions, endMonth = YearMonth.of(2026, 6), months = 2)
+
+        assertEquals(listOf(YearMonth.of(2026, 5), YearMonth.of(2026, 6)), series.map { it.first })
+        assertEquals(100.0, series[0].second)
+        assertEquals(150.0, series[1].second) // -50 + 200, transfer and investment rows excluded
+    }
+
+    @Test
+    fun testCategoryMoversSurfacesASpendingIncreaseAboveTheBaselineAndSkipsSmallOrUncategorizedOnes() {
+        val transactions = buildList {
+            // Dining: averaged $30/mo over the prior 3 months, jumps to $90 this month - a real mover.
+            for (month in 3..5) add(tx("dining-$month", date = LocalDate.of(2026, month, 10), amount = -30.0, category = "DINING_OUT"))
+            add(tx("dining-6", date = LocalDate.of(2026, 6, 10), amount = -90.0, category = "DINING_OUT"))
+            // Tiny category under the noise floor - a 4x jump but only a few dollars.
+            add(tx("misc-3", date = LocalDate.of(2026, 3, 10), amount = -2.0, category = "OTHER"))
+            add(tx("misc-6", date = LocalDate.of(2026, 6, 10), amount = -8.0, category = "OTHER"))
+            // Uncategorized spend - excluded regardless of size.
+            add(tx("uncat-6", date = LocalDate.of(2026, 6, 10), amount = -500.0, category = null))
+        }
+
+        val movers = categoryMovers(transactions, emptyList(), currentMonth = YearMonth.of(2026, 6))
+
+        assertEquals(1, movers.size)
+        assertEquals("DINING_OUT", movers.single().label) // falls back to the raw id when no Category label is supplied
+        assertEquals(-90.0, movers.single().currentTotal)
+        assertEquals(-30.0, movers.single().priorAverage)
+    }
+
+    @Test
+    fun testBiggestExpensePicksTheLargestSpendExcludingTransfersAndInvestments() {
+        val transactions = listOf(
+            tx("1", date = LocalDate.of(2026, 6, 5), amount = -40.0, description = "Groceries"),
+            tx("2", date = LocalDate.of(2026, 6, 10), amount = -900.0, description = "Rent"),
+            tx("3", date = LocalDate.of(2026, 6, 15), amount = -5000.0, description = "Card Payment", category = TRANSFER_CATEGORY_ID)
+        )
+
+        val biggest = biggestExpense(transactions, YearMonth.of(2026, 6))
+
+        assertEquals("Rent", biggest?.description)
+        assertEquals(-900.0, biggest?.amount)
+    }
+
+    @Test
+    fun testDashboardPageModelReflectsEmptyStateWithNoTransactions() {
+        val model = dashboardPageModel(emptyList(), emptyList())
+
+        assertEquals(false, model["hasTransactions"])
+        assertEquals(false, model["hasBalances"])
+    }
+}

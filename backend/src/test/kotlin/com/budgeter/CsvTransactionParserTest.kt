@@ -16,24 +16,34 @@ class CsvTransactionParserTest {
         assertEquals(emptyList(), result.errors)
         assertEquals(
             listOf(
-                ParsedTransaction(1, AccountType.BANK, LocalDate.of(2026, 1, 15), "Starbucks", -4.75),
-                ParsedTransaction(2, AccountType.BANK, LocalDate.of(2026, 1, 16), "Payroll", 2500.00)
+                ParsedTransaction(1, AccountType.BANK, LocalDate.of(2026, 1, 15), "Starbucks", -4.75, 995.25),
+                ParsedTransaction(2, AccountType.BANK, LocalDate.of(2026, 1, 16), "Payroll", 2500.00, 3495.25)
             ),
             result.transactions
         )
     }
 
     @Test
-    fun testIgnoresBalanceAndExtraColumns() {
+    fun testCapturesBalanceAndIgnoresColumnsPastIt() {
         val csv = "2026-01-15,Starbucks,4.75,,995.25,extra-column"
 
         val result = CsvTransactionParser.parse(csv)
 
         assertEquals(emptyList(), result.errors)
         assertEquals(
-            listOf(ParsedTransaction(1, AccountType.BANK, LocalDate.of(2026, 1, 15), "Starbucks", -4.75)),
+            listOf(ParsedTransaction(1, AccountType.BANK, LocalDate.of(2026, 1, 15), "Starbucks", -4.75, 995.25)),
             result.transactions
         )
+    }
+
+    @Test
+    fun testUnparseableBalanceIsNullNotAnError() {
+        val csv = "2026-01-15,Starbucks,4.75,,not-a-balance"
+
+        val result = CsvTransactionParser.parse(csv)
+
+        assertEquals(emptyList(), result.errors)
+        assertNull(result.transactions.single().balance)
     }
 
     @Test

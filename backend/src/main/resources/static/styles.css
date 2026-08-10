@@ -415,6 +415,101 @@ h1, h2 {
   margin-bottom: 0;
 }
 
+/* Dashboard */
+
+.dashboard-section-title {
+  margin: 2rem 0 0.75rem;
+}
+
+.dashboard-section-title:first-of-type {
+  margin-top: 0;
+}
+
+.dashboard-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.dashboard-card-warning {
+  border-color: var(--brick);
+  background: var(--brick-soft-bg);
+}
+
+.dashboard-card-label {
+  font-family: var(--serif);
+  font-weight: 600;
+}
+
+.dashboard-card-amount {
+  font-size: 1.1rem;
+}
+
+.dashboard-card-note {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.dashboard-card-gap {
+  color: var(--brick);
+  font-size: 0.78rem;
+}
+
+.dashboard-trend-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  height: 7rem;
+  padding: 0 0.15rem;
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-trend-bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  height: 100%;
+}
+
+.dashboard-trend-bar-track {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.dashboard-trend-bar {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+}
+
+.dashboard-trend-bar-positive {
+  background: var(--brass-fill);
+}
+
+.dashboard-trend-bar-negative {
+  background: var(--brick);
+}
+
+.dashboard-trend-bar-label {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
 /* Recategorize modal (analysis-category.ftl) - each transaction row is a
    <button> that opens its own <dialog>, replacing what used to be an
    always-visible inline form under every row. */
