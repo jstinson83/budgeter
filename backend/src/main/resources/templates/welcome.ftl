@@ -5,11 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Home OS</title>
 <link rel="stylesheet" href="/styles.css">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="alternate icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 </head>
 <body class="auth-body">
   <div class="auth-page">
     <div class="auth-card">
-      <h1 class="wordmark">Home OS</h1>
+      <h1 class="wordmark"><img src="/favicon.svg" class="logo-mark" alt=""> Home OS</h1>
       <p class="subtitle">Spending insights, at a glance.</p>
       <#if session??>
       <p class="auth-session">Signed in as ${session.name} (${session.email})</p>

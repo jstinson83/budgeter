@@ -57,12 +57,20 @@ h1, h2 {
 }
 
 .wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
   font-family: var(--serif);
   font-weight: 700;
   font-size: 1.35rem;
   letter-spacing: 0.01em;
   text-decoration: none;
   color: var(--text);
+}
+
+.logo-mark {
+  height: 1.3em;
+  width: auto;
 }
 
 /* Auth pages (welcome/sign-in) */
