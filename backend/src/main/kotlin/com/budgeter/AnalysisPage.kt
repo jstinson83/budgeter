@@ -15,6 +15,13 @@ fun analysisPageModel(
     message: String?,
     error: String?
 ): Map<String, Any?> {
+    // Investments excluded here, not from periodTransactions itself - an
+    // INVESTMENT row still shows in categoryTotals below, it just shouldn't
+    // count as income or spending in the net change figure.
+    val netChange = periodTransactions
+        .filter { it.category != INVESTMENT_CATEGORY_ID }
+        .sumOf { it.amount }
+
     val labelById = categories.associateBy({ it.id }, { it.label })
     val categoryTotals = periodTransactions
         .groupBy { it.category }
@@ -39,6 +46,8 @@ fun analysisPageModel(
 
     return mapOf(
         "categoryTotals" to categoryTotals,
+        "netChange" to formatSignedAmount(netChange),
+        "netChangeClass" to amountClass(netChange),
         "year" to year,
         "month" to month,
         "monthLabel" to monthLabel,
