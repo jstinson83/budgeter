@@ -18,6 +18,10 @@
     <#else>
 
     <h2 class="dashboard-section-title">Money in/out</h2>
+    <div class="month-summary">
+      <span class="month-summary-label">Last ${netChangeTrendMonths?c} months</span>
+      <span class="transaction-amount month-summary-amount ${netChangeTotalClass}">${netChangeTotal}</span>
+    </div>
     <div class="dashboard-trend-bars">
       <#list netChangeSeries as m>
       <div class="dashboard-trend-bar-col">

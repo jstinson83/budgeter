@@ -52,6 +52,21 @@ class DashboardRoutesTest {
         assertTrue(response.bodyAsText().contains("Possible gap"))
     }
 
+    @Test
+    fun testShowsATotalSummarizingTheMoneyInOutTrend() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val today = java.time.LocalDate.now()
+        client.importCsv("$today,Payroll,,2500.00,3457.90\n$today,Groceries,42.10,,3415.80", accountType = "BANK")
+
+        val response = client.get("/") { header(HttpHeaders.Accept, "text/html") }
+        val body = response.bodyAsText()
+        // -42.10 + 2500.00 = 2457.90
+        assertTrue(body.contains("Last 3 months"))
+        assertTrue(body.contains("+2457.90"))
+    }
+
     // Net position (total assets/debt combined across accounts) was tried
     // and pulled - see CLAUDE.md's dashboard gotcha - since it silently
     // implies every account is fully linked/imported, which isn't a safe
