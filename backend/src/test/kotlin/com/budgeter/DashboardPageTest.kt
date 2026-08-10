@@ -120,5 +120,24 @@ class DashboardPageTest {
         @Suppress("UNCHECKED_CAST")
         val series = model["netChangeSeries"] as List<Map<String, Any?>>
         assertEquals(3, series.size)
+        assertEquals(3, model["netChangeTrendMonths"])
+    }
+
+    @Test
+    fun testDashboardPageModelSummarizesTheTrendAsASingleTotal() {
+        val transactions = listOf(
+            // Within the 3-month window ending June: April, May, June.
+            tx("1", date = LocalDate.of(2026, 4, 10), amount = -1000.0),
+            tx("2", date = LocalDate.of(2026, 5, 10), amount = 500.0),
+            tx("3", date = LocalDate.of(2026, 6, 10), amount = 2500.0),
+            // Outside the window - shouldn't contribute to the total.
+            tx("4", date = LocalDate.of(2026, 1, 10), amount = 100000.0)
+        )
+
+        val model = dashboardPageModel(transactions, emptyList(), today = LocalDate.of(2026, 6, 20))
+
+        // -1000 + 500 + 2500 = 2000, the January row excluded.
+        assertEquals("+2000.00", model["netChangeTotal"])
+        assertEquals("transaction-amount-positive", model["netChangeTotalClass"])
     }
 }

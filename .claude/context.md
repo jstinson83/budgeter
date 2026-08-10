@@ -313,15 +313,18 @@ Two parts, both computed on the fly from `all(ownerId)` (no new
 precomputed/cron layer, same "quick version first" posture as `/analysis`):
 
 - **Money in/out**: deterministic, not Gemini-generated - a 3-month net-change
-  bar series (`monthlyNetChange`, same TRANSFER/INVESTMENT exclusions as
-  `/analysis`'s net change), categories whose current-month spend jumped
-  meaningfully vs. their own trailing 3-month average (`categoryMovers`,
-  with a $20 baseline floor so a tiny category's noise doesn't read as a
-  dramatic swing), and the single biggest expense this month
-  (`biggestExpense`). Deliberately just 3 months, not a longer lookback -
-  this whole section only reasons over whatever transactions have actually
-  been imported, with no assumption that every account is fully
-  linked/imported, so a short window keeps that promise honest.
+  bar series plus a single total summarizing it (`monthlyNetChange`, same
+  TRANSFER/INVESTMENT exclusions as `/analysis`'s net change; the total is
+  just `netChangeSeries.sumOf { it.second }`, shown above the bars the same
+  way `/analysis`'s own net change is displayed), categories whose
+  current-month spend jumped meaningfully vs. their own trailing 3-month
+  average (`categoryMovers`, with a $20 baseline floor so a tiny category's
+  noise doesn't read as a dramatic swing), and the single biggest expense
+  this month (`biggestExpense`). Deliberately just 3 months, not a longer
+  lookback (`NET_CHANGE_TREND_MONTHS` in `DashboardPage.kt`) - this whole
+  section only reasons over whatever transactions have actually been
+  imported, with no assumption that every account is fully linked/imported,
+  so a short window keeps that promise honest.
 - **Coverage**: per account type, earliest/latest transaction date, days
   since the last import (flagged stale past 35 days), and any internal gap
   longer than 21 days between consecutive transactions surfaced as a

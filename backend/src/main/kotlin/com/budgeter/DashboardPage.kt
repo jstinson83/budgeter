@@ -29,6 +29,12 @@ private const val STALE_THRESHOLD_DAYS = 35L
 // dramatic 300% swing that isn't actually meaningful.
 private const val MOVER_MIN_BASELINE = 20.0
 
+// How many trailing months the "money in/out" trend (bar chart + its single
+// summary total) covers - deliberately modest, not a longer lookback, since
+// this section only reasons over whatever's actually been imported (see
+// dashboardPageModel below).
+private const val NET_CHANGE_TREND_MONTHS = 3
+
 data class AccountCoverage(
     val accountType: AccountType,
     val earliest: LocalDate,
@@ -138,17 +144,17 @@ fun biggestExpense(transactions: List<Transaction>, month: YearMonth): NotableTr
 fun dashboardPageModel(transactions: List<Transaction>, categories: List<Category>, today: LocalDate = LocalDate.now()): Map<String, Any?> {
     val currentMonth = YearMonth.from(today)
     val coverage = accountCoverage(transactions, today)
-    // 3 months, not a longer lookback - a deliberately modest window that
-    // doesn't assume complete history, matching this page's overall stance
-    // of not requiring every account to be fully linked/imported to be
-    // useful (see the dropped net-position section's gotcha in CLAUDE.md).
-    val netChangeSeries = monthlyNetChange(transactions, currentMonth, months = 3)
+    val netChangeSeries = monthlyNetChange(transactions, currentMonth, months = NET_CHANGE_TREND_MONTHS)
+    val netChangeTotal = netChangeSeries.sumOf { it.second }
     val maxAbsNetChange = netChangeSeries.maxOfOrNull { kotlin.math.abs(it.second) }?.takeIf { it > 0 } ?: 1.0
     val movers = categoryMovers(transactions, categories, currentMonth)
     val biggest = biggestExpense(transactions, currentMonth)
 
     return mapOf(
         "hasTransactions" to transactions.isNotEmpty(),
+        "netChangeTrendMonths" to NET_CHANGE_TREND_MONTHS,
+        "netChangeTotal" to formatSignedAmount(netChangeTotal),
+        "netChangeTotalClass" to amountClass(netChangeTotal),
         "coverage" to coverage.map { c ->
             mapOf(
                 "accountType" to c.accountType.label,
