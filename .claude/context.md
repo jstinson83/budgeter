@@ -120,6 +120,37 @@ thing); this first pass intentionally doesn't build that yet.
   (`LocalDate.now().minusWeeks(1)` etc.), not calendar-aligned (not
   "this calendar month").
 
+## Third feature: bank/credit-card account labeling + transfer matching
+
+Transactions now carry `accountType: AccountType` (`BANK` or `CREDIT_CARD`,
+`TransactionStore.kt`) - the CSV import format and sign convention are
+identical either way (see `CsvTransactionParser.kt`), so this is purely
+caller-supplied metadata, chosen via a radio selector on the `/transactions`
+upload form. Defaults to `BANK` when the field is absent (an API call
+bypassing the form); a present-but-invalid value is a hard error, not
+silently coerced. Firestore documents written before this field existed
+read back as `BANK` (every transaction imported before now came from the
+original bank-only TD export).
+
+The reason for labeling accounts: paying a credit card from the bank
+account shows up as two separate transactions (a bank outflow, a
+credit-card inflow) that both need to be excluded from spending/income
+analysis rather than double-counted. `TransferMatcher.kt` finds these pairs
+and marks both `TransactionCategory.TRANSFER` (excluded from `/analysis`
+entirely, not just grouped into its own bucket) - deterministically, not
+via Gemini. It matches on the bank leg's description containing
+`TFR-TO C/C` and the credit-card leg's containing `PAYMENT - THANK YOU`
+(both fixed TD statement-generator templates, confirmed against real
+statements - not guessed), plus amount equality and dates within 5 days.
+Only mutually-unique pairs match; anything with more than one plausible
+counterpart on either side is left uncategorized rather than guessed, since
+a wrong match would silently vanish a real transaction from analysis.
+Runs automatically as the first step of the existing `/analysis/categorize`
+button (`AnalysisRoutes.kt`), before the remaining transactions go to
+Gemini - not a separate button. Currently assumes at most one bank account
+and one credit card (no per-account scoping beyond `accountType`); revisit
+if a second account of either type is ever added.
+
 ## Configuration reference
 
 Concrete IDs and config values — the single source of truth for these

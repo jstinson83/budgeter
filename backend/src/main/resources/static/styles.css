@@ -224,6 +224,12 @@ body {
   flex: 1;
 }
 
+.transaction-account {
+  color: #888;
+  font-size: 0.85rem;
+  flex: 0 0 auto;
+}
+
 .transaction-amount {
   font-weight: 600;
   font-variant-numeric: tabular-nums;

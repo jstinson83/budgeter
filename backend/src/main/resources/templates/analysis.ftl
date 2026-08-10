@@ -25,7 +25,7 @@
 
     <#if uncategorizedCount gt 0>
     <form method="post" action="/analysis/categorize" class="upload-form">
-      <button type="submit" class="button">Categorize ${uncategorizedCount} new transaction(s) with Gemini</button>
+      <button type="submit" class="button">Process ${uncategorizedCount} new transaction(s)</button>
     </form>
     </#if>
 

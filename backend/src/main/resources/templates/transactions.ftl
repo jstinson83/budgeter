@@ -18,6 +18,8 @@
     </#if>
 
     <form method="post" action="/transactions/import" enctype="multipart/form-data" class="upload-form">
+      <label><input type="radio" name="accountType" value="BANK" checked> Bank</label>
+      <label><input type="radio" name="accountType" value="CREDIT_CARD"> Credit card</label>
       <input type="file" name="file" accept=".csv" required>
       <button type="submit" class="button">Import CSV</button>
     </form>
@@ -36,6 +38,7 @@
       <div class="transaction-row">
         <span class="transaction-date">${transaction.date}</span>
         <span class="transaction-description">${transaction.description}</span>
+        <span class="transaction-account">${transaction.accountType}</span>
         <span class="transaction-amount ${transaction.amountClass}">${transaction.amount}</span>
       </div>
       </#list>

@@ -16,8 +16,8 @@ class CsvTransactionParserTest {
         assertEquals(emptyList(), result.errors)
         assertEquals(
             listOf(
-                ParsedTransaction(1, LocalDate.of(2026, 1, 15), "Starbucks", -4.75),
-                ParsedTransaction(2, LocalDate.of(2026, 1, 16), "Payroll", 2500.00)
+                ParsedTransaction(1, AccountType.BANK, LocalDate.of(2026, 1, 15), "Starbucks", -4.75),
+                ParsedTransaction(2, AccountType.BANK, LocalDate.of(2026, 1, 16), "Payroll", 2500.00)
             ),
             result.transactions
         )
@@ -31,7 +31,7 @@ class CsvTransactionParserTest {
 
         assertEquals(emptyList(), result.errors)
         assertEquals(
-            listOf(ParsedTransaction(1, LocalDate.of(2026, 1, 15), "Starbucks", -4.75)),
+            listOf(ParsedTransaction(1, AccountType.BANK, LocalDate.of(2026, 1, 15), "Starbucks", -4.75)),
             result.transactions
         )
     }
@@ -156,5 +156,22 @@ class CsvTransactionParserTest {
         assertEquals(-66.19, result.transactions[0].amount)
         assertEquals(450.00, result.transactions[2].amount)
         assertEquals("PHARMAPRIX MONTRÉAL", result.transactions[3].description)
+    }
+
+    // Same 5-column shape and sign convention as the bank export - a
+    // purchase is still moneyOut/negative, a payment still moneyIn/positive
+    // - accountType is caller-supplied metadata, not something parsing
+    // derives from the CSV itself.
+    @Test
+    fun testStampsCallerSuppliedAccountTypeOntoEveryRow() {
+        val csv = """
+            07/01/2026,AMAZON.CA,25.00,,475.00
+            07/11/2026,PAYMENT - THANK YOU,,450.00,925.00
+        """.trimIndent()
+
+        val result = CsvTransactionParser.parse(csv, AccountType.CREDIT_CARD)
+
+        assertEquals(emptyList(), result.errors)
+        assertTrue(result.transactions.all { it.accountType == AccountType.CREDIT_CARD })
     }
 }
