@@ -17,24 +17,17 @@
     <p class="empty-state">No transactions yet. <a href="/transactions">Import a CSV</a> to see your summary here.</p>
     <#else>
 
-    <h2 class="dashboard-section-title">Net position</h2>
-    <#if hasBalances>
-    <div class="month-summary">
-      <span class="month-summary-label">Net position</span>
-      <span class="transaction-amount month-summary-amount ${netPositionClass}">${netPosition}</span>
-    </div>
-    <div class="dashboard-card-grid">
-      <#list balances as b>
-      <div class="dashboard-card">
-        <span class="dashboard-card-label">${b.accountType}</span>
-        <span class="transaction-amount dashboard-card-amount">${b.balance}</span>
-        <span class="dashboard-card-note">as of ${b.asOf}</span>
+    <h2 class="dashboard-section-title">Money in/out</h2>
+    <div class="dashboard-trend-bars">
+      <#list netChangeSeries as m>
+      <div class="dashboard-trend-bar-col">
+        <div class="dashboard-trend-bar-track">
+          <div class="dashboard-trend-bar <#if m.isNegative>dashboard-trend-bar-negative<#else>dashboard-trend-bar-positive</#if>" style="height: ${m.barPercent}%;"></div>
+        </div>
+        <span class="dashboard-trend-bar-label">${m.label}</span>
       </div>
       </#list>
     </div>
-    <#else>
-    <p class="empty-state">No balance data yet &mdash; re-import a statement to see your net position here.</p>
-    </#if>
 
     <h2 class="dashboard-section-title">Coverage</h2>
     <div class="dashboard-card-grid">
@@ -46,18 +39,6 @@
         <#list c.gaps as gap>
         <span class="dashboard-card-gap">Possible gap: ${gap.start} &ndash; ${gap.end} (${gap.days?c} days)</span>
         </#list>
-      </div>
-      </#list>
-    </div>
-
-    <h2 class="dashboard-section-title">Trends</h2>
-    <div class="dashboard-trend-bars">
-      <#list netChangeSeries as m>
-      <div class="dashboard-trend-bar-col">
-        <div class="dashboard-trend-bar-track">
-          <div class="dashboard-trend-bar <#if m.isNegative>dashboard-trend-bar-negative<#else>dashboard-trend-bar-positive</#if>" style="height: ${m.barPercent}%;"></div>
-        </div>
-        <span class="dashboard-trend-bar-label">${m.label}</span>
       </div>
       </#list>
     </div>

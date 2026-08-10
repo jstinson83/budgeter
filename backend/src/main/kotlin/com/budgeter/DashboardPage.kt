@@ -6,10 +6,12 @@ import java.time.format.TextStyle
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 
-// Landing-page ("/") summary: net position, per-account coverage/staleness,
-// and a few deterministic spending trends - the first "section" of what the
-// spec calls a Household OS dashboard, computed straight from existing
-// transaction data rather than a new precomputed/cron layer.
+// Landing-page ("/") summary: per-account coverage/staleness and a few
+// deterministic spending trends - the first "section" of what the spec calls
+// a Household OS dashboard, computed straight from existing transaction data
+// rather than a new precomputed/cron layer. A net-position (total
+// assets/debt) section was tried and pulled - see CLAUDE.md's dashboard
+// gotcha for what was learned and why, if it comes back later.
 
 // A stretch with no transactions on one account longer than this is surfaced
 // as a "possible missing statement" rather than assumed to be a quiet
@@ -27,8 +29,6 @@ private const val STALE_THRESHOLD_DAYS = 35L
 // dramatic 300% swing that isn't actually meaningful.
 private const val MOVER_MIN_BASELINE = 20.0
 
-data class AccountBalance(val accountType: AccountType, val balance: Double, val asOf: LocalDate)
-
 data class AccountCoverage(
     val accountType: AccountType,
     val earliest: LocalDate,
@@ -40,29 +40,6 @@ data class AccountCoverage(
 data class CategoryMover(val label: String, val currentTotal: Double, val priorAverage: Double, val delta: Double)
 
 data class NotableTransaction(val description: String, val amount: Double, val date: LocalDate, val accountType: AccountType)
-
-// Latest known balance per account type - the balance on that account's
-// most-recent-dated transaction that actually carried one (older rows, or
-// ones imported before balance capture existed, may have none). Ties on the
-// same date fall back to `transactions`' own order (all(ownerId) returns
-// date-descending) - there's no persisted intra-day row-order field to break
-// them correctly, and this is a display convenience, not a source of truth.
-fun latestBalances(transactions: List<Transaction>): List<AccountBalance> =
-    transactions
-        .filter { it.balance != null }
-        .groupBy { it.accountType }
-        .mapNotNull { (accountType, rows) ->
-            rows.maxByOrNull { it.date }?.let { AccountBalance(accountType, it.balance!!, it.date) }
-        }
-        .sortedBy { it.accountType.label }
-
-// Bank balance is cash on hand (an asset); credit-card and LOC balances are
-// what's owed (a liability) - this is how TD's own statement export reports
-// each, not a sign flip applied here. Only account types with a captured
-// balance contribute; one with none yet (nothing re-imported since balance
-// capture shipped) is left out rather than assumed to be zero.
-fun netPosition(balances: List<AccountBalance>): Double =
-    balances.sumOf { if (it.accountType == AccountType.BANK) it.balance else -it.balance }
 
 // Per account type: the span of dates actually covered by imports, how
 // stale the most recent one is, and any internal stretches longer than
@@ -160,25 +137,18 @@ fun biggestExpense(transactions: List<Transaction>, month: YearMonth): NotableTr
 // needs already-display-ready values, not java.time types or data classes.
 fun dashboardPageModel(transactions: List<Transaction>, categories: List<Category>, today: LocalDate = LocalDate.now()): Map<String, Any?> {
     val currentMonth = YearMonth.from(today)
-    val balances = latestBalances(transactions)
     val coverage = accountCoverage(transactions, today)
-    val netChangeSeries = monthlyNetChange(transactions, currentMonth, months = 6)
+    // 3 months, not a longer lookback - a deliberately modest window that
+    // doesn't assume complete history, matching this page's overall stance
+    // of not requiring every account to be fully linked/imported to be
+    // useful (see the dropped net-position section's gotcha in CLAUDE.md).
+    val netChangeSeries = monthlyNetChange(transactions, currentMonth, months = 3)
     val maxAbsNetChange = netChangeSeries.maxOfOrNull { kotlin.math.abs(it.second) }?.takeIf { it > 0 } ?: 1.0
     val movers = categoryMovers(transactions, categories, currentMonth)
     val biggest = biggestExpense(transactions, currentMonth)
 
     return mapOf(
         "hasTransactions" to transactions.isNotEmpty(),
-        "hasBalances" to balances.isNotEmpty(),
-        "balances" to balances.map {
-            mapOf(
-                "accountType" to it.accountType.label,
-                "balance" to "%.2f".format(it.balance),
-                "asOf" to it.asOf.toString()
-            )
-        },
-        "netPosition" to formatSignedAmount(netPosition(balances)),
-        "netPositionClass" to amountClass(netPosition(balances)),
         "coverage" to coverage.map { c ->
             mapOf(
                 "accountType" to c.accountType.label,
