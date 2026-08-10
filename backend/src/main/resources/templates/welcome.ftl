@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Budgeter</title>
+<title>Home OS</title>
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body class="auth-body">
   <div class="auth-page">
     <div class="auth-card">
-      <h1 class="wordmark">budgeter</h1>
+      <h1 class="wordmark">Home OS</h1>
       <p class="subtitle">Spending insights, at a glance.</p>
       <#if session??>
       <p class="auth-session">Signed in as ${session.name} (${session.email})</p>

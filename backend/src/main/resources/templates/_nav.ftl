@@ -1,5 +1,5 @@
 <div class="nav">
-  <a href="/" class="wordmark">budgeter</a>
+  <a href="/" class="wordmark">Home OS</a>
   <div class="nav-right">
     <#if currentUser??>
     <a href="/transactions" class="nav-link">Transactions</a>
