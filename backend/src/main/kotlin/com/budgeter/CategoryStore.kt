@@ -38,6 +38,13 @@ internal val BUILT_IN_CATEGORIES = listOf(
 // this feature.
 const val TRANSFER_CATEGORY_ID = "TRANSFER"
 
+// Unlike TRANSFER_CATEGORY_ID above, this *is* a real per-owner Category
+// row - seeded from BUILT_IN_CATEGORIES like any other built-in. Safe to
+// hardcode here anyway because CategoryRepository has no rename-id
+// operation (add() mints a fresh id, setActive() only flips a boolean) -
+// this string is fixed at seed time and never changes underneath us, same
+// as "GROCERIES" or "DINING_OUT" elsewhere in BUILT_IN_CATEGORIES.
+//
 // Investment contributions/transfers aren't spending or income either - kept
 // out of the analysis page's net change total the same way TRANSFER is kept
 // out of the whole period, just narrower: an INVESTMENT row still shows up
