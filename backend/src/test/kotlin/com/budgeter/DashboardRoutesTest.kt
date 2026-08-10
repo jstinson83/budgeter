@@ -42,22 +42,6 @@ class DashboardRoutesTest {
     }
 
     @Test
-    fun testShowsNetPositionFromLatestCapturedBalances() = testApplication {
-        testModule()
-        val client = signInFakeUser()
-
-        client.importCsv("2026-06-01,Groceries,50.00,,950.00\n2026-06-10,Payroll,,200.00,1150.00", accountType = "BANK")
-        client.importCsv("2026-06-05,Amazon,25.00,,325.00", accountType = "CREDIT_CARD")
-
-        val response = client.get("/") { header(HttpHeaders.Accept, "text/html") }
-        val body = response.bodyAsText()
-        assertTrue(body.contains("1150.00"))
-        assertTrue(body.contains("325.00"))
-        // Net position: 1150.00 bank asset minus 325.00 credit-card liability.
-        assertTrue(body.contains("825.00"))
-    }
-
-    @Test
     fun testFlagsAPossibleCoverageGap() = testApplication {
         testModule()
         val client = signInFakeUser()
@@ -66,5 +50,20 @@ class DashboardRoutesTest {
 
         val response = client.get("/") { header(HttpHeaders.Accept, "text/html") }
         assertTrue(response.bodyAsText().contains("Possible gap"))
+    }
+
+    // Net position (total assets/debt combined across accounts) was tried
+    // and pulled - see CLAUDE.md's dashboard gotcha - since it silently
+    // implies every account is fully linked/imported, which isn't a safe
+    // assumption. This just guards against it quietly coming back.
+    @Test
+    fun testDoesNotShowANetPositionFigure() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        client.importCsv("2026-06-01,Groceries,50.00,,950.00", accountType = "BANK")
+
+        val response = client.get("/") { header(HttpHeaders.Accept, "text/html") }
+        assertFalse(response.bodyAsText().contains("Net position"))
     }
 }

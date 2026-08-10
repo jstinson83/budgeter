@@ -37,13 +37,7 @@ data class Transaction(
     // filled in later, on demand, not at import time. A Category.id
     // (CategoryStore.kt) rather than an enum - categories are per-owner and
     // user-editable now, not a fixed compile-time set.
-    val category: String? = null,
-    // The account's running balance as of this row (see
-    // ParsedTransaction.balance) - null for rows imported before this field
-    // existed, or where the source CSV's balance column didn't parse.
-    // DashboardPage.kt uses the balance on each account type's most
-    // recent-dated row as that account's "current" balance.
-    val balance: Double? = null
+    val category: String? = null
 )
 
 data class TransactionImportResult(val stored: List<Transaction>, val duplicateCount: Int)
@@ -122,7 +116,7 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
                 continue
             }
             batch.set(collection.document(fingerprint), transactionToMap(ownerId, parsed))
-            stored += Transaction(fingerprint, ownerId, parsed.accountType, parsed.date, parsed.description, parsed.amount, balance = parsed.balance)
+            stored += Transaction(fingerprint, ownerId, parsed.accountType, parsed.date, parsed.description, parsed.amount)
         }
         if (stored.isNotEmpty()) batch.commit().get()
         return TransactionImportResult(stored, duplicateCount)
@@ -161,7 +155,6 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
         "date" to parsed.date.toString(),
         "description" to parsed.description,
         "amount" to parsed.amount,
-        "balance" to parsed.balance,
         "createdAt" to FieldValue.serverTimestamp()
     )
 
@@ -175,7 +168,6 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
         date = LocalDate.parse(data["date"] as? String ?: "1970-01-01"),
         description = data["description"] as? String ?: "",
         amount = (data["amount"] as? Number)?.toDouble() ?: 0.0,
-        category = data["category"] as? String,
-        balance = (data["balance"] as? Number)?.toDouble()
+        category = data["category"] as? String
     )
 }

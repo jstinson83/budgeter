@@ -11,39 +11,8 @@ class DashboardPageTest {
         date: LocalDate,
         description: String = "Transaction",
         amount: Double,
-        category: String? = null,
-        balance: Double? = null
-    ): Transaction = Transaction(id, "owner", accountType, date, description, amount, category, balance)
-
-    @Test
-    fun testLatestBalancesPicksTheMostRecentDatedRowPerAccountType() {
-        val transactions = listOf(
-            tx("1", AccountType.BANK, date = LocalDate.of(2026, 6, 1), amount = -10.0, balance = 900.0),
-            tx("2", AccountType.BANK, date = LocalDate.of(2026, 6, 15), amount = -5.0, balance = 895.0),
-            tx("3", AccountType.CREDIT_CARD, date = LocalDate.of(2026, 6, 10), amount = 20.0, balance = 300.0),
-            // No balance captured on this row (e.g. imported before balance capture) - ignored, not treated as zero.
-            tx("4", AccountType.LOC, date = LocalDate.of(2026, 6, 20), amount = -50.0, balance = null)
-        )
-
-        val balances = latestBalances(transactions)
-
-        assertEquals(2, balances.size)
-        val bank = balances.single { it.accountType == AccountType.BANK }
-        assertEquals(895.0, bank.balance)
-        assertEquals(LocalDate.of(2026, 6, 15), bank.asOf)
-        assertEquals(300.0, balances.single { it.accountType == AccountType.CREDIT_CARD }.balance)
-    }
-
-    @Test
-    fun testNetPositionTreatsBankAsAnAssetAndCreditCardAndLocAsLiabilities() {
-        val balances = listOf(
-            AccountBalance(AccountType.BANK, 1000.0, LocalDate.of(2026, 6, 15)),
-            AccountBalance(AccountType.CREDIT_CARD, 300.0, LocalDate.of(2026, 6, 15)),
-            AccountBalance(AccountType.LOC, 200.0, LocalDate.of(2026, 6, 15))
-        )
-
-        assertEquals(500.0, netPosition(balances))
-    }
+        category: String? = null
+    ): Transaction = Transaction(id, "owner", accountType, date, description, amount, category)
 
     @Test
     fun testAccountCoverageReportsEarliestLatestAndDaysSinceLastImport() {
@@ -138,6 +107,18 @@ class DashboardPageTest {
         val model = dashboardPageModel(emptyList(), emptyList())
 
         assertEquals(false, model["hasTransactions"])
-        assertEquals(false, model["hasBalances"])
+    }
+
+    @Test
+    fun testDashboardPageModelDefaultsTheNetChangeTrendToThreeMonths() {
+        val model = dashboardPageModel(
+            listOf(tx("1", date = LocalDate.of(2026, 6, 15), amount = -10.0)),
+            emptyList(),
+            today = LocalDate.of(2026, 6, 20)
+        )
+
+        @Suppress("UNCHECKED_CAST")
+        val series = model["netChangeSeries"] as List<Map<String, Any?>>
+        assertEquals(3, series.size)
     }
 }

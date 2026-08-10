@@ -102,6 +102,37 @@ breaks, not the facts themselves.
   re-imports everything as new - there's no real per-transaction ID from
   the source data to do better than this without one.
 
+## Dashboard net position gotcha (feature since pulled)
+
+A "net position" dashboard section briefly existed: `DashboardPage.kt`
+combined each account's latest captured balance (`Transaction.balance`,
+populated from the CSV's previously-discarded 5th column) into one
+Bank-minus-debts figure. It shipped, had a real bug, got fixed, and was then
+pulled entirely (see `.claude/context.md`'s dashboard-feature section for
+why) - `Transaction.balance`/`ParsedTransaction.balance` no longer exist in
+the codebase. Keeping the lesson here in case this is ever rebuilt:
+
+- It shipped assuming Bank balance is an asset (added) and Credit Card/LOC
+  balances are a liability that needed subtracting - i.e. treating a
+  credit-card/LOC balance as a positive "amount owed." Wrong: confirmed
+  against a real account, TD's export already signs credit-card/LOC
+  balances the same way `Transaction.amount` is (negative = money owed), so
+  subtracting an already-negative debt figure flipped it positive and added
+  it to net position instead - silently inflating net position by roughly
+  double the real debt on every affected account, not an off-by-a-little
+  error. The fix (before the feature was pulled) was to sum the raw
+  balances directly with no per-account-type sign flip at all. If this is
+  rebuilt, start from that - don't reintroduce the asset/liability sign
+  flip.
+- Separately from the sign bug: a combined net-position figure inherently
+  implies every account the household holds has been imported with balance
+  data. In practice some accounts just aren't linked/uploaded, so the figure
+  would quietly understate net worth with no indication on the page that
+  it's incomplete - the reason it was pulled rather than just re-fixed. A
+  future version should probably surface each account's own balance
+  individually rather than combine them into one number, or otherwise make
+  incompleteness visible.
+
 ## Gemini categorization gotchas
 
 `GeminiTransactionCategorizer` (`GeminiCategorizer.kt`) is what `/analysis`'s

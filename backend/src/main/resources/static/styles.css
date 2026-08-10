@@ -452,10 +452,6 @@ h1, h2 {
   font-weight: 600;
 }
 
-.dashboard-card-amount {
-  font-size: 1.1rem;
-}
-
 .dashboard-card-note {
   color: var(--text-dim);
   font-size: 0.8rem;
