@@ -330,14 +330,10 @@ h1, h2 {
   justify-content: space-between;
   margin-bottom: 1.5rem;
   padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
-  background: white;
-}
-
-@media (prefers-color-scheme: dark) {
-  .month-summary {
-    background: #1e2126;
-  }
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--serif);
 }
 
 .month-summary-label {
@@ -346,7 +342,8 @@ h1, h2 {
 
 .month-summary-note {
   font-weight: 400;
-  color: #888;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  color: var(--text-dim);
   font-size: 0.85rem;
 }
 
