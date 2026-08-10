@@ -9,10 +9,10 @@ alone. See `context.md` for the stable project overview instead.
 ## Active task
 
 None currently. Deploy pipeline, CSV transaction import, and the
-quick-version Gemini categorization + `/analysis` screen are all done — see
-`context.md` for what's actually live. `GEMINI_API_KEY` still needs to be
-set on the Cloud Run service (see `CLAUDE.md`) before categorization works
-on the deployed app.
+quick-version Gemini categorization + `/analysis` screen are all done and
+live — see `context.md` for what's actually live. `GEMINI_API_KEY` is now
+set on the Cloud Run service; categorization works end to end in
+production.
 
 Mentioned as a real next step, not yet a committed plan: a persistent,
 precomputed version of the analysis (cron-job-like — compute and store

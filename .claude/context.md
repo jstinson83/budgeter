@@ -128,10 +128,11 @@ first pass intentionally doesn't build that yet.
   own active category set (passed into `categorize()`, not hardcoded - see
   "Fifth feature" below) - no Google AI SDK dependency added, same "just use
   ktor's HttpClient" pattern as the OAuth userinfo call in `Auth.kt`. Requires the
-  `GEMINI_API_KEY` env var; not yet set on the deployed Cloud Run service
-  (see `CLAUDE.md`'s deploy pipeline section - same manual-env-var pattern
-  as the OAuth secrets). Thinking is explicitly disabled
-  (`thinkingConfig.thinkingBudget = 0`) - see CLAUDE.md gotcha.
+  `GEMINI_API_KEY` env var, now set on the deployed Cloud Run service (see
+  `CLAUDE.md`'s deploy pipeline section - same manual-env-var pattern as the
+  OAuth secrets) - categorization works end to end in production. Thinking
+  is explicitly disabled (`thinkingConfig.thinkingBudget = 0`) - see
+  CLAUDE.md gotcha.
 - The viewed period is always one calendar month (`year`/`month` query
   params, default to the current month) - no rolling-window or
   all-time option.

@@ -50,10 +50,9 @@ reference — don't restate them here.
   `OAUTH_REDIRECT_BASE_URL`, `FIRESTORE_DATABASE_ID`, `GEMINI_API_KEY`) are
   set manually on the Cloud Run service after the first deploy, not via
   `cloudbuild.yaml` — same pattern as foodie, since the OAuth redirect URI
-  needs the actual Cloud Run URL to exist first. `GEMINI_API_KEY` isn't set
-  yet as of the Gemini categorization feature landing — the "Categorize"
-  button on `/analysis` will fail with a "GEMINI_API_KEY is not set" error
-  banner on the deployed app until it's added.
+  needs the actual Cloud Run URL to exist first. `GEMINI_API_KEY` is now set
+  on the deployed service — the "Categorize" button on `/analysis` works
+  end to end in production.
 - This project shares a GCP project with `foodie`. Firestore's
   `roles/datastore.user` is project-scoped, so the runtime service account
   already had it from foodie's setup — no new IAM grant was needed for the
