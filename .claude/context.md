@@ -108,9 +108,9 @@ first pass intentionally doesn't build that yet.
 - `Transaction.category: TransactionCategory?` (`TransactionStore.kt`) is
   null until categorized. `TransactionCategory` is a fixed enum (groceries,
   alcohol, dining out, entertainment, mortgage, house expenses, utilities,
-  transportation, health, subscriptions, income, other) - fixed rather than
-  Gemini-invented per call, so the analysis screen's grouping stays stable
-  run over run.
+  transportation, health, subscriptions, clothing, education, income,
+  investment, other) - fixed rather than Gemini-invented per call, so the
+  analysis screen's grouping stays stable run over run.
 - `TransactionRepository.uncategorized(ownerId)` (default method: filters
   `all(ownerId)` in memory) is what makes categorization idempotent - once a
   transaction has a category it's permanently excluded from future
@@ -161,6 +161,19 @@ button (`AnalysisRoutes.kt`), before the remaining transactions go to
 Gemini - not a separate button. Currently assumes at most one bank account
 and one credit card (no per-account scoping beyond `accountType`); revisit
 if a second account of either type is ever added.
+
+### `INVESTMENT` category
+
+Tracks money moved into an investment/brokerage account, without modeling
+investment accounts/holdings themselves - deliberately a shallow "how much
+did I invest" number, not a portfolio tracker. Unlike `TRANSFER`, it's a
+normal category: manually assignable via the recategorize dropdown and
+guessable by Gemini, and it shows its own bucket in `/analysis`'s category
+totals like any other category today. The one deliberate special case is
+future: when a spent-vs-earned/savings-rate calculation gets built (doesn't
+exist yet - see Second feature above), it should treat `INVESTMENT` as
+neutral (neither income nor expense) and exclude it from that split, the
+same way `TRANSFER` is excluded from `/analysis` entirely now.
 
 ## Fourth feature: manual recategorization + household rules
 

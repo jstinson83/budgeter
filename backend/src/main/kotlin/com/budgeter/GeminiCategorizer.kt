@@ -26,7 +26,17 @@ enum class TransactionCategory(val label: String) {
     TRANSPORTATION("Transportation"),
     HEALTH("Health"),
     SUBSCRIPTIONS("Subscriptions"),
+    CLOTHING("Clothing"),
+    EDUCATION("Education"),
     INCOME("Income"),
+    // Money moved into an investment/brokerage account. Unlike TRANSFER,
+    // this is manually assignable and categorizable like any other bucket -
+    // it shows its own total on /analysis today. The "delicate" part is
+    // future: once a spent-vs-earned/savings-rate calculation exists (there
+    // isn't one yet), it should be treated as neither income nor expense,
+    // the same way TRANSFER is excluded from analysis now. Whoever builds
+    // that should exclude both categories from the split.
+    INVESTMENT("Investment"),
     OTHER("Other"),
     // Assigned deterministically by TransferMatcher (a bank "TFR-TO C/C" row
     // paired with the matching credit-card "PAYMENT - THANK YOU" row), never
