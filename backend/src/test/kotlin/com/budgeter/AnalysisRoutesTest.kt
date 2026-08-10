@@ -43,7 +43,7 @@ class AnalysisRoutesTest {
 
     @Test
     fun testCategorizeButtonAppearsForUncategorizedTransactionsAndGroupsTotalsAfterCategorizing() = testApplication {
-        val categorizer = FakeTransactionCategorizer(TransactionCategory.GROCERIES)
+        val categorizer = FakeTransactionCategorizer("GROCERIES")
         testModule(transactionCategorizer = categorizer)
         val client = signInFakeUser()
 
@@ -68,7 +68,7 @@ class AnalysisRoutesTest {
 
     @Test
     fun testCategorizingTwiceDoesNotReanalyzeAlreadyCategorizedTransactions() = testApplication {
-        val categorizer = FakeTransactionCategorizer(TransactionCategory.GROCERIES)
+        val categorizer = FakeTransactionCategorizer("GROCERIES")
         testModule(transactionCategorizer = categorizer)
         val client = signInFakeUser()
 
@@ -85,7 +85,7 @@ class AnalysisRoutesTest {
 
     @Test
     fun testMatchesCreditCardPaymentAsATransferAndExcludesItFromAnalysis() = testApplication {
-        val categorizer = FakeTransactionCategorizer(TransactionCategory.GROCERIES)
+        val categorizer = FakeTransactionCategorizer("GROCERIES")
         testModule(transactionCategorizer = categorizer)
         val client = signInFakeUser()
 
@@ -113,7 +113,7 @@ class AnalysisRoutesTest {
 
     @Test
     fun testDoesNotMatchATransferWhenOnlyOneLegIsPresent() = testApplication {
-        val categorizer = FakeTransactionCategorizer(TransactionCategory.GROCERIES)
+        val categorizer = FakeTransactionCategorizer("GROCERIES")
         testModule(transactionCategorizer = categorizer)
         val client = signInFakeUser()
 
@@ -165,7 +165,7 @@ class AnalysisRoutesTest {
 
     @Test
     fun testDrillingIntoACategoryShowsOnlyItsTransactionsForTheSelectedMonth() = testApplication {
-        val categorizer = FakeTransactionCategorizer(TransactionCategory.GROCERIES)
+        val categorizer = FakeTransactionCategorizer("GROCERIES")
         testModule(transactionCategorizer = categorizer)
         val client = signInFakeUser()
 
@@ -203,7 +203,7 @@ class AnalysisRoutesTest {
 
     @Test
     fun testCategorizeRedirectPreservesTheMonthBeingViewed() = testApplication {
-        val categorizer = FakeTransactionCategorizer(TransactionCategory.GROCERIES)
+        val categorizer = FakeTransactionCategorizer("GROCERIES")
         testModule(transactionCategorizer = categorizer)
         val client = signInFakeUser()
 
@@ -220,7 +220,7 @@ class AnalysisRoutesTest {
 
     @Test
     fun testRecategorizeUpdatesTheTransactionAndSavesARuleForFutureImports() = testApplication {
-        val categorizer = FakeTransactionCategorizer(TransactionCategory.OTHER)
+        val categorizer = FakeTransactionCategorizer("OTHER")
         testModule(transactionCategorizer = categorizer)
         val client = signInFakeUser()
 
@@ -289,7 +289,7 @@ class AnalysisRoutesTest {
     @Test
     fun testCategorizationFailureShowsErrorBanner() = testApplication {
         val failingCategorizer = object : TransactionCategorizer {
-            override suspend fun categorize(transactions: List<Transaction>): Map<String, TransactionCategory> =
+            override suspend fun categorize(transactions: List<Transaction>, categories: List<Category>): Map<String, String> =
                 throw IllegalStateException("GEMINI_API_KEY is not set")
         }
         testModule(transactionCategorizer = failingCategorizer)

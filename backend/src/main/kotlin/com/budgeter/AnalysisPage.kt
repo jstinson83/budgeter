@@ -5,6 +5,7 @@ package com.budgeter
 // this pre-formats everything the template needs.
 fun analysisPageModel(
     periodTransactions: List<Transaction>,
+    categories: List<Category>,
     year: Int,
     month: Int,
     monthLabel: String,
@@ -14,17 +15,21 @@ fun analysisPageModel(
     message: String?,
     error: String?
 ): Map<String, Any?> {
+    val labelById = categories.associateBy({ it.id }, { it.label })
     val categoryTotals = periodTransactions
         .groupBy { it.category }
-        .map { (category, transactions) -> Triple(category, transactions.sumOf { it.amount }, transactions.size) }
+        .map { (categoryId, transactions) -> Triple(categoryId, transactions.sumOf { it.amount }, transactions.size) }
         .sortedBy { (_, total, _) -> total }
-        .map { (category, total, count) ->
-            // "uncategorized" is a synthetic slug (null has no enum name) -
-            // AnalysisRoutes.kt's category drill-down route special-cases it
-            // back to a null category filter.
-            val slug = category?.name?.lowercase() ?: "uncategorized"
+        .map { (categoryId, total, count) ->
+            // "uncategorized" is a synthetic slug (null has no category id
+            // to use) - AnalysisRoutes.kt's category drill-down route
+            // special-cases it back to a null category filter.
+            val slug = categoryId?.lowercase() ?: "uncategorized"
             mapOf(
-                "category" to (category?.label ?: "Uncategorized"),
+                // Falls back to the raw id if it doesn't resolve to a known
+                // category - shouldn't happen (categories are disabled, not
+                // deleted) but keeps a stray id readable rather than blank.
+                "category" to (categoryId?.let { labelById[it] ?: it } ?: "Uncategorized"),
                 "total" to formatSignedAmount(total),
                 "count" to count,
                 "totalClass" to amountClass(total),
@@ -59,7 +64,8 @@ fun analysisCategoryPageModel(
     backHref: String,
     year: Int,
     month: Int,
-    categorySlug: String
+    categorySlug: String,
+    categoryOptions: List<Category>
 ): Map<String, Any?> = mapOf(
     "transactions" to transactions.sortedByDescending { it.date }.map(::transactionRowModel),
     "categoryLabel" to categoryLabel,
@@ -68,9 +74,9 @@ fun analysisCategoryPageModel(
     "year" to year,
     "month" to month,
     "categorySlug" to categorySlug,
-    // TRANSFER excluded - it's assigned only by TransferMatcher's
-    // deterministic amount/date pairing, never a manual/rule-based pick.
-    "categoryOptions" to TransactionCategory.entries
-        .filter { it != TransactionCategory.TRANSFER }
-        .map { mapOf("name" to it.name, "label" to it.label) }
+    // Only active categories are offered as a recategorize target - a
+    // disabled category can still be viewed (its past transactions keep
+    // their assignment) but shouldn't collect new ones. TRANSFER never
+    // appears here since it isn't a real Category row to begin with.
+    "categoryOptions" to categoryOptions.filter { it.active }.map { mapOf("name" to it.id, "label" to it.label) }
 )

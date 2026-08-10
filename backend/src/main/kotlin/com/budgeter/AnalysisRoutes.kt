@@ -35,7 +35,8 @@ private fun monthLabel(monthStart: LocalDate): String =
 fun Route.analysisRoutes(
     transactionStore: TransactionRepository,
     transactionCategorizer: TransactionCategorizer,
-    categorizationRuleStore: CategorizationRuleRepository
+    categorizationRuleStore: CategorizationRuleRepository,
+    categoryStore: CategoryRepository
 ) {
     get("/analysis") {
         val ownerId = call.requireUserId()
@@ -48,7 +49,7 @@ fun Route.analysisRoutes(
         // money moving between the user's own accounts, not spending or
         // income, so it shouldn't appear in analysis at all.
         val periodTransactions = all.filter {
-            !it.date.isBefore(monthStart) && it.date.isBefore(monthEnd) && it.category != TransactionCategory.TRANSFER
+            !it.date.isBefore(monthStart) && it.date.isBefore(monthEnd) && it.category != TRANSFER_CATEGORY_ID
         }
         val uncategorizedCount = all.count { it.category == null }
 
@@ -59,6 +60,7 @@ fun Route.analysisRoutes(
         val error = call.request.queryParameters["error"]
         val model = analysisPageModel(
             periodTransactions,
+            categoryStore.all(ownerId),
             year,
             month,
             monthLabel(monthStart),
@@ -77,22 +79,22 @@ fun Route.analysisRoutes(
         val monthStart = LocalDate.of(year, month, 1)
         val monthEnd = monthStart.plusMonths(1)
 
+        val categories = categoryStore.all(ownerId)
         val slug = call.parameters["category"] ?: ""
-        // null stands for "Uncategorized" - it has no TransactionCategory
-        // name to parse, so it's special-cased rather than run through
-        // valueOf. TRANSFER is deliberately rejected too: it's excluded
-        // from analysis entirely (see the TRANSFER filter above), so no
-        // category row ever links here with that slug - a request for it
-        // is either a stale link or a guess, not a legitimate drill-down.
+        // null stands for "Uncategorized" - special-cased rather than
+        // looked up. TRANSFER 404s here for free: it's never a real
+        // Category row (see CategoryStore.kt), so no category ever
+        // resolves for that slug - a request for it is either a stale link
+        // or a guess, not a legitimate drill-down. A disabled category
+        // still resolves and drills down fine - disabling only stops new
+        // assignment, past transactions keep their category.
         val category = when {
             slug == "uncategorized" -> null
-            else -> runCatching { TransactionCategory.valueOf(slug.uppercase()) }.getOrNull()
-                ?: return@get call.respond(HttpStatusCode.NotFound)
+            else -> categories.find { it.id.equals(slug, ignoreCase = true) } ?: return@get call.respond(HttpStatusCode.NotFound)
         }
-        if (category == TransactionCategory.TRANSFER) return@get call.respond(HttpStatusCode.NotFound)
 
         val transactions = transactionStore.all(ownerId).filter {
-            it.category == category && !it.date.isBefore(monthStart) && it.date.isBefore(monthEnd)
+            it.category == category?.id && !it.date.isBefore(monthStart) && it.date.isBefore(monthEnd)
         }
         val categoryLabel = category?.label ?: "Uncategorized"
         val model = analysisCategoryPageModel(
@@ -102,7 +104,8 @@ fun Route.analysisRoutes(
             backHref = "/analysis?year=$year&month=$month",
             year = year,
             month = month,
-            categorySlug = slug
+            categorySlug = slug,
+            categoryOptions = categories
         ) + call.currentUserModel()
         call.respond(FreeMarkerContent("analysis-category.ftl", model))
     }
@@ -150,7 +153,7 @@ fun Route.analysisRoutes(
 
         val remaining = afterTransferMatch.filterNot { it.id in ruleMatches }
         val categorized = if (remaining.isEmpty()) emptyMap() else try {
-            transactionCategorizer.categorize(remaining)
+            transactionCategorizer.categorize(remaining, categoryStore.all(ownerId).filter { it.active })
         } catch (e: Exception) {
             call.respondRedirect("/analysis?$monthParams&error=${"Categorization failed: ${e.message}".encodeURLQueryComponent()}")
             return@post
@@ -184,11 +187,17 @@ fun Route.analysisRoutes(
         val backHref = "/analysis/category/$fromSlug?year=$year&month=$month"
 
         val transactionId = formParams["transactionId"]
-        val category = formParams["category"]?.let { runCatching { TransactionCategory.valueOf(it) }.getOrNull() }
+        val categoryId = formParams["category"]
+        // Must be one of this owner's own *active* categories - rejects a
+        // client posting an arbitrary string, someone else's category, a
+        // disabled one, or (since TRANSFER is never a real Category row)
+        // "TRANSFER" specifically, same rejection the old enum-equality
+        // check gave it.
+        val category = categoryId?.let { id -> categoryStore.all(ownerId).find { it.id == id && it.active } }
         val matchType = formParams["matchType"]?.let { runCatching { MatchType.valueOf(it) }.getOrNull() }
         val pattern = formParams["pattern"]?.trim().orEmpty()
 
-        if (transactionId == null || category == null || category == TransactionCategory.TRANSFER || matchType == null || pattern.isEmpty()) {
+        if (transactionId == null || category == null || matchType == null || pattern.isEmpty()) {
             call.respondRedirect("$backHref&error=${"Invalid recategorize request".encodeURLQueryComponent()}")
             return@post
         }
@@ -203,8 +212,8 @@ fun Route.analysisRoutes(
             return@post
         }
 
-        categorizationRuleStore.add(ownerId, pattern, matchType, category)
-        transactionStore.updateCategories(ownerId, mapOf(transactionId to category))
+        categorizationRuleStore.add(ownerId, pattern, matchType, category.id)
+        transactionStore.updateCategories(ownerId, mapOf(transactionId to category.id))
 
         call.respondRedirect("$backHref&message=${"Recategorized as ${category.label}".encodeURLQueryComponent()}")
     }

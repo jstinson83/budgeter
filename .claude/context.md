@@ -105,12 +105,10 @@ the request, not a background/cron job. The maintainer has said they want
 a persistent, precomputed version later (a cron-job-like thing); this
 first pass intentionally doesn't build that yet.
 
-- `Transaction.category: TransactionCategory?` (`TransactionStore.kt`) is
-  null until categorized. `TransactionCategory` is a fixed enum (groceries,
-  alcohol, dining out, entertainment, mortgage, house expenses, utilities,
-  transportation, health, subscriptions, clothing, education, income,
-  investment, other) - fixed rather than Gemini-invented per call, so the
-  analysis screen's grouping stays stable run over run.
+- `Transaction.category: String?` (`TransactionStore.kt`) is null until
+  categorized, and holds a `Category.id` (see "Fifth feature" below) rather
+  than a fixed enum as of the categories/rules management page - categories
+  are per-owner and user-editable now, not a single compile-time set.
 - `TransactionRepository.uncategorized(ownerId)` (default method: filters
   `all(ownerId)` in memory) is what makes categorization idempotent - once a
   transaction has a category it's permanently excluded from future
@@ -120,9 +118,10 @@ first pass intentionally doesn't build that yet.
   API directly over REST (`generativelanguage.googleapis.com`, model
   `gemini-3.5-flash`) using a `responseSchema` that constrains output to
   `{index, category}` pairs (index into the request's transaction list, not
-  the transaction's real id - see CLAUDE.md gotcha below) from the fixed
-  enum - no Google AI SDK dependency added, same "just use ktor's
-  HttpClient" pattern as the OAuth userinfo call in `Auth.kt`. Requires the
+  the transaction's real id - see CLAUDE.md gotcha below) from the caller's
+  own active category set (passed into `categorize()`, not hardcoded - see
+  "Fifth feature" below) - no Google AI SDK dependency added, same "just use
+  ktor's HttpClient" pattern as the OAuth userinfo call in `Auth.kt`. Requires the
   `GEMINI_API_KEY` env var; not yet set on the deployed Cloud Run service
   (see `CLAUDE.md`'s deploy pipeline section - same manual-env-var pattern
   as the OAuth secrets). Thinking is explicitly disabled
@@ -147,9 +146,9 @@ The reason for labeling accounts: paying a credit card from the bank
 account shows up as two separate transactions (a bank outflow, a
 credit-card inflow) that both need to be excluded from spending/income
 analysis rather than double-counted. `TransferMatcher.kt` finds these pairs
-and marks both `TransactionCategory.TRANSFER` (excluded from `/analysis`
-entirely, not just grouped into its own bucket) - deterministically, not
-via Gemini. It matches on the bank leg's description containing
+and marks both with `TRANSFER_CATEGORY_ID` (`"TRANSFER"`, `CategoryStore.kt`
+- excluded from `/analysis` entirely, not just grouped into its own bucket)
+- deterministically, not via Gemini. It matches on the bank leg's description containing
 `TFR-TO C/C` and the credit-card leg's containing `PAYMENT - THANK YOU`
 (both fixed TD statement-generator templates, confirmed against real
 statements - not guessed), plus amount equality and dates within 5 days.
@@ -194,9 +193,10 @@ uncategorized-only `/analysis/categorize` pass on its own), and saves a
 `CategorizationRule` (`CategorizationRuleStore.kt` -
 `pattern`/`matchType`/`category`, Firestore collection
 `categorizationRules`, single-field `ownerId` equality query - no composite
-index needed, unlike `TransactionRepository.all()`). `TRANSFER` is rejected
-as a target category - that's assigned only by `TransferMatcher`'s
-deterministic pairing, never picked by hand.
+index needed, unlike `TransactionRepository.all()`). The target category
+must be one of the owner's own active `Category` rows (see "Fifth feature"
+below) - `TRANSFER` is never offered since it isn't a real `Category` row to
+begin with, and a disabled category is rejected too.
 
 Saved rules apply **going forward only**, not retroactively: on every
 future `/analysis/categorize` run, `CategorizationRuleMatcher.kt` checks
@@ -214,6 +214,63 @@ silently rewrite past analysis totals.
 owner's own `uncategorized()` list) - the handler re-fetches
 `transactionStore.all(ownerId)` and confirms the id belongs to the caller
 before touching it, rather than trusting the form value directly.
+
+## Fifth feature: categories + rules management page (`/categories`)
+
+Replaced the old fixed `TransactionCategory` enum with `Category`
+(`CategoryStore.kt`) - real per-owner Firestore rows (collection
+`categories`, single-field `ownerId` equality query, same
+no-composite-index shape as `categorizationRules`) instead of a
+compile-time set, so a household can add its own categories from the UI.
+`Transaction.category` and `CategorizationRule.category` are now plain
+`String` ids (a `Category.id`) rather than the enum.
+
+- **Built-ins seeded lazily, per owner, on first read**: `BUILT_IN_CATEGORIES`
+  (groceries, alcohol, dining out, entertainment, mortgage, house expenses,
+  utilities, transportation, health, subscriptions, clothing, education,
+  income, investment, other) gets written as real `categories` documents the
+  first time `CategoryRepository.all(ownerId)` finds none for that owner.
+  Ids intentionally match the old enum constant names exactly
+  (`"GROCERIES"`, `"DINING_OUT"`, ...) so `Transaction`/`CategorizationRule`
+  documents written before this feature keep resolving without a data
+  migration - this was the main constraint the whole design worked backward
+  from.
+- **Custom categories get a generated id**: `slugify()`/`uniqueSlug()` turn
+  a label into the same uppercase-snake-case shape as the built-ins (e.g.
+  "Hobby Supplies" → `HOBBY_SUPPLIES`), with a `_2`/`_3`/... suffix on
+  collision. This keeps `/analysis/category/{slug}` working unchanged - the
+  slug is just `id.lowercase()`, same as it was for the enum's `.name`
+  before.
+- **Categories are disabled, never deleted**: the maintainer explicitly
+  chose this over full rename/delete when this feature was scoped (delete
+  would orphan existing transactions/rules pointing at it). Disabling only
+  removes a category from *future* assignment - it drops out of the
+  `/analysis` recategorize dropdown, the `/categories` "Add rule" dropdown,
+  and Gemini's allowed schema values (`categoryStore.all(ownerId).filter {
+  it.active }` at each of those three call sites). Transactions and rules
+  already pointing at a disabled category are completely unaffected - a
+  disabled category's own `/analysis/category/{slug}` drill-down still
+  works.
+- **`TRANSFER` stays outside this system entirely** - it's not a `Category`
+  row, seeded or otherwise (`TRANSFER_CATEGORY_ID` is just a string
+  constant `CategoryStore.kt` exports for `TransferMatcher.kt` and the
+  `/analysis` filters to use). This was a deliberate maintainer decision:
+  transfer-matching is fully automatic and never user-facing today, so
+  there's nothing to manage on this page. If that ever needs to change,
+  promoting it to a real (permanently-disabled-by-default?) `Category` row
+  is the likely path, not the reverse.
+- **`GeminiTransactionCategorizer.categorize()` takes the category list as a
+  parameter now** (`categories: List<Category>`) instead of deriving it from
+  a hardcoded enum minus `TRANSFER` - the caller (`AnalysisRoutes.kt`)
+  passes the owner's own active categories, so the Gemini schema's allowed
+  values are per-owner and per-call rather than global.
+- **`CategorizationRuleRepository` gained `update`/`delete`** (previously
+  add-only, created only as a side effect of `/analysis/recategorize`).
+  `/categories` (`CategoryRoutes.kt`, `categories.ftl`) is now full CRUD for
+  rules - add, edit (pattern/matchType/category), delete - alongside the
+  category list/add/toggle-active UI. Both rule-creation paths
+  (`/analysis/recategorize` and `/categories/rules`) apply the same "target
+  must be one of the owner's own active categories" validation.
 
 ## Configuration reference
 

@@ -7,7 +7,7 @@ class CategorizationRuleMatcherTest {
     private fun transaction(id: String, description: String): Transaction =
         Transaction(id, "owner", AccountType.BANK, LocalDate.of(2026, 7, 1), description, -10.00)
 
-    private fun rule(pattern: String, matchType: MatchType, category: TransactionCategory = TransactionCategory.SUBSCRIPTIONS): CategorizationRule =
+    private fun rule(pattern: String, matchType: MatchType, category: String = "SUBSCRIPTIONS"): CategorizationRule =
         CategorizationRule("rule-1", "owner", pattern, matchType, category)
 
     @Test
@@ -18,7 +18,7 @@ class CategorizationRuleMatcherTest {
 
         val result = CategorizationRuleMatcher.match(rules, listOf(exact, withExtra))
 
-        assertEquals(mapOf("t-1" to TransactionCategory.SUBSCRIPTIONS), result)
+        assertEquals(mapOf("t-1" to "SUBSCRIPTIONS"), result)
     }
 
     @Test
@@ -28,7 +28,7 @@ class CategorizationRuleMatcherTest {
 
         val result = CategorizationRuleMatcher.match(rules, listOf(withExtra))
 
-        assertEquals(mapOf("t-1" to TransactionCategory.SUBSCRIPTIONS), result)
+        assertEquals(mapOf("t-1" to "SUBSCRIPTIONS"), result)
     }
 
     @Test
@@ -36,7 +36,7 @@ class CategorizationRuleMatcherTest {
         val rules = listOf(rule("netflix", MatchType.SUBSTRING))
         val transaction = transaction("t-1", "NETFLIX.COM")
 
-        assertEquals(mapOf("t-1" to TransactionCategory.SUBSCRIPTIONS), CategorizationRuleMatcher.match(rules, listOf(transaction)))
+        assertEquals(mapOf("t-1" to "SUBSCRIPTIONS"), CategorizationRuleMatcher.match(rules, listOf(transaction)))
     }
 
     @Test
@@ -50,12 +50,12 @@ class CategorizationRuleMatcherTest {
     @Test
     fun testFirstMatchingRuleWinsWhenMoreThanOneRuleMatches() {
         val rules = listOf(
-            rule("NETFLIX", MatchType.SUBSTRING, TransactionCategory.SUBSCRIPTIONS),
-            rule("NETFLIX.COM", MatchType.EXACT, TransactionCategory.ENTERTAINMENT)
+            rule("NETFLIX", MatchType.SUBSTRING, "SUBSCRIPTIONS"),
+            rule("NETFLIX.COM", MatchType.EXACT, "ENTERTAINMENT")
         )
         val transaction = transaction("t-1", "NETFLIX.COM")
 
-        assertEquals(mapOf("t-1" to TransactionCategory.SUBSCRIPTIONS), CategorizationRuleMatcher.match(rules, listOf(transaction)))
+        assertEquals(mapOf("t-1" to "SUBSCRIPTIONS"), CategorizationRuleMatcher.match(rules, listOf(transaction)))
     }
 
     @Test

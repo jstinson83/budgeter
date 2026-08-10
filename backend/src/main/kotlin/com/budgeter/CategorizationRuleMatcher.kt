@@ -9,9 +9,9 @@ object CategorizationRuleMatcher {
     // First matching rule wins per transaction, in `rules` order - keeps
     // the result deterministic without requiring the user's rules to be
     // mutually exclusive of each other.
-    fun match(rules: List<CategorizationRule>, transactions: List<Transaction>): Map<String, TransactionCategory> {
+    fun match(rules: List<CategorizationRule>, transactions: List<Transaction>): Map<String, String> {
         if (rules.isEmpty()) return emptyMap()
-        val matches = mutableMapOf<String, TransactionCategory>()
+        val matches = mutableMapOf<String, String>()
         for (transaction in transactions) {
             val rule = rules.firstOrNull { it.matches(transaction.description) } ?: continue
             matches[transaction.id] = rule.category

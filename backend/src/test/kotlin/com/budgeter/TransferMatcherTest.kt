@@ -19,7 +19,7 @@ class TransferMatcherTest {
 
         val result = TransferMatcher.match(listOf(bank, creditCard))
 
-        assertEquals(mapOf("bank-1" to TransactionCategory.TRANSFER, "cc-1" to TransactionCategory.TRANSFER), result)
+        assertEquals(mapOf("bank-1" to TRANSFER_CATEGORY_ID, "cc-1" to TRANSFER_CATEGORY_ID), result)
     }
 
     @Test
@@ -96,10 +96,10 @@ class TransferMatcherTest {
 
         assertEquals(
             mapOf(
-                "bank-1" to TransactionCategory.TRANSFER,
-                "cc-1" to TransactionCategory.TRANSFER,
-                "bank-2" to TransactionCategory.TRANSFER,
-                "cc-2" to TransactionCategory.TRANSFER
+                "bank-1" to TRANSFER_CATEGORY_ID,
+                "cc-1" to TRANSFER_CATEGORY_ID,
+                "bank-2" to TRANSFER_CATEGORY_ID,
+                "cc-2" to TRANSFER_CATEGORY_ID
             ),
             result
         )

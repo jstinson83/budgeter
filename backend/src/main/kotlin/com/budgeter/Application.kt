@@ -65,7 +65,8 @@ fun Application.module(
     sessionSecret: String = System.getenv("SESSION_SECRET") ?: "dev-only-insecure-session-secret-change-me",
     transactionStore: TransactionRepository = FirestoreTransactionStore(firestoreClient),
     transactionCategorizer: TransactionCategorizer = geminiCategorizer,
-    categorizationRuleStore: CategorizationRuleRepository = FirestoreCategorizationRuleStore(firestoreClient)
+    categorizationRuleStore: CategorizationRuleRepository = FirestoreCategorizationRuleStore(firestoreClient),
+    categoryStore: CategoryRepository = FirestoreCategoryStore(firestoreClient)
 ) {
     install(FreeMarker) {
         templateLoader = ClassTemplateLoader(this::class.java.classLoader, "templates")
@@ -86,7 +87,8 @@ fun Application.module(
             }
 
             transactionRoutes(transactionStore)
-            analysisRoutes(transactionStore, transactionCategorizer, categorizationRuleStore)
+            analysisRoutes(transactionStore, transactionCategorizer, categorizationRuleStore, categoryStore)
+            categoryRoutes(categoryStore, categorizationRuleStore)
         }
     }
 }

@@ -10,50 +10,21 @@ import kotlinx.serialization.json.Json
 
 private val lenientJson = Json { ignoreUnknownKeys = true }
 
-// Fixed, small category set rather than something Gemini invents per call -
-// keeps the analysis screen's grouping stable across categorization runs.
-// Covers the maintainer's examples (groceries, alcohol, entertainment,
-// mortgage, house expenses) plus the handful of other buckets a personal
-// household budget obviously needs.
-enum class TransactionCategory(val label: String) {
-    GROCERIES("Groceries"),
-    ALCOHOL("Alcohol"),
-    DINING_OUT("Dining Out"),
-    ENTERTAINMENT("Entertainment"),
-    MORTGAGE("Mortgage"),
-    HOUSE_EXPENSES("House Expenses"),
-    UTILITIES("Utilities"),
-    TRANSPORTATION("Transportation"),
-    HEALTH("Health"),
-    SUBSCRIPTIONS("Subscriptions"),
-    CLOTHING("Clothing"),
-    EDUCATION("Education"),
-    INCOME("Income"),
-    // Money moved into an investment/brokerage account. Unlike TRANSFER,
-    // this is manually assignable and categorizable like any other bucket -
-    // it shows its own total on /analysis today. The "delicate" part is
-    // future: once a spent-vs-earned/savings-rate calculation exists (there
-    // isn't one yet), it should be treated as neither income nor expense,
-    // the same way TRANSFER is excluded from analysis now. Whoever builds
-    // that should exclude both categories from the split.
-    INVESTMENT("Investment"),
-    OTHER("Other"),
-    // Assigned deterministically by TransferMatcher (a bank "TFR-TO C/C" row
-    // paired with the matching credit-card "PAYMENT - THANK YOU" row), never
-    // by Gemini - see the schema's enum below. A transfer between your own
-    // accounts isn't spending or income, so it's excluded from analysis
-    // totals entirely rather than grouped under either.
-    TRANSFER("Transfer")
-}
-
 interface TransactionCategorizer {
+    // categories is the owner's own active category set (see
+    // CategoryStore.kt) - the allowed output values are now per-owner and
+    // dynamic rather than a single fixed enum, so the caller supplies them
+    // on every call instead of this interface hardcoding a list. TRANSFER
+    // is never among them: it isn't a real Category row (see
+    // CategoryStore.kt), so there's nothing to explicitly exclude here.
+    //
     // Keyed by transaction id. A transaction Gemini couldn't confidently
     // place, or that dropped out of a malformed/truncated response, is
     // simply absent from the result rather than defaulted to OTHER - it
     // stays uncategorized and gets picked up again by the next button press
     // (TransactionRepository.uncategorized), rather than being silently
     // mis-filed.
-    suspend fun categorize(transactions: List<Transaction>): Map<String, TransactionCategory>
+    suspend fun categorize(transactions: List<Transaction>, categories: List<Category>): Map<String, String>
 }
 
 class GeminiTransactionCategorizer(
@@ -62,7 +33,7 @@ class GeminiTransactionCategorizer(
     private val model: String = "gemini-3.5-flash"
 ) : TransactionCategorizer {
 
-    override suspend fun categorize(transactions: List<Transaction>): Map<String, TransactionCategory> {
+    override suspend fun categorize(transactions: List<Transaction>, categories: List<Category>): Map<String, String> {
         if (transactions.isEmpty()) return emptyMap()
         check(apiKey.isNotBlank()) { "GEMINI_API_KEY is not set" }
 
@@ -90,15 +61,16 @@ class GeminiTransactionCategorizer(
                             // the old id-set membership check with no sign
                             // anything went wrong.
                             "index" to GeminiSchemaProperty(type = "INTEGER"),
-                            // TRANSFER excluded on purpose - it's assigned by
-                            // TransferMatcher from a deterministic
-                            // description+amount+date match, not guessed
-                            // from free text, and transfer-matched
-                            // transactions never reach this categorizer to
-                            // begin with (see AnalysisRoutes.kt).
+                            // Built from the caller's own category list
+                            // (CategoryStore.kt) rather than a fixed enum -
+                            // TRANSFER is never in it since it isn't a real
+                            // Category row to begin with (assigned only by
+                            // TransferMatcher; transfer-matched transactions
+                            // never reach this categorizer - see
+                            // AnalysisRoutes.kt).
                             "category" to GeminiSchemaProperty(
                                 type = "STRING",
-                                enum = TransactionCategory.entries.filter { it != TransactionCategory.TRANSFER }.map { it.name }
+                                enum = categories.map { it.id }
                             )
                         ),
                         required = listOf("index", "category")
@@ -140,11 +112,13 @@ class GeminiTransactionCategorizer(
             error("Gemini returned no output (finishReason=${candidate.finishReason ?: "unknown"})")
         }
 
+        val categoryIds = categories.map { it.id }.toSet()
         val items = lenientJson.decodeFromString<List<CategorizedItem>>(text)
         return items
             .mapNotNull { item ->
                 val transaction = transactions.getOrNull(item.index) ?: return@mapNotNull null
-                runCatching { TransactionCategory.valueOf(item.category) }.getOrNull()?.let { transaction.id to it }
+                if (item.category !in categoryIds) return@mapNotNull null
+                transaction.id to item.category
             }
             .toMap()
     }
