@@ -1,4 +1,4 @@
-# Budgeter
+# Home OS
 
 A personal spending-insights app. Goal: pull in bank transactions and surface
 useful insight into spending habits.
