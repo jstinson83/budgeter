@@ -527,11 +527,17 @@ candidate facts via Gemini, resolve the ambiguous ones. New top-level
   them, mirroring the spec's "Identify ambiguity" MVP step. **Not yet
   exercised against the real Gemini API** - see `CLAUDE.md`'s House
   Knowledge gotchas for what to check first if the first real upload fails.
-- **Extraction is synchronous in the upload request**, not backgrounded
-  like Gemini categorization (`CategorizationJobManager`) - one Gemini call
-  per document rather than a chunked batch, so no async/poll machinery was
-  built for this first slice. Revisit if a large document's extraction
-  time runs into Cloud Run's request timeout.
+- **Extraction runs on a background coroutine** (`HouseFactExtractionJobManager`,
+  `HouseFactExtractionJob.kt`), same async-job-plus-poll pattern as Gemini
+  categorization (`CategorizationJobManager`) - originally synchronous in
+  the upload request for this first slice, but a real document import hit
+  Cloud Run's request timeout on a large/slow document, so it was moved to
+  match. `POST /house/documents/upload` marks the document `EXTRACTING` and
+  redirects immediately; `house-document.ftl` polls `GET
+  /house/documents/{id}/status` every 2s and reloads once the document
+  leaves `EXTRACTING`. See `CLAUDE.md`'s House Knowledge gotchas for the
+  full reasoning and the one known gap (a mid-extraction instance restart
+  leaves the document stuck at `EXTRACTING`).
 - **Review flow**: `/house/documents/{id}` splits a document's facts into
   "Needs your input" (`needsReview`) and "Known" (everything else).
   Ambiguous facts get four preset quick-answer buttons (Longstanding

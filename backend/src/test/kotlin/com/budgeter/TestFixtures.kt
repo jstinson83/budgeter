@@ -356,3 +356,18 @@ suspend fun HttpClient.triggerCategorizeAndAwaitResult(url: String = "/analysis"
     val status = waitForCategorizationToFinish()
     return CategorizeResult(status.message, status.error)
 }
+
+// Polls GET /house/documents/{id}/status until the background extraction
+// job started by POST /house/documents/upload leaves EXTRACTING - tests
+// need this since the upload now redirects immediately while the Gemini
+// call happens on an application-scoped coroutine (see
+// HouseFactExtractionJob.kt).
+suspend fun HttpClient.waitForExtractionToFinish(documentId: String): ExtractionJobStatusResponse {
+    repeat(200) {
+        val text = get("/house/documents/$documentId/status").bodyAsText()
+        val status = statusJson.decodeFromString<ExtractionJobStatusResponse>(text)
+        if (status.status != "EXTRACTING") return status
+        delay(10)
+    }
+    error("Extraction job did not finish in time")
+}
