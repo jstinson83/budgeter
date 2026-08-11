@@ -60,7 +60,9 @@ fun ApplicationTestBuilder.testModule(
     houseDocumentStore: HouseDocumentRepository = FakeHouseDocumentRepository(),
     houseFactStore: HouseFactRepository = FakeHouseFactRepository(),
     documentBlobStore: DocumentBlobStore = FakeDocumentBlobStore(),
-    houseFactExtractor: HouseFactExtractor = FakeHouseFactExtractor()
+    houseFactExtractor: HouseFactExtractor = FakeHouseFactExtractor(),
+    houseComponentSummaryStore: HouseComponentSummaryRepository = FakeHouseComponentSummaryRepository(),
+    componentSummarizer: ComponentSummarizer = FakeComponentSummarizer()
 ) {
     application {
         module(
@@ -74,7 +76,9 @@ fun ApplicationTestBuilder.testModule(
             houseDocumentStore = houseDocumentStore,
             houseFactStore = houseFactStore,
             documentBlobStore = documentBlobStore,
-            houseFactExtractor = houseFactExtractor
+            houseFactExtractor = houseFactExtractor,
+            houseComponentSummaryStore = houseComponentSummaryStore,
+            componentSummarizer = componentSummarizer
         )
     }
 }
@@ -238,6 +242,7 @@ class FakeHouseFactRepository : HouseFactRepository {
                 documentId = documentId,
                 what = it.what,
                 type = it.type,
+                component = it.component,
                 sourceQuote = it.sourceQuote,
                 needsReview = it.needsReview,
                 reviewQuestion = it.reviewQuestion,
@@ -288,8 +293,8 @@ class FakeDocumentBlobStore : DocumentBlobStore {
 // review flow without ever calling Gemini for real.
 class FakeHouseFactExtractor(
     private val facts: List<ExtractedFact> = listOf(
-        ExtractedFact("The house contains steel structural columns", FactType.SPECIFICATION, "steel columns observed", false, null),
-        ExtractedFact("Central floor bulge cause not determined", FactType.CONDITION, "cause not determined", true, "What's your understanding of this?")
+        ExtractedFact("The house contains steel structural columns", FactType.SPECIFICATION, Component.STRUCTURE, "steel columns observed", false, null),
+        ExtractedFact("Central floor bulge cause not determined", FactType.CONDITION, Component.STRUCTURE, "cause not determined", true, "What's your understanding of this?")
     )
 ) : HouseFactExtractor {
     var callCount: Int = 0
@@ -298,6 +303,32 @@ class FakeHouseFactExtractor(
     override suspend fun extract(filename: String, pdfBytes: ByteArray): List<ExtractedFact> {
         callCount++
         return facts
+    }
+}
+
+// In-memory stand-in for FirestoreHouseComponentSummaryStore.
+class FakeHouseComponentSummaryRepository : HouseComponentSummaryRepository {
+    private val summaries = mutableMapOf<Pair<String, Component>, ComponentSummary>()
+
+    override suspend fun get(ownerId: String, component: Component): ComponentSummary? = summaries[ownerId to component]
+
+    override suspend fun save(ownerId: String, component: Component, summary: String, factCount: Int): ComponentSummary {
+        val saved = ComponentSummary(ownerId, component, summary, factCount, java.time.Instant.now())
+        summaries[ownerId to component] = saved
+        return saved
+    }
+}
+
+// Stands in for GeminiComponentSummarizer - returns a fixed summary string
+// derived from the component/fact count so route tests can assert on it
+// without ever calling Gemini for real.
+class FakeComponentSummarizer : ComponentSummarizer {
+    var callCount: Int = 0
+        private set
+
+    override suspend fun summarize(component: Component, facts: List<HouseFact>): String {
+        callCount++
+        return "Summary of ${facts.size} fact(s) about $component."
     }
 }
 

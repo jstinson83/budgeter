@@ -22,7 +22,9 @@ fun Route.houseRoutes(
     houseDocumentStore: HouseDocumentRepository,
     houseFactStore: HouseFactRepository,
     documentBlobStore: DocumentBlobStore,
-    houseFactExtractionJobManager: HouseFactExtractionJobManager
+    houseFactExtractionJobManager: HouseFactExtractionJobManager,
+    houseComponentSummaryStore: HouseComponentSummaryRepository,
+    componentSummarizer: ComponentSummarizer
 ) {
     get("/house") {
         val ownerId = call.requireUserId()
@@ -177,6 +179,50 @@ fun Route.houseRoutes(
             call.respondRedirect("/house/documents/$redirectDocumentId?message=${"Updated".encodeURLQueryComponent()}")
         } else {
             call.respondRedirect("/house/documents/$redirectDocumentId?error=${"Fact not found".encodeURLQueryComponent()}")
+        }
+    }
+
+    // The cross-document view: every fact the household has ever extracted,
+    // grouped by component instead of by document (see HousePage.kt) - what
+    // makes "what do I know about my roof" answerable across every document
+    // uploaded so far, not just one at a time like /house/documents/{id}.
+    get("/house/facts") {
+        val ownerId = call.requireUserId()
+        val facts = houseFactStore.all(ownerId)
+        val documents = houseDocumentStore.all(ownerId)
+        val summaries = Component.entries.mapNotNull { component ->
+            houseComponentSummaryStore.get(ownerId, component)?.let { component to it }
+        }.toMap()
+        val message = call.request.queryParameters["message"]
+        val error = call.request.queryParameters["error"]
+        val model = houseFactsPageModel(facts, documents, summaries, message, error) + call.currentUserModel()
+        call.respond(FreeMarkerContent("house-facts.ftl", model))
+    }
+
+    // Generates (or regenerates) one component's summary from its current
+    // facts. Synchronous, unlike document extraction's background job -
+    // summarizing a component's fact list (a handful of short lines of
+    // text) is nowhere near the size of a whole PDF, so it comfortably
+    // finishes well inside geminiHttpClient's 300s CIO timeout without
+    // needing the same async-job-plus-poll treatment. Revisit only if that
+    // stops being true (e.g. a component accumulates hundreds of facts).
+    post("/house/facts/summary/{component}") {
+        val ownerId = call.requireUserId()
+        val component = call.parameters["component"]?.let { runCatching { Component.valueOf(it) }.getOrNull() }
+            ?: return@post call.respond(HttpStatusCode.NotFound)
+
+        val facts = houseFactStore.all(ownerId).filter { it.component == component }
+        if (facts.isEmpty()) {
+            call.respondRedirect("/house/facts?error=${"No facts to summarize for ${component.name}".encodeURLQueryComponent()}")
+            return@post
+        }
+
+        try {
+            val summary = componentSummarizer.summarize(component, facts)
+            houseComponentSummaryStore.save(ownerId, component, summary, facts.size)
+            call.respondRedirect("/house/facts?message=${"Summary updated for ${component.name}".encodeURLQueryComponent()}")
+        } catch (e: Exception) {
+            call.respondRedirect("/house/facts?error=${"Couldn't generate summary: ${e.message}".encodeURLQueryComponent()}")
         }
     }
 }

@@ -22,6 +22,8 @@
 
     <h1>House Knowledge</h1>
 
+    <a href="/house/facts" class="back-link">View facts by category &rarr;</a>
+
     <form method="post" action="/house/documents/upload" enctype="multipart/form-data" class="upload-form">
       <input type="file" name="file" accept=".pdf" required>
       <button type="submit" class="button">Upload document</button>

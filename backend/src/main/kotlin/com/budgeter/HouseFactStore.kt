@@ -18,6 +18,25 @@ enum class FactType {
     UNKNOWN
 }
 
+// Flat top-level slice of product_spec.md's component hierarchy (Foundation,
+// Structure, Exterior, Roof, Plumbing, Electrical, HVAC, Safety, and their
+// sub-parts under Property -> Building) - deliberately no sub-component
+// nesting yet, same "narrowest useful slice" posture as the rest of
+// HouseFact. This is what lets facts from different documents be browsed
+// together ("everything about the roof") without building the full
+// components/events/relationships graph the spec describes.
+enum class Component {
+    FOUNDATION,
+    STRUCTURE,
+    EXTERIOR,
+    ROOF,
+    PLUMBING,
+    ELECTRICAL,
+    HVAC,
+    SAFETY,
+    OTHER
+}
+
 // A single knowledge item extracted from (or about) the house. This is a
 // deliberately narrow slice of the full Fact model in product_spec.md -
 // what/type/source/evidence(sourceQuote)/interpretation(homeownerContext) -
@@ -29,6 +48,9 @@ data class HouseFact(
     val documentId: String,
     val what: String,
     val type: FactType,
+    // What part of the house this fact is about - see Component. Assigned
+    // by the extractor alongside type, not a separate pass.
+    val component: Component,
     // Short verbatim excerpt from the source document backing this fact,
     // when Gemini could point to one - the "why do we believe this"
     // provenance the spec calls for, even in this narrow slice.
@@ -85,6 +107,7 @@ class FirestoreHouseFactStore(private val firestore: Firestore) : HouseFactRepos
                 documentId = documentId,
                 what = extracted.what,
                 type = extracted.type,
+                component = extracted.component,
                 sourceQuote = extracted.sourceQuote,
                 needsReview = extracted.needsReview,
                 reviewQuestion = extracted.reviewQuestion,
@@ -121,6 +144,7 @@ class FirestoreHouseFactStore(private val firestore: Firestore) : HouseFactRepos
         "documentId" to documentId,
         "what" to extracted.what,
         "type" to extracted.type.name,
+        "component" to extracted.component.name,
         "sourceQuote" to extracted.sourceQuote,
         "needsReview" to extracted.needsReview,
         "reviewQuestion" to extracted.reviewQuestion,
@@ -134,6 +158,7 @@ class FirestoreHouseFactStore(private val firestore: Firestore) : HouseFactRepos
         documentId = data["documentId"] as? String ?: "",
         what = data["what"] as? String ?: "",
         type = (data["type"] as? String)?.let { runCatching { FactType.valueOf(it) }.getOrNull() } ?: FactType.UNKNOWN,
+        component = (data["component"] as? String)?.let { runCatching { Component.valueOf(it) }.getOrNull() } ?: Component.OTHER,
         sourceQuote = data["sourceQuote"] as? String,
         needsReview = data["needsReview"] as? Boolean ?: false,
         reviewQuestion = data["reviewQuestion"] as? String,

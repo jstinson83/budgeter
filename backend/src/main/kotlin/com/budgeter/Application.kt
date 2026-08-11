@@ -84,6 +84,10 @@ private val geminiHouseFactExtractor: HouseFactExtractor by lazy {
     GeminiHouseFactExtractor(geminiHttpClient, System.getenv("GEMINI_API_KEY") ?: "")
 }
 
+private val geminiComponentSummarizer: ComponentSummarizer by lazy {
+    GeminiComponentSummarizer(geminiHttpClient, System.getenv("GEMINI_API_KEY") ?: "")
+}
+
 // The bucket is provisioned manually in the GCP console, same as the
 // Firestore database and Cloud Run env vars - see CLAUDE.md's deploy
 // pipeline section. Falls back to "" like GEMINI_API_KEY does above; the
@@ -116,7 +120,9 @@ fun Application.module(
         houseDocumentStore,
         houseFactStore,
         houseFactExtractor
-    )
+    ),
+    houseComponentSummaryStore: HouseComponentSummaryRepository = FirestoreHouseComponentSummaryStore(firestoreClient),
+    componentSummarizer: ComponentSummarizer = geminiComponentSummarizer
 ) {
     install(FreeMarker) {
         templateLoader = ClassTemplateLoader(this::class.java.classLoader, "templates")
@@ -145,7 +151,14 @@ fun Application.module(
             transactionRoutes(transactionStore)
             analysisRoutes(transactionStore, categorizationRuleStore, categoryStore, categorizationJobManager)
             categoryRoutes(categoryStore, categorizationRuleStore, transactionStore)
-            houseRoutes(houseDocumentStore, houseFactStore, documentBlobStore, houseFactExtractionJobManager)
+            houseRoutes(
+                houseDocumentStore,
+                houseFactStore,
+                documentBlobStore,
+                houseFactExtractionJobManager,
+                houseComponentSummaryStore,
+                componentSummarizer
+            )
         }
     }
 }

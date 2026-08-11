@@ -47,7 +47,46 @@ private fun factModel(fact: HouseFact): Map<String, Any?> = mapOf(
     "documentId" to fact.documentId,
     "what" to fact.what,
     "type" to fact.type.name,
+    "component" to fact.component.name,
     "sourceQuote" to fact.sourceQuote,
     "reviewQuestion" to fact.reviewQuestion,
     "homeownerContext" to fact.homeownerContext
 )
+
+// /house/facts - the cross-document view: every fact the household has
+// ever extracted, grouped by component instead of by document, plus
+// whatever Gemini-generated summary exists for that component (see
+// HouseComponentSummarizer.kt). documents is only used to resolve each
+// fact's originating filename for the "from <filename>" link back to its
+// source document - review/resolve actions still live on the per-document
+// page, not duplicated here.
+fun houseFactsPageModel(
+    facts: List<HouseFact>,
+    documents: List<HouseDocument>,
+    summaries: Map<Component, ComponentSummary>,
+    message: String?,
+    error: String?
+): Map<String, Any?> {
+    val filenameById = documents.associate { it.id to it.filename }
+    val factsByComponent = facts.groupBy { it.component }
+    val groups = Component.entries.mapNotNull { component ->
+        val componentFacts = factsByComponent[component].orEmpty()
+        if (componentFacts.isEmpty()) return@mapNotNull null
+        val summary = summaries[component]
+        mapOf(
+            "component" to component.name,
+            "factCount" to componentFacts.size,
+            "needsReviewCount" to componentFacts.count { it.needsReview },
+            "summary" to summary?.summary,
+            "summaryStale" to (summary != null && summary.factCount != componentFacts.size),
+            "facts" to componentFacts.map { fact ->
+                factModel(fact) + mapOf("filename" to (filenameById[fact.documentId] ?: "deleted document"))
+            }
+        )
+    }
+    return mapOf(
+        "groups" to groups,
+        "message" to message,
+        "error" to error
+    )
+}

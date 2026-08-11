@@ -26,7 +26,7 @@ class HouseFactExtractorTest {
     @Test
     fun testMapsGeminiResponseItemsToExtractedFacts() = runBlocking {
         val client = mockClientRespondingWith(
-            """{"candidates":[{"content":{"parts":[{"text":"[{\"what\":\"House contains steel columns\",\"type\":\"SPECIFICATION\",\"sourceQuote\":\"steel columns observed\",\"needsReview\":false,\"reviewQuestion\":\"\"}]"}]},"finishReason":"STOP"}]}"""
+            """{"candidates":[{"content":{"parts":[{"text":"[{\"what\":\"House contains steel columns\",\"type\":\"SPECIFICATION\",\"component\":\"STRUCTURE\",\"sourceQuote\":\"steel columns observed\",\"needsReview\":false,\"reviewQuestion\":\"\"}]"}]},"finishReason":"STOP"}]}"""
         )
 
         val facts = GeminiHouseFactExtractor(client, "fake-key").extract("inspection.pdf", pdfBytes)
@@ -34,6 +34,7 @@ class HouseFactExtractorTest {
         assertEquals(1, facts.size)
         assertEquals("House contains steel columns", facts[0].what)
         assertEquals(FactType.SPECIFICATION, facts[0].type)
+        assertEquals(Component.STRUCTURE, facts[0].component)
         assertEquals("steel columns observed", facts[0].sourceQuote)
         assertFalse(facts[0].needsReview)
         assertNull(facts[0].reviewQuestion)
@@ -42,7 +43,7 @@ class HouseFactExtractorTest {
     @Test
     fun testBlankSourceQuoteAndReviewQuestionAreNormalizedToNull() = runBlocking {
         val client = mockClientRespondingWith(
-            """{"candidates":[{"content":{"parts":[{"text":"[{\"what\":\"Cause not determined\",\"type\":\"CONDITION\",\"sourceQuote\":\"\",\"needsReview\":true,\"reviewQuestion\":\"What do you know about this?\"}]"}]},"finishReason":"STOP"}]}"""
+            """{"candidates":[{"content":{"parts":[{"text":"[{\"what\":\"Cause not determined\",\"type\":\"CONDITION\",\"component\":\"STRUCTURE\",\"sourceQuote\":\"\",\"needsReview\":true,\"reviewQuestion\":\"What do you know about this?\"}]"}]},"finishReason":"STOP"}]}"""
         )
 
         val facts = GeminiHouseFactExtractor(client, "fake-key").extract("inspection.pdf", pdfBytes)
@@ -55,13 +56,25 @@ class HouseFactExtractorTest {
     @Test
     fun testUnrecognizedTypeFallsBackToUnknownRatherThanDroppingTheFact() = runBlocking {
         val client = mockClientRespondingWith(
-            """{"candidates":[{"content":{"parts":[{"text":"[{\"what\":\"Something odd\",\"type\":\"NOT_A_REAL_TYPE\",\"sourceQuote\":\"\",\"needsReview\":false,\"reviewQuestion\":\"\"}]"}]},"finishReason":"STOP"}]}"""
+            """{"candidates":[{"content":{"parts":[{"text":"[{\"what\":\"Something odd\",\"type\":\"NOT_A_REAL_TYPE\",\"component\":\"OTHER\",\"sourceQuote\":\"\",\"needsReview\":false,\"reviewQuestion\":\"\"}]"}]},"finishReason":"STOP"}]}"""
         )
 
         val facts = GeminiHouseFactExtractor(client, "fake-key").extract("inspection.pdf", pdfBytes)
 
         assertEquals(1, facts.size)
         assertEquals(FactType.UNKNOWN, facts[0].type)
+    }
+
+    @Test
+    fun testUnrecognizedComponentFallsBackToOtherRatherThanDroppingTheFact() = runBlocking {
+        val client = mockClientRespondingWith(
+            """{"candidates":[{"content":{"parts":[{"text":"[{\"what\":\"Something odd\",\"type\":\"UNKNOWN\",\"component\":\"NOT_A_REAL_COMPONENT\",\"sourceQuote\":\"\",\"needsReview\":false,\"reviewQuestion\":\"\"}]"}]},"finishReason":"STOP"}]}"""
+        )
+
+        val facts = GeminiHouseFactExtractor(client, "fake-key").extract("inspection.pdf", pdfBytes)
+
+        assertEquals(1, facts.size)
+        assertEquals(Component.OTHER, facts[0].component)
     }
 
     @Test
@@ -145,5 +158,7 @@ class HouseFactExtractorTest {
         assertFalse(body.contains(""""text":null""""), "the inlineData part must not also emit a null text field: $body")
         assertFalse(body.contains(""""inlineData":null""""), "the text part must not also emit a null inlineData field: $body")
         assertTrue(body.contains(""""type":"BOOLEAN""""), "expected the needsReview schema property to be typed BOOLEAN: $body")
+        assertTrue(body.contains(""""component":{"type":"STRING""""), "expected a component schema property: $body")
+        assertTrue(body.contains(""""FOUNDATION""""), "expected the component enum values to include FOUNDATION: $body")
     }
 }
