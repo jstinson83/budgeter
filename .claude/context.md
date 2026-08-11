@@ -21,6 +21,14 @@ started there (see "First feature" below) since it's the roadmap's own
 stated Version 1 groundwork: real persistence, real deploy, before any AI
 extraction work.
 
+`product_spec.md`'s "House Knowledge" section (added 2026-08-11) is a much
+deeper spec for the home-specific slice of the Knowledge/Documents model:
+a `Fact` object with typed provenance/evidence/epistemic-status, events and
+house components as first-class objects, and a document-upload →
+fact-extraction MVP workflow. Not implemented yet — this is vision only, same
+status as the rest of `product_spec.md` beyond the shipped
+CSV-import/categorization/dashboard features below.
+
 ## Architecture at a glance
 
 - **Backend**: Kotlin + Ktor, single service (`backend/`), same stack/patterns
