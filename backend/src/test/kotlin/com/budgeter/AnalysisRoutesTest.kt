@@ -141,7 +141,7 @@ class AnalysisRoutesTest {
         // very page load that triggered it (see CategorizationJob.kt).
         val page = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
         val body = page.bodyAsText()
-        assertTrue(body.contains("Matched 1 transfer(s)"))
+        assertTrue(body.contains("Marked 2 transaction(s) as transfers"))
         // Neither leg went to the (fake) Gemini categorizer.
         assertEquals(0, categorizer.callCount)
         // Excluded from analysis entirely - no "Transfer" bucket.
@@ -150,48 +150,49 @@ class AnalysisRoutesTest {
     }
 
     @Test
-    fun testDoesNotMatchATransferWhenOnlyOneLegIsPresent() = testApplication {
+    fun testCategorizesALoneTransferLegImmediatelyEvenWithoutItsOtherLegPresent() = testApplication {
         val categorizer = FakeTransactionCategorizer("GROCERIES")
         testModule(transactionCategorizer = categorizer)
         val client = signInFakeUser()
 
         val today = java.time.LocalDate.now()
         // Only the bank side was imported - nothing on the credit card side
-        // to pair it with, so it should fall through to ordinary
-        // categorization rather than being silently dropped.
+        // to pair it with. Unlike the old pair-matching design, that's not
+        // a reason to wait: the description alone is a fixed, unambiguous
+        // TD template, so this is marked a transfer immediately rather than
+        // falling through to Gemini (see TransferMatcher.kt).
         client.importCsv("$today,.....TFR-TO C/C,200.00,,795.00", accountType = "BANK")
 
-        val result = client.triggerCategorizeAndAwaitResult()
-        assertEquals("Categorized 1 of 1 transaction(s)", result.message)
-        assertEquals(1, categorizer.callCount)
+        val page = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
+        val body = page.bodyAsText()
+        assertTrue(body.contains("Marked 1 transaction(s) as transfers"))
+        assertEquals(0, categorizer.callCount)
+        assertFalse(body.contains("Transfer"))
+        assertTrue(body.contains("No transactions in this period"))
     }
 
     @Test
-    fun testRetroactivelyMatchesATransferWhoseLegsWereUploadedInSeparateSessions() = testApplication {
+    fun testEachLegOfATransferUploadedInSeparateSessionsIsCategorizedOnItsOwnUpload() = testApplication {
         val categorizer = FakeTransactionCategorizer("GROCERIES")
         testModule(transactionCategorizer = categorizer)
         val client = signInFakeUser()
 
         val today = java.time.LocalDate.now()
-        // The bank leg is uploaded and categorized first - like
-        // testDoesNotMatchATransferWhenOnlyOneLegIsPresent, with no
-        // credit-card leg present yet it falls through to (fake) Gemini and
-        // gets stuck with an ordinary spending category.
+        // The bank leg is uploaded and viewed first - marked a transfer
+        // immediately on its own, with no credit-card leg present yet.
         client.importCsv("$today,.....TFR-TO C/C,200.00,,795.00", accountType = "BANK")
-        client.triggerCategorizeAndAwaitResult()
-        assertEquals(1, categorizer.callCount)
+        val firstPage = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
+        assertTrue(firstPage.bodyAsText().contains("Marked 1 transaction(s) as transfers"))
+        assertEquals(0, categorizer.callCount)
 
-        // The credit-card leg only shows up in a later upload session. It
-        // should still be recognized as the other half of the same
-        // transfer, correcting the bank leg's earlier wrong category
-        // rather than leaving it stuck - both synchronous, so the result
-        // shows up on the very page load that triggers it.
+        // The credit-card leg shows up in a later, separate upload session -
+        // also marked a transfer immediately on its own, independent of the
+        // bank leg uploaded earlier.
         client.importCsv("$today,PAYMENT - THANK YOU,,200.00,300.00", accountType = "CREDIT_CARD")
-        val result = client.triggerCategorizeAndAwaitResult()
-        assertEquals("Matched 1 transfer(s)", result.message)
-        // No new Gemini call this pass - the bank leg is corrected without
-        // ever being re-sent for analysis.
-        assertEquals(1, categorizer.callCount)
+        val secondPage = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
+        assertTrue(secondPage.bodyAsText().contains("Marked 1 transaction(s) as transfers"))
+        // Never sent to Gemini at any point.
+        assertEquals(0, categorizer.callCount)
 
         val page = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
         val body = page.bodyAsText()
@@ -232,6 +233,36 @@ class AnalysisRoutesTest {
         // Only ever one Gemini call - for Metro Grocery. The transfer legs
         // never got sent for analysis.
         assertEquals(1, categorizer.callCount)
+    }
+
+    @Test
+    fun testCorrectsAnAlreadyCategorizedTransferPairWithNothingElsePending() = testApplication {
+        val categorizer = FakeTransactionCategorizer("GROCERIES")
+        val transactionStore = FakeTransactionRepository()
+        testModule(transactionStore = transactionStore, transactionCategorizer = categorizer)
+        val client = signInFakeUser()
+
+        val today = java.time.LocalDate.now()
+        client.importCsv("$today,.....TFR-TO C/C,200.00,,795.00", accountType = "BANK")
+        client.importCsv("$today,PAYMENT - THANK YOU,,200.00,300.00", accountType = "CREDIT_CARD")
+
+        // Simulate both legs already having been (wrongly) categorized by
+        // an earlier pass - before transfer matching existed, or before a
+        // bug in it was fixed - with nothing new left pending to anchor a
+        // re-check on. uncategorized() alone would never surface this pair
+        // again; only a full-history sweep does (see CategorizationJob.kt).
+        val all = transactionStore.all("test-sub")
+        val bankLegId = all.first { it.description.contains("TFR-TO C/C") }.id
+        val cardLegId = all.first { it.description.contains("PAYMENT - THANK YOU") }.id
+        transactionStore.updateCategories("test-sub", mapOf(bankLegId to "OTHER", cardLegId to "INCOME"))
+
+        val page = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
+        val body = page.bodyAsText()
+        assertTrue(body.contains("Marked 2 transaction(s) as transfers"))
+        assertFalse(body.contains("Transfer"))
+        // Never sent to Gemini - both legs already had a category, so
+        // neither was ever "pending".
+        assertEquals(0, categorizer.callCount)
     }
 
     @Test
