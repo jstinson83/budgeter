@@ -558,10 +558,57 @@ candidate facts via Gemini, resolve the ambiguous ones. New top-level
   principle, applied even in this narrow slice).
 - **Not built in this slice** (left for later, per the spec's own "don't
   build the entire knowledge graph initially" MVP framing): photo
-  extraction from documents, a cross-document/all-facts browse page (only
-  per-document browsing exists), events/components as separate objects,
-  provenance beyond a single `sourceQuote` string, and cross-document
-  contradiction/connection detection.
+  extraction from documents, events/components as separate objects (only a
+  flat `component` tag exists, see below), provenance beyond a single
+  `sourceQuote` string, and cross-document contradiction/connection
+  detection.
+
+### Component tagging, cross-document browse, and per-component summaries
+
+Added after the initial slice above, as the smallest step toward the
+spec's "what do I know about my roof" bar without building the full
+components/events/relationships graph:
+
+- **`HouseFact.component: Component`** (`HouseFactStore.kt`) - a flat
+  9-value enum (`FOUNDATION`, `STRUCTURE`, `EXTERIOR`, `ROOF`, `PLUMBING`,
+  `ELECTRICAL`, `HVAC`, `SAFETY`, `OTHER`), the top level of the spec's
+  component hierarchy with no sub-part nesting. `GeminiHouseFactExtractor`
+  assigns it in the same extraction call as `type` (one more schema
+  field/prompt instruction, not a separate pass). Facts extracted before
+  this field existed read back as `OTHER` (Firestore fallback, same pattern
+  as an unrecognized `type` string) - re-running "Retry extraction" on an
+  already-extracted document re-populates real components for its facts,
+  since retry re-runs the whole extraction from the stored blob and
+  replaces the old fact rows (see the retry gotcha above). That's the
+  intended backfill path for documents uploaded before this feature landed
+  - no separate migration script.
+- **`GET /house/facts`** (`house-facts.ftl`, `houseFactsPageModel` in
+  `HousePage.kt`) - every fact across every document, grouped by component
+  instead of by document, each group showing its fact/needs-review counts
+  and linking each fact back to its source document. This is the
+  cross-document view `/house/documents/{id}` intentionally doesn't
+  provide (that page is still per-document only).
+- **Per-component Gemini summary** (`ComponentSummarizer`/
+  `GeminiComponentSummarizer` in `HouseComponentSummarizer.kt`,
+  `HouseComponentSummaryRepository`/`FirestoreHouseComponentSummaryStore` in
+  `HouseComponentSummaryStore.kt`, Firestore collection
+  `houseComponentSummaries`, one doc per `(ownerId, component)` keyed
+  deterministically as `{ownerId}_{component}` - always an upsert, no
+  history kept) - a "Generate/Regenerate summary" button on `/house/facts`
+  per component synthesizes that component's current facts (across every
+  document) into a short plain-language paragraph via a text-only Gemini
+  call (no PDF, no `responseSchema` - just a prompt listing each fact's
+  what/type/sourceQuote/homeownerContext). **Manually triggered only** -
+  the maintainer explicitly deferred auto-regeneration on every new fact to
+  a later step. The stored summary keeps the fact count it was generated
+  from (`factCount`), so `houseFactsPageModel` can flag a summary as stale
+  (`summaryStale`) once new facts have been added to that component since -
+  shown on the page but doesn't block anything or auto-regenerate.
+  Synchronous (unlike document extraction), since a component's fact list
+  is a handful of short lines, not a whole PDF - well inside
+  `geminiHttpClient`'s 300s CIO timeout without needing the same
+  async-job-plus-poll treatment; revisit only if a component's fact count
+  grows enough for that to stop holding.
 
 ## Eighth feature: spending pie chart (dashboard + `/analysis`)
 

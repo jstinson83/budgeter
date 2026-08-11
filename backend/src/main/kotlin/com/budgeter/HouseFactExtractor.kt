@@ -20,6 +20,7 @@ private val lenientJson = Json { ignoreUnknownKeys = true }
 data class ExtractedFact(
     val what: String,
     val type: FactType,
+    val component: Component,
     // Blank sourceQuote/reviewQuestion from Gemini are normalized to null
     // here - see GeminiHouseFactExtractor.extract().
     val sourceQuote: String?,
@@ -88,16 +89,17 @@ class GeminiHouseFactExtractor(
                         properties = mapOf(
                             "what" to FactExtractionSchemaProperty(type = "STRING"),
                             "type" to FactExtractionSchemaProperty(type = "STRING", enum = FactType.entries.map { it.name }),
+                            "component" to FactExtractionSchemaProperty(type = "STRING", enum = Component.entries.map { it.name }),
                             "sourceQuote" to FactExtractionSchemaProperty(type = "STRING"),
                             "needsReview" to FactExtractionSchemaProperty(type = "BOOLEAN"),
                             "reviewQuestion" to FactExtractionSchemaProperty(type = "STRING")
                         ),
-                        // All five required (rather than optional) so every
+                        // All six required (rather than optional) so every
                         // item always has sourceQuote/reviewQuestion keys to
                         // read, even when empty - simpler decoding below,
                         // same "index"+"category" both-required choice
                         // GeminiTransactionCategorizer makes.
-                        required = listOf("what", "type", "sourceQuote", "needsReview", "reviewQuestion")
+                        required = listOf("what", "type", "component", "sourceQuote", "needsReview", "reviewQuestion")
                     )
                 )
             )
@@ -136,6 +138,10 @@ class GeminiHouseFactExtractor(
                 // FactType), so this fallback loses nothing a dropped item
                 // wouldn't have lost worse.
                 type = runCatching { FactType.valueOf(item.type) }.getOrDefault(FactType.UNKNOWN),
+                // Same "fall back rather than drop the fact" reasoning as
+                // type above - OTHER is a legitimate catch-all component,
+                // not an error state.
+                component = runCatching { Component.valueOf(item.component) }.getOrDefault(Component.OTHER),
                 sourceQuote = item.sourceQuote.trim().ifEmpty { null },
                 needsReview = item.needsReview,
                 reviewQuestion = item.reviewQuestion.trim().ifEmpty { null }
@@ -158,6 +164,10 @@ class GeminiHouseFactExtractor(
         - MAINTENANCE_REQUIREMENT: something needing recurring attention
         - WARRANTY: a time-bound guarantee or coverage
         - UNKNOWN: something the document explicitly says is not known or could not be determined
+
+        For each fact, also assign exactly one component of the house it's about:
+        - FOUNDATION, STRUCTURE, EXTERIOR, ROOF, PLUMBING, ELECTRICAL, HVAC, SAFETY
+        - OTHER: for anything that doesn't clearly belong to one of the above (e.g. general document metadata, or something spanning multiple components)
 
         Set needsReview to true only when the fact involves real ambiguity or interpretation the homeowner should weigh in on (e.g. a cause the document says is "not determined", a condition the document flags for "further assessment") - not for facts that are plainly stated. When needsReview is true, write a short, direct reviewQuestion asking the homeowner what they know about it. When needsReview is false, leave reviewQuestion as an empty string.
 
@@ -231,6 +241,7 @@ private data class FactExtractionPromptFeedback(val blockReason: String? = null)
 private data class ExtractedFactItem(
     val what: String,
     val type: String,
+    val component: String,
     val sourceQuote: String,
     val needsReview: Boolean,
     val reviewQuestion: String

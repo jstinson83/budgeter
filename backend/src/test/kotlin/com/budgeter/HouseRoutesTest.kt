@@ -29,7 +29,7 @@ private class FailOnceThenSucceedHouseFactExtractor : HouseFactExtractor {
     override suspend fun extract(filename: String, pdfBytes: ByteArray): List<ExtractedFact> {
         callCount++
         if (callCount == 1) error("Gemini API request failed (503): upstream unavailable")
-        return listOf(ExtractedFact("Roof replaced in 2019", FactType.EVENT, "roof replaced 2019", false, null))
+        return listOf(ExtractedFact("Roof replaced in 2019", FactType.EVENT, Component.ROOF, "roof replaced 2019", false, null))
     }
 }
 
@@ -260,6 +260,53 @@ class HouseRoutesTest {
         assertEquals(HttpStatusCode.NotFound, client.get(documentUrl).status)
         val housePage = client.get("/house") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
         assertTrue(housePage.contains("No documents yet"))
+    }
+
+    @Test
+    fun testFactsByCategoryPageGroupsFactsAcrossDocumentsByComponent() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val uploadResponse = client.submitFormWithBinaryData(url = "/house/documents/upload", formData = pdfFormData())
+        val documentId = uploadResponse.headers[HttpHeaders.Location]!!.substringAfterLast("/")
+        client.waitForExtractionToFinish(documentId)
+
+        // FakeHouseFactExtractor's default facts are both STRUCTURE - see
+        // TestFixtures.kt.
+        val body = client.get("/house/facts") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(body.contains("Structure"))
+        assertTrue(body.contains("2 fact(s), 1 need"))
+        assertTrue(body.contains("The house contains steel structural columns"))
+        assertTrue(body.contains("No summary yet"))
+    }
+
+    @Test
+    fun testGeneratingASummaryForAComponentShowsItOnTheFactsByCategoryPage() = testApplication {
+        val summarizer = FakeComponentSummarizer()
+        testModule(componentSummarizer = summarizer)
+        val client = signInFakeUser()
+
+        val uploadResponse = client.submitFormWithBinaryData(url = "/house/documents/upload", formData = pdfFormData())
+        val documentId = uploadResponse.headers[HttpHeaders.Location]!!.substringAfterLast("/")
+        client.waitForExtractionToFinish(documentId)
+
+        val summaryResponse = client.submitForm(url = "/house/facts/summary/STRUCTURE", formParameters = parameters {})
+        assertEquals(HttpStatusCode.Found, summaryResponse.status)
+        assertTrue(summaryResponse.headers[HttpHeaders.Location]!!.startsWith("/house/facts?message="))
+        assertEquals(1, summarizer.callCount)
+
+        val body = client.get("/house/facts") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(body.contains("Summary of 2 fact(s) about STRUCTURE."))
+        assertFalse(body.contains("No summary yet"))
+    }
+
+    @Test
+    fun testGeneratingASummaryForAComponentWithNoFactsRedirectsWithError() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.submitForm(url = "/house/facts/summary/ROOF", formParameters = parameters {})
+        assertTrue(response.headers[HttpHeaders.Location]!!.startsWith("/house/facts?error="))
     }
 
     @Test
