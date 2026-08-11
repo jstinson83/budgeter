@@ -111,25 +111,32 @@ load); not built yet.
 - **Categorization is fully automatic now - there is no button and no
   `POST /analysis/categorize`** (`AnalysisRoutes.kt`, `CategorizationJob.kt`).
   `CategorizationJobManager.categorize(ownerId)` owns the whole pass and is
-  called unconditionally at the top of every `GET /analysis`: it fetches
-  this owner's pending transactions itself and is a safe no-op when
-  there's nothing pending or a job's already running (never re-bills
-  Gemini for an already-categorized transaction or duplicates an in-flight
-  job - loading the page is what replaces the old button). `TransferMatcher`/
-  `CategorizationRuleMatcher` still run synchronously (fast, deterministic,
-  no network call); when they clear everything pending, their combined
-  result is recorded as an already-`DONE` job, so it shows up as the
-  message banner on that very page load. Only the Gemini leg - the one
-  that can actually be slow/large - runs on an application-scoped
-  coroutine (`CategorizationJobManager`, one job per `ownerId` at a time,
-  in-memory) that outlives the request. `GET /analysis` shows a
-  "Categorizing…" panel instead of the (removed) button while a job is
-  `RUNNING` (checked via `CategorizationJobManager.consumeTerminal`, which
-  also folds a just-finished job's message/error into the page once, like
-  the existing query-param message/error banners, then forgets it - a
-  `FAILED` job is not remembered past that one display, so the very next
-  page load retries it automatically) and an inline script in `analysis.ftl`
-  polls `GET /analysis/categorize/status` (JSON, `CategorizationJobStatusResponse`
+  called unconditionally at the top of every `GET /analysis` (loading the
+  page is what replaces the old button) - a cheap no-op once there's
+  nothing left to fix. Three steps, in order, each covered in more detail
+  where noted:
+  1. **Transfer/interest categorization** (`TransferMatcher` - see Third
+     feature below for the full mechanics). Synchronous, deterministic, no
+     network call, and scans the owner's *entire* transaction history every
+     time regardless of current category - not scoped to what's newly
+     pending.
+  2. **Household rules** (`CategorizationRuleMatcher`), applied to whatever
+     the step above didn't claim and is still `uncategorized`. Also
+     synchronous and free.
+  3. **Gemini**, for whatever's left after steps 1-2 - the only network-bound
+     step, so the only one backgrounded (below).
+  If steps 1-2 alone clear everything pending, their combined result is
+  recorded as an already-`DONE` job, so it shows up as the message banner
+  on that very page load with no Gemini call at all. Otherwise step 3 runs
+  on an application-scoped coroutine (`CategorizationJobManager`, one job
+  per `ownerId` at a time, in-memory) that outlives the request. `GET
+  /analysis` shows a "Categorizing…" panel while a job is `RUNNING`
+  (checked via `CategorizationJobManager.consumeTerminal`, which also folds
+  a just-finished job's message/error into the page once, like the
+  existing query-param message/error banners, then forgets it - a `FAILED`
+  job is not remembered past that one display, so the very next page load
+  retries it automatically) and an inline script in `analysis.ftl` polls
+  `GET /analysis/categorize/status` (JSON, `CategorizationJobStatusResponse`
   - the app's first JSON endpoint) every 2s, reloading the page once the
   job leaves `RUNNING`. This was a deliberate choice over adding real
   infrastructure (a queue, Cloud Tasks, etc.): Cloud Run only allocates CPU
@@ -140,9 +147,17 @@ load); not built yet.
   keeps the job's CPU allocated between Gemini calls. The maintainer has
   used this pattern successfully on other Cloud Run services before. The
   maintainer's own reasoning for dropping the manual step: categorization
-  is idempotent (`uncategorized(ownerId)` below) so re-triggering it costs
+  is idempotent (steps 2-3, via `uncategorized(ownerId)` below - step 1 is
+  its own kind of idempotent, see Third feature) so re-triggering it costs
   nothing when there's nothing new, and there's no legitimate reason to
   ever *want* transactions left uncategorized.
+  - A Gemini job already `RUNNING` for this owner only blocks *launching a
+    new* Gemini job (step 3) - steps 1-2 always run to completion on every
+    `categorize()` call regardless of another job's status, so an unrelated
+    in-flight Gemini pass never blocks transfer detection or rules. Bit by
+    this exact gap once: the `RUNNING` guard originally sat at the top of
+    `categorize()`, before steps 1-2 ran at all - see Third feature's
+    gotcha writeup for the full story.
   - Gotcha hit while building this: `CategorizationJobManager`'s
     background coroutine used to call `categoryStore.all(ownerId)` itself
     (for the Gemini leg's allowed-category list) *concurrently* with
@@ -180,10 +195,11 @@ load); not built yet.
   than a fixed enum as of the categories/rules management page - categories
   are per-owner and user-editable now, not a single compile-time set.
 - `TransactionRepository.uncategorized(ownerId)` (default method: filters
-  `all(ownerId)` in memory) is what makes categorization idempotent - once a
-  transaction has a category it's permanently excluded from future
-  `categorize()` calls, so loading `/analysis` repeatedly never re-analyzes
-  (or re-bills Gemini for) the same transaction twice.
+  `all(ownerId)` in memory) is what makes rules/Gemini (steps 2-3 above)
+  idempotent - once a transaction has a category it's permanently excluded
+  from both, so loading `/analysis` repeatedly never re-analyzes (or
+  re-bills Gemini for) the same transaction twice. Step 1 (transfer/interest
+  categorization) deliberately does *not* use this - see Third feature.
 - `GeminiTransactionCategorizer` (`GeminiCategorizer.kt`) calls the Gemini
   API directly over REST (`generativelanguage.googleapis.com`, model
   `gemini-3.5-flash`) using a `responseSchema` that constrains output to
@@ -217,67 +233,93 @@ The reason for labeling accounts: paying a credit card (or a line of
 credit) from the bank account shows up as two separate transactions (a bank
 outflow, a credit-card/LOC inflow) that both need to be excluded from
 spending/income analysis rather than double-counted. `TransferMatcher.kt`
-finds these pairs deterministically (not via Gemini), on fixed TD
-statement-generator templates confirmed against real statements, plus
-amount equality and dates within 5 days:
+recognizes these deterministically (not via Gemini), on fixed TD
+statement-generator templates confirmed against real statements.
 
-- **Bank ↔ credit card**: bank leg's description contains `TFR-TO C/C`,
-  credit-card leg's contains `PAYMENT - THANK YOU`. Credit cards only ever
+**Single-row, not pair-matched** (redesigned from an earlier pair-matching
+version - see the gotcha below for why): `TransferMatcher.categoryFor(tx)`
+decides a transaction's category from its own description/accountType/amount
+alone, with no need to find its other leg first. A `TFR-TO C/C` bank row is
+a transfer whether or not its credit-card-side `PAYMENT - THANK YOU`
+counterpart has even been imported yet - each of these markers is a fixed,
+unambiguous TD template, so the description match alone is definitive:
+
+- **Bank → credit card**: bank leg's description contains `TFR-TO C/C` ->
+  `TRANSFER_CATEGORY_ID`. Credit-card leg's description contains
+  `PAYMENT - THANK YOU` -> `TRANSFER_CATEGORY_ID`. Credit cards only ever
   receive payments (one direction).
 - **Bank ↔ LOC**: unlike a credit card, a LOC transfer goes either
   direction (draw from it or pay it down). The bank leg can't be matched
   against a fixed account number the way `C/C` is fixed for a credit
   card - only that *something other than* `C/C` follows `TFR-TO`/`TFR-FR`,
-  since `C/C` specifically means the other leg is a credit-card payment.
-  The LOC leg's description just needs to contain `TFR-TO` (draw) or
-  `TFR-FR` (pay-down).
-- **LOC interest**: unlike a transfer, a LOC's interest charge is real
-  spending - but it's booked as two ledger entries for one economic event
-  (the LOC's own `interest` line and the bank's `PYT TO: <account>` payment
-  covering it), so only the LOC leg is categorized `INTEREST_CATEGORY_ID`
-  (a real, seeded `Category` - see Fifth feature); the bank leg is excluded
-  like any other transfer (`TRANSFER_CATEGORY_ID`) so the same interest
-  isn't counted twice.
+  since `C/C` specifically means it's a credit-card payment, not a LOC
+  transfer. The LOC leg's description just needs to contain `TFR-TO`
+  (draw) or `TFR-FR` (pay-down).
 
-All matched-pair categorization (`TRANSFER_CATEGORY_ID`, `"TRANSFER"`,
+**LOC interest is the one exception**, still requiring a matched pair
+(`TransferMatcher.matchInterestPairs`, amount equality + dates within
+`DATE_WINDOW_DAYS` = 5, mutually-unique matches only): unlike every marker
+above, the bank-side `PYT TO: <account>` marker is TD's *general-purpose*
+bill/EFT payment template - used for a payment to any payee, not
+specifically one covering LOC interest - so a lone `PYT TO:` row isn't
+definitive the way `TFR-TO C/C` is. Only a `PYT TO:` row that actually
+lines up in amount and date with a real LOC `interest` charge is confirmed
+to be the one covering it. The interest charge itself is real spending
+(unlike a transfer) but booked as two ledger entries for one economic
+event, so only the LOC leg is categorized `INTEREST_CATEGORY_ID` (a real,
+seeded `Category` - see Fifth feature); the bank leg is excluded like any
+other transfer (`TRANSFER_CATEGORY_ID`) so the same interest isn't counted
+twice.
+
+All transfer/interest categorization (`TRANSFER_CATEGORY_ID`, `"TRANSFER"`,
 `CategoryStore.kt`) is excluded from `/analysis` entirely, not just grouped
-into its own bucket. Only mutually-unique pairs match; anything with more
-than one plausible counterpart on either side is left uncategorized rather
-than guessed, since a wrong match would silently vanish a real transaction
-from analysis. Runs automatically as the first step of every `categorize()`
-pass (`CategorizationJob.kt`), which itself now runs on every `GET
-/analysis` load rather than a manual button (see Second feature above).
-Currently assumes at most one bank account, one credit card, and one LOC
-(no per-account scoping beyond `accountType`); revisit if a second account
-of any of these types is ever added.
+into its own bucket. Runs automatically as the first step of every
+`categorize()` pass (`CategorizationJob.kt`), which itself now runs on
+every `GET /analysis` load rather than a manual button (see Second feature
+above). Currently assumes at most one bank account, one credit card, and
+one LOC (no per-account scoping beyond `accountType`); revisit if a second
+account of any of these types is ever added.
 
-The matcher's candidate pool is not just this pass's uncategorized
-transactions (`CategorizationJob.kt`): the two legs of a transfer are
-routinely uploaded in separate sessions (bank statement today, credit-card
-statement next week), and by the time the second leg arrives the first has
-usually already been auto-categorized as ordinary spending by Gemini/rules.
-So `categorize()` widens `TransferMatcher`'s input to every transaction -
-regardless of its current category - within `TransferMatcher.DATE_WINDOW_DAYS`
-of what's pending, letting a previously mis-categorized leg still be found
-and corrected retroactively. Bounded by that date window (derived from
-`pending`'s min/max date) rather than the owner's whole history, so this
-stays a targeted lookup rather than a full rescan every categorize click.
+`categorize()`'s candidate pool for this is the owner's *entire* transaction
+history (`transactionStore.all(ownerId)`), not just this pass's
+uncategorized ones, and not windowed by date - matched regardless of
+current category. Deliberately not batched/paginated even though that
+means a full scan every page load: `all(ownerId)` is already being fetched
+unconditionally by the `GET /analysis` handler itself for rendering, so
+this doesn't cost an extra Firestore read, and the matching itself is
+in-memory and fast (no network call, unlike Gemini) - repeating it on every
+load is what gives this the same "keeps trying until it converges" property
+Gemini's background-job polling gives categorization generally, without a
+second job type or poll loop. A diff check (only rows whose category is
+actually changing get written) keeps this from re-billing a wasted
+Firestore write for every already-correct transfer on every single load.
+Sized for one household's realistic transaction volume (hundreds to a few
+thousand rows over years) - revisit with real batching/pagination only if
+that assumption ever stops holding, not preemptively.
 
-Gotcha hit once categorization became automatic (see Second feature above):
-the "job already RUNNING for this owner" guard in `categorize()` originally
-sat at the very top of the function, before transfer/rule matching ran at
-all - so any time a background Gemini pass was already in flight for an
-owner (now routine, since every `GET /analysis` can kick one off, not just
-an explicit button click), a newly-completed transfer pair went unmatched
-for as long as that unrelated job kept running. It self-healed once
-`analysis.ftl`'s poll-and-reload picked up the job's completion and
-triggered another `categorize()` call, but until then a transfer could
-sit mis-categorized. Fixed by moving the RUNNING check to only gate the
-Gemini launch (its original purpose - avoid a duplicate concurrent job per
-owner), so transfer/rule matching now always runs to completion on every
-call regardless of another job's status; the call just skips writing to
-`jobs[ownerId]` itself when one's already in flight, so it doesn't stomp
-that job's eventual `DONE`/`FAILED` result.
+Gotcha, now resolved by the single-row redesign above but worth keeping for
+the reasoning: the *original* version of this feature matched transfers in
+pairs (`matchPairs`, mutual-uniqueness required, both legs needed
+simultaneously to categorize either one) as a deliberate anti-false-positive
+safeguard. In practice this caused the actual bug it was meant to prevent:
+whenever only one leg of a real transfer existed yet - the routine case,
+since bank and credit-card statements are uploaded in separate sessions -
+that leg fell through to Gemini and got bucketed as ordinary income/expense
+instead of waiting as "transfer, unmatched." Once mis-categorized this way,
+nothing ever revisited it without a full-history rescan, which several
+narrower fixes (a `pending`-anchored date window, then a viewed-month
+union) tried and failed to fully close - there was no way to bound "how
+stale could a mismatch be" that didn't eventually re-open a gap. The fix
+was to stop pairing altogether for the markers that don't need it (every
+one except LOC interest, per above) and decide each row's category from its
+own description alone - eliminating the whole class of "haven't found its
+partner yet" bug rather than chasing each way that gap could reopen.
+Separately, once categorization became automatic (see Second feature
+above), a background Gemini job left `RUNNING` for an unrelated owner used
+to block transfer/rule matching entirely (the guard sat at the top of
+`categorize()`); fixed by moving that guard to only gate the Gemini launch,
+its original purpose, so transfer matching always runs to completion
+regardless of another job's status.
 
 ### `INVESTMENT` category
 

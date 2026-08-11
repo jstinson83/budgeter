@@ -47,10 +47,12 @@ fun Route.analysisRoutes(
         val monthEnd = monthStart.plusMonths(1)
 
         // Categorization is no longer a manual step - every load of this
-        // page is also a chance to run it. Safe to call unconditionally:
-        // categorize() is a no-op when there's nothing pending or a job's
-        // already running for this owner (see CategorizationJob.kt), so
-        // this never re-bills Gemini for an already-categorized
+        // page is also a chance to run it, including a fresh sweep for any
+        // transfer pair that matches TransferMatcher's templates but hasn't
+        // been bucketed as one yet, regardless of whether it already has
+        // some other category (see CategorizationJob.kt). Safe to call
+        // unconditionally: it's a cheap no-op once nothing's left to fix,
+        // and it never re-bills Gemini for an already-categorized
         // transaction or duplicates an in-flight job.
         categorizationJobManager.categorize(ownerId)
 
