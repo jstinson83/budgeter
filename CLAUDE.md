@@ -232,13 +232,28 @@ request/response schema.
   step, not implemented yet - revisit if this actually bites on a real
   document (this is exactly the kind of document the maintainer is
   planning to upload first).
-- **Extraction runs synchronously in the upload request**, unlike Gemini
-  categorization's background job (`CategorizationJob.kt`) - deliberate for
-  this first slice, since it's one Gemini call per document rather than a
-  chunked batch across a household's whole transaction history. If a large
-  document's extraction time runs into Cloud Run's request timeout, revisit
-  with the same async-job-plus-poll pattern `CategorizationJobManager`
-  uses, rather than growing the request timeout indefinitely.
+- **Extraction now runs on a background coroutine, not inline in the
+  upload request** (`HouseFactExtractionJobManager` in
+  `HouseFactExtractionJob.kt`) - originally synchronous, deliberately for
+  the first slice, but a real document import started timing out (large
+  document, slow Gemini response) once this got real use, hitting exactly
+  the Cloud Run request-timeout risk this section used to warn about.
+  Fixed with the same async-job-plus-poll pattern `CategorizationJobManager`
+  already uses (`CategorizationJob.kt`): `POST /house/documents/upload`
+  marks the document `EXTRACTING` and redirects immediately;
+  `house-document.ftl` polls `GET /house/documents/{id}/status` every 2s
+  and reloads once the document leaves `EXTRACTING` - the poll itself is
+  what keeps the coroutine's CPU allocated on Cloud Run between the request
+  that launched it and the one that observes it finished, same reasoning as
+  the categorize job's polling. Unlike `CategorizationJobManager` (keyed
+  per owner, in-memory RUNNING state is the only thing that matters), the
+  status poll here reads `HouseDocumentRepository`'s persisted status
+  directly rather than the job manager's in-memory map - it's already the
+  source of truth `house-document.ftl` renders from. One edge case this
+  doesn't cover: if the instance restarts mid-extraction, the persisted
+  status is stuck at `EXTRACTING` forever with no coroutine left to finish
+  it or mark it `FAILED` - not addressed, since Cloud Run instance restarts
+  mid-extraction haven't actually been observed yet.
 - **Local dev needs the same ADC as Firestore** - `documentStorageClient`
   (`Application.kt`, `StorageOptions.getDefaultInstance().service`) fails
   the same way `firestoreClient` does without `gcloud auth

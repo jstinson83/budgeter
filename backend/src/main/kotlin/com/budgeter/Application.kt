@@ -94,7 +94,13 @@ fun Application.module(
     houseDocumentStore: HouseDocumentRepository = FirestoreHouseDocumentStore(firestoreClient),
     houseFactStore: HouseFactRepository = FirestoreHouseFactStore(firestoreClient),
     documentBlobStore: DocumentBlobStore = GcsDocumentBlobStore(documentStorageClient, System.getenv("HOUSE_DOCUMENTS_BUCKET") ?: ""),
-    houseFactExtractor: HouseFactExtractor = geminiHouseFactExtractor
+    houseFactExtractor: HouseFactExtractor = geminiHouseFactExtractor,
+    houseFactExtractionJobManager: HouseFactExtractionJobManager = HouseFactExtractionJobManager(
+        CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        houseDocumentStore,
+        houseFactStore,
+        houseFactExtractor
+    )
 ) {
     install(FreeMarker) {
         templateLoader = ClassTemplateLoader(this::class.java.classLoader, "templates")
@@ -109,6 +115,7 @@ fun Application.module(
     // stopped test/dev instance doesn't leave orphaned coroutines running.
     monitor.subscribe(ApplicationStopping) {
         categorizationJobManager.cancel()
+        houseFactExtractionJobManager.cancel()
     }
 
     routing {
@@ -122,7 +129,7 @@ fun Application.module(
             transactionRoutes(transactionStore)
             analysisRoutes(transactionStore, categorizationRuleStore, categoryStore, categorizationJobManager)
             categoryRoutes(categoryStore, categorizationRuleStore, transactionStore)
-            houseRoutes(houseDocumentStore, houseFactStore, documentBlobStore, houseFactExtractor)
+            houseRoutes(houseDocumentStore, houseFactStore, documentBlobStore, houseFactExtractionJobManager)
         }
     }
 }

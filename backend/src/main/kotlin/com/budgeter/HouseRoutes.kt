@@ -8,20 +8,21 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.utils.io.toByteArray
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.util.UUID
 
 // The "MVP: House Knowledge" workflow from product_spec.md: upload a
 // document, extract candidate facts via Gemini, let the homeowner resolve
-// the ambiguous ones. Extraction runs synchronously in the upload request
-// (unlike Gemini categorization's background job - see CategorizationJob.kt)
-// since this is one Gemini call per document rather than a chunked batch;
-// revisit with the same async/poll pattern if a large document's extraction
-// time ever runs into Cloud Run's request timeout.
+// the ambiguous ones. Extraction runs on HouseFactExtractionJobManager's
+// background scope, not inline in the upload request - see
+// HouseFactExtractionJob.kt for why (a large/slow document could otherwise
+// run Gemini long enough to hit Cloud Run's request timeout).
 fun Route.houseRoutes(
     houseDocumentStore: HouseDocumentRepository,
     houseFactStore: HouseFactRepository,
     documentBlobStore: DocumentBlobStore,
-    houseFactExtractor: HouseFactExtractor
+    houseFactExtractionJobManager: HouseFactExtractionJobManager
 ) {
     get("/house") {
         val ownerId = call.requireUserId()
@@ -67,23 +68,16 @@ fun Route.houseRoutes(
         val storagePath = documentBlobStore.upload(ownerId, UUID.randomUUID().toString(), name, pdfBytes)
         val document = houseDocumentStore.add(ownerId, name, storagePath)
 
-        val extractedCount = try {
-            houseDocumentStore.updateStatus(ownerId, document.id, HouseDocumentStatus.EXTRACTING)
-            val extracted = houseFactExtractor.extract(name, pdfBytes)
-            houseFactStore.addAll(ownerId, document.id, extracted)
-            houseDocumentStore.updateStatus(ownerId, document.id, HouseDocumentStatus.EXTRACTED)
-            extracted.size
-        } catch (e: Exception) {
-            houseDocumentStore.updateStatus(ownerId, document.id, HouseDocumentStatus.FAILED, e.message)
-            null
-        }
+        // Marked EXTRACTING here, synchronously, before this request ends -
+        // the background job (HouseFactExtractionJob.kt) only owns the
+        // Gemini call itself and the EXTRACTED/FAILED transition once it's
+        // done. Redirects immediately rather than waiting for extraction to
+        // finish; house-document.ftl polls GET /house/documents/{id}/status
+        // while EXTRACTING and reloads once it isn't.
+        houseDocumentStore.updateStatus(ownerId, document.id, HouseDocumentStatus.EXTRACTING)
+        houseFactExtractionJobManager.start(ownerId, document.id, name, pdfBytes)
 
-        if (extractedCount != null) {
-            val message = "Found $extractedCount thing(s) worth remembering about your house"
-            call.respondRedirect("/house/documents/${document.id}?message=${message.encodeURLQueryComponent()}")
-        } else {
-            call.respondRedirect("/house/documents/${document.id}?error=${"Extraction failed - see status below".encodeURLQueryComponent()}")
-        }
+        call.respondRedirect("/house/documents/${document.id}")
     }
 
     get("/house/documents/{id}") {
@@ -91,10 +85,36 @@ fun Route.houseRoutes(
         val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
         val document = houseDocumentStore.get(ownerId, id) ?: return@get call.respond(HttpStatusCode.NotFound)
         val facts = houseFactStore.forDocument(ownerId, id)
+        // consumeTerminal rather than status: this is the one page render
+        // that ever shows a just-finished extraction job's outcome, so it
+        // also forgets that job once shown - otherwise a later unrelated
+        // visit would keep re-displaying the same "Found N thing(s)..."
+        // banner indefinitely (see HouseFactExtractionJob.kt). Query params
+        // still take priority - e.g. the "Updated"/"Fact not found" messages
+        // POST /house/facts/{id}/resolve redirects back with.
+        val jobState = houseFactExtractionJobManager.consumeTerminal(id)
         val message = call.request.queryParameters["message"]
+            ?: jobState?.takeIf { it.status == ExtractionJobStatus.DONE }
+                ?.let { "Found ${it.factCount} thing(s) worth remembering about your house" }
         val error = call.request.queryParameters["error"]
+            ?: jobState?.takeIf { it.status == ExtractionJobStatus.FAILED }?.let { "Extraction failed - see status below" }
         val model = houseDocumentPageModel(document, facts, message, error) + call.currentUserModel()
         call.respond(FreeMarkerContent("house-document.ftl", model))
+    }
+
+    // Polled by house-document.ftl's inline script while the document is
+    // EXTRACTING (see HouseFactExtractionJob.kt for why polling matters
+    // beyond just the UI on Cloud Run). Reads document status straight from
+    // HouseDocumentRepository rather than the job manager - that's already
+    // the persisted source of truth the document page itself renders from,
+    // and it's what the background job updates on completion regardless of
+    // whether this process instance is the one that observes it.
+    get("/house/documents/{id}/status") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
+        val document = houseDocumentStore.get(ownerId, id) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val response = ExtractionJobStatusResponse(status = document.status.name, error = document.error)
+        call.respondText(Json.encodeToString(response), ContentType.Application.Json)
     }
 
     // homeownerContext is either one of house-document.ftl's preset quick

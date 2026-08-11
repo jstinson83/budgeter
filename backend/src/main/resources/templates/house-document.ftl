@@ -86,5 +86,29 @@
     </div>
     </#if>
   </div>
+
+  <#if document.status == "EXTRACTING">
+  <script>
+    // No framework in this app - see analysis.ftl/CLAUDE.md, same pattern.
+    // Polls this document's extraction status every 2s and reloads once it
+    // leaves EXTRACTING - the page reload itself is what picks up the
+    // extracted facts and the one-shot "Found N thing(s)..."/error banner
+    // (see HouseRoutes.kt's GET /house/documents/{id}). Each poll is also
+    // what keeps the background extraction coroutine's CPU allocated on
+    // Cloud Run between the upload request that launched it and the
+    // request that observes it finished - see HouseFactExtractionJob.kt.
+    (function poll() {
+      fetch('/house/documents/${document.id}/status')
+        .then((response) => response.json())
+        .then((status) => {
+          if (status.status === 'EXTRACTING') {
+            setTimeout(poll, 2000);
+          } else {
+            window.location.reload();
+          }
+        });
+    })();
+  </script>
+  </#if>
 </body>
 </html>

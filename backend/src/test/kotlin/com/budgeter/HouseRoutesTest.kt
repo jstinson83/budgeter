@@ -82,7 +82,12 @@ class HouseRoutesTest {
         val redirect = response.headers[HttpHeaders.Location]
         assertNotNull(redirect)
         assertTrue(redirect.startsWith("/house/documents/"))
-        assertTrue(redirect.contains("message="))
+        val documentId = redirect.substringAfterLast("/")
+
+        // Extraction runs on a background coroutine now (see
+        // HouseFactExtractionJob.kt) - the upload redirect happens before
+        // it's done.
+        client.waitForExtractionToFinish(documentId)
 
         val documentPage = client.get(redirect).bodyAsText()
         // FakeHouseFactExtractor's default facts: one plain, one needing
@@ -99,6 +104,7 @@ class HouseRoutesTest {
 
         val uploadResponse = client.submitFormWithBinaryData(url = "/house/documents/upload", formData = pdfFormData())
         val documentUrl = uploadResponse.headers[HttpHeaders.Location]!!.substringBefore("?")
+        client.waitForExtractionToFinish(documentUrl.substringAfterLast("/"))
         val body = client.get(documentUrl) { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
 
         assertTrue(body.contains("Needs your input"))
@@ -117,6 +123,7 @@ class HouseRoutesTest {
         val uploadResponse = client.submitFormWithBinaryData(url = "/house/documents/upload", formData = pdfFormData())
         val documentUrl = uploadResponse.headers[HttpHeaders.Location]!!.substringBefore("?")
         val documentId = documentUrl.substringAfterLast("/")
+        client.waitForExtractionToFinish(documentId)
         val beforeBody = client.get(documentUrl) { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
         val factId = Regex("""/house/facts/([^/]+)/resolve""").find(beforeBody)!!.groupValues[1]
 
@@ -146,6 +153,7 @@ class HouseRoutesTest {
         val uploadResponse = client.submitFormWithBinaryData(url = "/house/documents/upload", formData = pdfFormData())
         val documentUrl = uploadResponse.headers[HttpHeaders.Location]!!.substringBefore("?")
         val documentId = documentUrl.substringAfterLast("/")
+        client.waitForExtractionToFinish(documentId)
         val beforeBody = client.get(documentUrl) { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
         val factId = Regex("""/house/facts/([^/]+)/resolve""").find(beforeBody)!!.groupValues[1]
 
@@ -184,7 +192,10 @@ class HouseRoutesTest {
         val uploadResponse = client.submitFormWithBinaryData(url = "/house/documents/upload", formData = pdfFormData())
         val redirect = uploadResponse.headers[HttpHeaders.Location]
         assertNotNull(redirect)
-        assertTrue(redirect.contains("error="))
+        val documentId = redirect.substringAfterLast("/")
+
+        val status = client.waitForExtractionToFinish(documentId)
+        assertEquals("FAILED", status.status)
 
         val documentPage = client.get(redirect).bodyAsText()
         assertTrue(documentPage.contains("Extraction failed"))
