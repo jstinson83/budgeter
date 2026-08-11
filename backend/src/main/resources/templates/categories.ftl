@@ -77,6 +77,7 @@
         <option value="${option.name}">${option.label}</option>
         </#list>
       </select>
+      <label><input type="checkbox" name="rescan"> Apply to existing transactions</label>
       <button type="submit" class="button">Add rule</button>
     </form>
   </div>

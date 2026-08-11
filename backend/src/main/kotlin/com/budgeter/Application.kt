@@ -103,7 +103,7 @@ fun Application.module(
 
             transactionRoutes(transactionStore)
             analysisRoutes(transactionStore, categorizationRuleStore, categoryStore, categorizationJobManager)
-            categoryRoutes(categoryStore, categorizationRuleStore)
+            categoryRoutes(categoryStore, categorizationRuleStore, transactionStore)
         }
     }
 }

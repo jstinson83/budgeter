@@ -139,6 +139,54 @@ class CategoryRoutesTest {
     }
 
     @Test
+    fun testAddingARuleWithRescanRecategorizesAlreadyCategorizedTransactions() = testApplication {
+        val categorizer = FakeTransactionCategorizer("OTHER")
+        testModule(transactionCategorizer = categorizer)
+        val client = signInFakeUser()
+        client.get("/categories") // seeds built-ins
+
+        client.importCsv("2026-06-15,NETFLIX.COM,15.99,,984.01")
+        // Falls to Gemini (the fake) and lands in OTHER, since no rule exists yet.
+        client.triggerCategorizeAndAwaitResult()
+        val beforeRescan = client.get("/analysis/category/other?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        assertTrue(beforeRescan.bodyAsText().contains("NETFLIX.COM"))
+
+        val addRuleResponse = client.post("/categories/rules") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("pattern=NETFLIX&matchType=SUBSTRING&category=SUBSCRIPTIONS&rescan=on")
+        }
+        assertEquals(
+            "Added rule, recategorized 1 existing transaction(s)",
+            Url(addRuleResponse.headers[HttpHeaders.Location]!!).parameters["message"]
+        )
+
+        val afterRescan = client.get("/analysis/category/subscriptions?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        assertTrue(afterRescan.bodyAsText().contains("NETFLIX.COM"))
+        val stillOther = client.get("/analysis/category/other?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        assertFalse(stillOther.bodyAsText().contains("NETFLIX.COM"))
+    }
+
+    @Test
+    fun testAddingARuleWithoutRescanLeavesAlreadyCategorizedTransactionsAlone() = testApplication {
+        val categorizer = FakeTransactionCategorizer("OTHER")
+        testModule(transactionCategorizer = categorizer)
+        val client = signInFakeUser()
+        client.get("/categories") // seeds built-ins
+
+        client.importCsv("2026-06-15,NETFLIX.COM,15.99,,984.01")
+        client.triggerCategorizeAndAwaitResult()
+
+        val addRuleResponse = client.post("/categories/rules") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("pattern=NETFLIX&matchType=SUBSTRING&category=SUBSCRIPTIONS")
+        }
+        assertEquals("Added rule", Url(addRuleResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val stillOther = client.get("/analysis/category/other?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        assertTrue(stillOther.bodyAsText().contains("NETFLIX.COM"))
+    }
+
+    @Test
     fun testAddingARuleRejectsADisabledCategoryAsTheTarget() = testApplication {
         testModule()
         val client = signInFakeUser()

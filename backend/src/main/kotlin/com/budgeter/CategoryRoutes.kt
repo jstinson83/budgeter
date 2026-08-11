@@ -14,7 +14,8 @@ import io.ktor.server.routing.*
 // AnalysisPage.kt/AnalysisRoutes.kt).
 fun Route.categoryRoutes(
     categoryStore: CategoryRepository,
-    categorizationRuleStore: CategorizationRuleRepository
+    categorizationRuleStore: CategorizationRuleRepository,
+    transactionStore: TransactionRepository
 ) {
     get("/categories") {
         val ownerId = call.requireUserId()
@@ -52,8 +53,11 @@ fun Route.categoryRoutes(
         val formParams = call.receiveParameters()
         val (pattern, matchType, category) = validateRuleForm(formParams, categoryStore, ownerId)
             ?: return@post call.respondRedirect("/categories?error=${"Invalid rule".encodeURLQueryComponent()}")
-        categorizationRuleStore.add(ownerId, pattern, matchType, category.id)
-        call.respondRedirect("/categories?message=${"Added rule".encodeURLQueryComponent()}")
+        val rule = categorizationRuleStore.add(ownerId, pattern, matchType, category.id)
+        val rescanCount = if (formParams["rescan"] != null) rescanExistingTransactions(ownerId, rule, transactionStore) else null
+        val message = listOfNotNull("Added rule", rescanCount?.let { "recategorized $it existing transaction(s)" })
+            .joinToString(", ")
+        call.respondRedirect("/categories?message=${message.encodeURLQueryComponent()}")
     }
 
     post("/categories/rules/{id}") {
@@ -74,6 +78,26 @@ fun Route.categoryRoutes(
         categorizationRuleStore.delete(ownerId, id)
         call.respondRedirect("/categories?message=${"Deleted rule".encodeURLQueryComponent()}")
     }
+}
+
+// Applies a newly-created rule against the owner's whole transaction
+// history, not just still-pending ones - CategorizationRuleMatcher only
+// ever sees uncategorized transactions during a normal /analysis
+// categorize pass (CategorizationJob.kt), so without this a rule created
+// after the fact would silently never touch transactions it should have
+// caught. Deterministic in-memory string matching against however many
+// transactions the household has, no external API call - synchronous is
+// fine here and doesn't need CategorizationJobManager's async/poll
+// machinery, which exists specifically to survive Gemini's request-bound
+// latency (see CategorizationJob.kt). TRANSFER-categorized transactions
+// are excluded so a rule can never override TransferMatcher's own
+// classification, matching the priority TransferMatcher already has over
+// rules in the normal categorize pass.
+private suspend fun rescanExistingTransactions(ownerId: String, rule: CategorizationRule, transactionStore: TransactionRepository): Int {
+    val candidates = transactionStore.all(ownerId).filter { it.category != TRANSFER_CATEGORY_ID && it.category != rule.category }
+    val matches = CategorizationRuleMatcher.match(listOf(rule), candidates)
+    if (matches.isNotEmpty()) transactionStore.updateCategories(ownerId, matches)
+    return matches.size
 }
 
 private data class RuleFormInput(val pattern: String, val matchType: MatchType, val category: Category)
