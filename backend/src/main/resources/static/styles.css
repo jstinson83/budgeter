@@ -689,3 +689,51 @@ h1, h2 {
   color: var(--text);
   border: 1px solid var(--border);
 }
+
+/* House Knowledge */
+
+.fact-quote {
+  margin: 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.9rem;
+}
+
+.fact-question {
+  margin: 0;
+  font-weight: 600;
+}
+
+.fact-context {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.fact-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.fact-review-actions .button {
+  margin-bottom: 0;
+}
+
+.fact-review-freeform {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.fact-review-freeform .button {
+  margin-bottom: 0;
+}
+
+.fact-type-badge {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  text-transform: lowercase;
+}

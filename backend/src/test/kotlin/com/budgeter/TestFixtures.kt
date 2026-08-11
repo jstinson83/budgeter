@@ -56,7 +56,11 @@ fun ApplicationTestBuilder.testModule(
     transactionStore: TransactionRepository = FakeTransactionRepository(),
     transactionCategorizer: TransactionCategorizer = FakeTransactionCategorizer(),
     categorizationRuleStore: CategorizationRuleRepository = FakeCategorizationRuleRepository(),
-    categoryStore: CategoryRepository = FakeCategoryRepository()
+    categoryStore: CategoryRepository = FakeCategoryRepository(),
+    houseDocumentStore: HouseDocumentRepository = FakeHouseDocumentRepository(),
+    houseFactStore: HouseFactRepository = FakeHouseFactRepository(),
+    documentBlobStore: DocumentBlobStore = FakeDocumentBlobStore(),
+    houseFactExtractor: HouseFactExtractor = FakeHouseFactExtractor()
 ) {
     application {
         module(
@@ -66,7 +70,11 @@ fun ApplicationTestBuilder.testModule(
             transactionStore = transactionStore,
             transactionCategorizer = transactionCategorizer,
             categorizationRuleStore = categorizationRuleStore,
-            categoryStore = categoryStore
+            categoryStore = categoryStore,
+            houseDocumentStore = houseDocumentStore,
+            houseFactStore = houseFactStore,
+            documentBlobStore = documentBlobStore,
+            houseFactExtractor = houseFactExtractor
         )
     }
 }
@@ -180,6 +188,104 @@ class FakeCategoryRepository : CategoryRepository {
         all(ownerId) // ensures seeding has happened before the lookup below
         val index = categories.indexOfFirst { it.ownerId == ownerId && it.id == id }
         if (index != -1) categories[index] = categories[index].copy(active = active)
+    }
+}
+
+// In-memory stand-in for FirestoreHouseDocumentStore.
+class FakeHouseDocumentRepository : HouseDocumentRepository {
+    private val documents = mutableListOf<HouseDocument>()
+    private var nextId = 0
+
+    override suspend fun add(ownerId: String, filename: String, storagePath: String): HouseDocument {
+        val document = HouseDocument(
+            id = "house-doc-${nextId++}",
+            ownerId = ownerId,
+            filename = filename,
+            storagePath = storagePath,
+            status = HouseDocumentStatus.UPLOADED,
+            uploadedAt = java.time.Instant.now()
+        )
+        documents += document
+        return document
+    }
+
+    override suspend fun all(ownerId: String): List<HouseDocument> =
+        documents.filter { it.ownerId == ownerId }.sortedByDescending { it.uploadedAt }
+
+    override suspend fun get(ownerId: String, id: String): HouseDocument? =
+        documents.find { it.ownerId == ownerId && it.id == id }
+
+    override suspend fun updateStatus(ownerId: String, id: String, status: HouseDocumentStatus, error: String?) {
+        val index = documents.indexOfFirst { it.ownerId == ownerId && it.id == id }
+        if (index != -1) documents[index] = documents[index].copy(status = status, error = error)
+    }
+}
+
+// In-memory stand-in for FirestoreHouseFactStore.
+class FakeHouseFactRepository : HouseFactRepository {
+    private val facts = mutableListOf<HouseFact>()
+    private var nextId = 0
+
+    override suspend fun addAll(ownerId: String, documentId: String, extracted: List<ExtractedFact>): List<HouseFact> {
+        val stored = extracted.map {
+            HouseFact(
+                id = "house-fact-${nextId++}",
+                ownerId = ownerId,
+                documentId = documentId,
+                what = it.what,
+                type = it.type,
+                sourceQuote = it.sourceQuote,
+                needsReview = it.needsReview,
+                reviewQuestion = it.reviewQuestion,
+                createdAt = java.time.Instant.now()
+            )
+        }
+        facts += stored
+        return stored
+    }
+
+    override suspend fun all(ownerId: String): List<HouseFact> =
+        facts.filter { it.ownerId == ownerId }.sortedByDescending { it.createdAt }
+
+    override suspend fun resolve(ownerId: String, id: String, homeownerContext: String): HouseFact? {
+        val index = facts.indexOfFirst { it.ownerId == ownerId && it.id == id }
+        if (index == -1) return null
+        val updated = facts[index].copy(homeownerContext = homeownerContext, needsReview = false)
+        facts[index] = updated
+        return updated
+    }
+}
+
+// In-memory stand-in for GcsDocumentBlobStore - keeps the test suite from
+// ever touching real GCS.
+class FakeDocumentBlobStore : DocumentBlobStore {
+    private val blobs = mutableMapOf<String, ByteArray>()
+
+    override suspend fun upload(ownerId: String, documentId: String, filename: String, bytes: ByteArray): String {
+        val path = "$ownerId/$documentId/$filename"
+        blobs[path] = bytes
+        return path
+    }
+
+    override suspend fun download(storagePath: String): ByteArray =
+        blobs[storagePath] ?: error("House document blob not found: $storagePath")
+}
+
+// Stands in for GeminiHouseFactExtractor - returns a fixed, small set of
+// facts (one needing review) so route tests can exercise the extraction ->
+// review flow without ever calling Gemini for real.
+class FakeHouseFactExtractor(
+    private val facts: List<ExtractedFact> = listOf(
+        ExtractedFact("The house contains steel structural columns", FactType.SPECIFICATION, "steel columns observed", false, null),
+        ExtractedFact("Central floor bulge cause not determined", FactType.CONDITION, "cause not determined", true, "What's your understanding of this?")
+    )
+) : HouseFactExtractor {
+    var callCount: Int = 0
+        private set
+
+    override suspend fun extract(filename: String, pdfBytes: ByteArray): List<ExtractedFact> {
+        callCount++
+        return facts
     }
 }
 

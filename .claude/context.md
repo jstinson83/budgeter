@@ -487,6 +487,67 @@ this depended on (`Transaction.balance`, `ParsedTransaction.balance`) was
 reverted along with it - the CSV's 5th column goes back to being parsed and
 discarded, same as before this feature.
 
+## Seventh feature: House Knowledge (document upload + fact extraction)
+
+The first real slice of `product_spec.md`'s "House Knowledge" section
+(added 2026-08-11 as vision, implemented 2026-08-11) - the "MVP: House
+Knowledge" workflow from that section: upload a document, extract
+candidate facts via Gemini, resolve the ambiguous ones. New top-level
+`/house` area, linked from `_nav.ftl`.
+
+- **`HouseDocument`** (`HouseDocumentStore.kt`, Firestore collection
+  `houseDocuments`) is upload metadata/status
+  (`UPLOADED`/`EXTRACTING`/`EXTRACTED`/`FAILED`) - the raw PDF bytes live
+  separately in GCS (`DocumentBlobStore`/`GcsDocumentBlobStore.kt`), not in
+  Firestore, since Firestore documents cap at 1MB and real inspection PDFs
+  routinely exceed that. Object path is `{ownerId}/{uploadId}/{filename}`,
+  `uploadId` a fresh random UUID rather than the eventual Firestore
+  document id (avoids a two-phase create-then-patch just to learn an id).
+  Bucket name comes from `HOUSE_DOCUMENTS_BUCKET` (see `CLAUDE.md`'s deploy
+  pipeline section - not yet created in GCP as of this feature landing).
+- **`HouseFact`** (`HouseFactStore.kt`, Firestore collection `houseFacts`)
+  is a deliberately narrow slice of the spec's full `Fact` model:
+  what/type/sourceQuote/needsReview/reviewQuestion/homeownerContext only -
+  no status/time/location/confidence/related-components-events-facts-tasks/
+  photos yet. `FactType` mirrors the spec's 9-value taxonomy
+  (Observation/Condition/Diagnosis/Decision/Event/Specification/
+  MaintenanceRequirement/Warranty/Unknown) exactly. Deferred fields are
+  deferred because there's no real usage to design them against yet, not
+  because they were rejected - see `product_spec.md`'s House Knowledge
+  section for the target shape this should grow toward.
+- **`GeminiHouseFactExtractor`** (`HouseFactExtractor.kt`) sends the whole
+  PDF inline (base64, `application/pdf` `inlineData` part) plus a text
+  prompt to `gemini-3.5-flash`'s `generateContent`, same direct-REST
+  pattern as `GeminiTransactionCategorizer` (no Google AI SDK dependency).
+  Capped at 15MB inline (`MAX_INLINE_BYTES`) with a clear error beyond
+  that - larger documents need the Gemini File API's separate upload step,
+  not implemented. Response schema constrains each item to
+  `{what, type, sourceQuote, needsReview, reviewQuestion}`; a fact needing
+  homeowner input is flagged `needsReview` with a `reviewQuestion` to show
+  them, mirroring the spec's "Identify ambiguity" MVP step. **Not yet
+  exercised against the real Gemini API** - see `CLAUDE.md`'s House
+  Knowledge gotchas for what to check first if the first real upload fails.
+- **Extraction is synchronous in the upload request**, not backgrounded
+  like Gemini categorization (`CategorizationJobManager`) - one Gemini call
+  per document rather than a chunked batch, so no async/poll machinery was
+  built for this first slice. Revisit if a large document's extraction
+  time runs into Cloud Run's request timeout.
+- **Review flow**: `/house/documents/{id}` splits a document's facts into
+  "Needs your input" (`needsReview`) and "Known" (everything else).
+  Ambiguous facts get four preset quick-answer buttons (Longstanding
+  condition / It was repaired / Still investigating / I don't know) plus a
+  free-text field, matching the spec's MVP step 3 example - all five submit
+  the same `POST /house/facts/{id}/resolve` form field
+  (`homeownerContext`), which clears `needsReview` and never touches
+  `sourceQuote` (the spec's "never overwrite historical source material"
+  principle, applied even in this narrow slice).
+- **Not built in this slice** (left for later, per the spec's own "don't
+  build the entire knowledge graph initially" MVP framing): photo
+  extraction from documents, a cross-document/all-facts browse page (only
+  per-document browsing exists), events/components as separate objects,
+  provenance beyond a single `sourceQuote` string, and cross-document
+  contradiction/connection detection.
+
 ## Configuration reference
 
 Concrete IDs and config values — the single source of truth for these

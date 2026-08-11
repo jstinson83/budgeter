@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>${document.filename} · House Knowledge · Home OS</title>
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="alternate icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+</head>
+<body>
+  <div class="container">
+    <#include "_nav.ftl">
+
+    <a href="/house" class="back-link">&larr; House Knowledge</a>
+
+    <#if message??>
+    <p class="banner-success">${message}</p>
+    </#if>
+    <#if error??>
+    <p class="banner-error">${error}</p>
+    </#if>
+
+    <h1>${document.filename}</h1>
+
+    <#if document.status == "FAILED">
+    <p class="banner-error">Extraction failed<#if document.error??>: ${document.error}</#if></p>
+    <#elseif document.status == "EXTRACTING">
+    <p class="empty-state">Extracting facts from this document&hellip;</p>
+    </#if>
+
+    <#if (needsReviewFacts?size gt 0)>
+    <h2>Needs your input</h2>
+    <div class="transaction-list">
+      <#list needsReviewFacts as fact>
+      <div class="transaction-item">
+        <div class="transaction-row">
+          <span class="transaction-description">${fact.what}</span>
+          <span class="fact-type-badge">${fact.type?replace("_", " ")?lower_case}</span>
+        </div>
+        <#if fact.sourceQuote??>
+        <p class="fact-quote">&ldquo;${fact.sourceQuote}&rdquo;</p>
+        </#if>
+        <#if fact.reviewQuestion??>
+        <p class="fact-question">${fact.reviewQuestion}</p>
+        </#if>
+        <div class="fact-review-actions">
+          <#list ["Longstanding condition", "It was repaired", "Still investigating", "I don't know"] as preset>
+          <form method="post" action="/house/facts/${fact.id}/resolve">
+            <input type="hidden" name="documentId" value="${fact.documentId}">
+            <input type="hidden" name="homeownerContext" value="${preset}">
+            <button type="submit" class="button button-small button-secondary">${preset}</button>
+          </form>
+          </#list>
+        </div>
+        <form method="post" action="/house/facts/${fact.id}/resolve" class="fact-review-freeform">
+          <input type="hidden" name="documentId" value="${fact.documentId}">
+          <input type="text" name="homeownerContext" placeholder="Add your own explanation">
+          <button type="submit" class="button button-small">Save</button>
+        </form>
+      </div>
+      </#list>
+    </div>
+    </#if>
+
+    <h2>Known</h2>
+    <#if (facts?size == 0)>
+    <p class="empty-state">Nothing here yet.</p>
+    <#else>
+    <div class="transaction-list">
+      <#list facts as fact>
+      <div class="transaction-item">
+        <div class="transaction-row">
+          <span class="transaction-description">${fact.what}</span>
+          <span class="fact-type-badge">${fact.type?replace("_", " ")?lower_case}</span>
+        </div>
+        <#if fact.sourceQuote??>
+        <p class="fact-quote">&ldquo;${fact.sourceQuote}&rdquo;</p>
+        </#if>
+        <#if fact.homeownerContext??>
+        <p class="fact-context">You said: ${fact.homeownerContext}</p>
+        </#if>
+      </div>
+      </#list>
+    </div>
+    </#if>
+  </div>
+</body>
+</html>

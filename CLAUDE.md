@@ -47,12 +47,20 @@ reference — don't restate them here.
   configuration file", not "Dockerfile" — a Dockerfile-only trigger builds
   and pushes the image but never deploys it.
 - Cloud Run env vars (OAuth client id/secret, `SESSION_SECRET`,
-  `OAUTH_REDIRECT_BASE_URL`, `FIRESTORE_DATABASE_ID`, `GEMINI_API_KEY`) are
-  set manually on the Cloud Run service after the first deploy, not via
-  `cloudbuild.yaml` — same pattern as foodie, since the OAuth redirect URI
-  needs the actual Cloud Run URL to exist first. `GEMINI_API_KEY` is now set
-  on the deployed service — the "Categorize" button on `/analysis` works
-  end to end in production.
+  `OAUTH_REDIRECT_BASE_URL`, `FIRESTORE_DATABASE_ID`, `GEMINI_API_KEY`,
+  `HOUSE_DOCUMENTS_BUCKET`) are set manually on the Cloud Run service after
+  the first deploy, not via `cloudbuild.yaml` — same pattern as foodie,
+  since the OAuth redirect URI needs the actual Cloud Run URL to exist
+  first. `GEMINI_API_KEY` is now set on the deployed service — the
+  "Categorize" button on `/analysis` works end to end in production.
+- `HOUSE_DOCUMENTS_BUCKET` (House Knowledge document uploads, see below)
+  needs a real GCS bucket created manually in the console first, same
+  "provision the resource, then point the env var at it" order as the
+  `home-os` Firestore database — `GcsDocumentBlobStore` throws a clear
+  "not set" error on first use rather than at startup if this is skipped,
+  same posture as `GEMINI_API_KEY`'s missing-key check. Not yet created as
+  of this feature landing — do this before the first real document upload
+  in production.
 - This project shares a GCP project with `foodie`. Firestore's
   `roles/datastore.user` is project-scoped, so the runtime service account
   already had it from foodie's setup — no new IAM grant was needed for the
@@ -186,3 +194,59 @@ shape.
   that inspects the literal outgoing request JSON for these fields, since
   the previous tests only ever mocked the *response* and would never have
   caught a malformed *request*.
+
+## House Knowledge (Facts) gotchas
+
+`GeminiHouseFactExtractor` (`HouseFactExtractor.kt`) is what `POST
+/house/documents/upload` calls to turn an uploaded PDF into candidate
+`HouseFact` rows - see `.claude/context.md` for the feature's shape and
+request/response schema.
+
+- **Not yet exercised against the real Gemini API.** This was built and
+  tested (route tests + a mocked-HTTP extractor test) without live network
+  access or a real `GEMINI_API_KEY` in the build sandbox. Route/store
+  behavior is well covered; the actual Gemini call is not. The first real
+  document upload in production is the real test - if it fails, check the
+  three gotchas above first (status-code-before-decode, `finishReason`/
+  `promptFeedback` on empty output, `encodeDefaults` on schema `"type"`
+  fields) since `GeminiHouseFactExtractor` was written to already account
+  for all three, but a fourth flavor of the same strictness is plausible.
+- **Gemini's `Part` message is a strict oneof** (`text` XOR `inlineData`) -
+  learned from the `encodeDefaults` gotcha above rather than hit fresh:
+  since `geminiHttpClient`'s shared `Json` config has `encodeDefaults =
+  true`, a naive nullable-both-fields `GeminiPart` would emit a spurious
+  `"text": null` on the file part and `"inlineData": null` on the text
+  part. Sidestepped by building each part as its own non-nullable
+  `@Serializable` type and injecting it into the request as a raw
+  `JsonElement` (see `FactExtractionTextPart`/`FactExtractionInlineDataPart`
+  in `HouseFactExtractor.kt`) rather than turning off `encodeDefaults`
+  globally. `HouseFactExtractorTest`'s
+  `testRequestBodyCarriesTheDocumentAsInlineDataWithNoStrayNullFields`
+  guards this.
+- **Inline upload only, capped at 15MB** (`MAX_INLINE_BYTES` in
+  `HouseFactExtractor.kt`) - Gemini's `generateContent` caps total request
+  size around 20MB and base64 inflates raw bytes ~33%, so this throws a
+  clear "too large" error rather than sending a request that fails deep
+  inside the HTTP call. A real inspection PDF with embedded photos can
+  plausibly hit this; the fix is the Gemini File API's separate upload
+  step, not implemented yet - revisit if this actually bites on a real
+  document (this is exactly the kind of document the maintainer is
+  planning to upload first).
+- **Extraction runs synchronously in the upload request**, unlike Gemini
+  categorization's background job (`CategorizationJob.kt`) - deliberate for
+  this first slice, since it's one Gemini call per document rather than a
+  chunked batch across a household's whole transaction history. If a large
+  document's extraction time runs into Cloud Run's request timeout, revisit
+  with the same async-job-plus-poll pattern `CategorizationJobManager`
+  uses, rather than growing the request timeout indefinitely.
+- **Local dev needs the same ADC as Firestore** - `documentStorageClient`
+  (`Application.kt`, `StorageOptions.getDefaultInstance().service`) fails
+  the same way `firestoreClient` does without `gcloud auth
+  application-default login` (see the Firestore gotcha above) - an
+  unhelpful low-level error rather than an obvious "not authenticated" one.
+- **This is a deliberately narrow slice of `product_spec.md`'s full Fact
+  model** - `HouseFact` only has what/type/source/sourceQuote/
+  needsReview/reviewQuestion/homeownerContext, not the full
+  status/time/location/confidence/related-components-events-facts-tasks/
+  photos shape the spec describes. See `.claude/context.md` for what's
+  intentionally deferred and why.
