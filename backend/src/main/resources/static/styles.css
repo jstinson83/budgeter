@@ -21,6 +21,17 @@
   --danger-fill: #a6452e;
   --danger-fill-text: #f7f1e8;
   --shadow: 0 4px 24px rgba(38, 36, 31, 0.08);
+
+  /* Pie chart categorical palette - fixed hue order (assigned by spend
+     rank, see PieChart.kt), validated for CVD-safe adjacency. Distinct
+     from the app's brass/green/brick tokens above, which carry their own
+     meaning (accent/positive/negative) unrelated to category identity. */
+  --pie-1: #2a78d6;
+  --pie-2: #eb6834;
+  --pie-3: #1baf7a;
+  --pie-4: #eda100;
+  --pie-5: #e87ba4;
+  --pie-other: var(--text-dim);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,6 +52,12 @@
     --danger-fill: #a6452e;
     --danger-fill-text: #f7f1e8;
     --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+
+    --pie-1: #3987e5;
+    --pie-2: #d95926;
+    --pie-3: #199e70;
+    --pie-4: #c98500;
+    --pie-5: #d55181;
   }
 }
 
@@ -688,6 +705,78 @@ h1, h2 {
   background: transparent;
   color: var(--text);
   border: 1px solid var(--border);
+}
+
+/* Pie chart (dashboard.ftl + analysis.ftl, via _pie-chart.ftl) */
+
+.pie-slice-1 { --pie-slice-color: var(--pie-1); }
+.pie-slice-2 { --pie-slice-color: var(--pie-2); }
+.pie-slice-3 { --pie-slice-color: var(--pie-3); }
+.pie-slice-4 { --pie-slice-color: var(--pie-4); }
+.pie-slice-5 { --pie-slice-color: var(--pie-5); }
+.pie-slice-other { --pie-slice-color: var(--pie-other); }
+
+.pie-chart-section {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.pie-chart {
+  flex: 0 0 auto;
+  width: 9rem;
+  height: 9rem;
+  /* SVG stroke drawing starts at 3 o'clock and runs clockwise; rotating the
+     whole chart -90deg starts the first (biggest) slice at 12 o'clock. */
+  transform: rotate(-90deg);
+}
+
+.pie-chart-slice {
+  fill: none;
+  stroke: var(--pie-slice-color);
+  stroke-width: 20;
+}
+
+.pie-chart-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  flex: 1 1 12rem;
+  min-width: 12rem;
+  font-size: 0.85rem;
+}
+
+.pie-chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pie-chart-swatch {
+  flex: 0 0 auto;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 2px;
+  background: var(--pie-slice-color);
+}
+
+.pie-chart-legend-label {
+  flex: 1;
+}
+
+.pie-chart-legend-value {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.pie-chart-legend-percent {
+  color: var(--text-dim);
+  font-family: ui-sans-serif, system-ui, sans-serif;
 }
 
 /* House Knowledge */

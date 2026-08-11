@@ -35,6 +35,8 @@
       <span class="transaction-amount month-summary-amount ${netChangeClass}">${netChange}</span>
     </div>
 
+    <#include "_pie-chart.ftl">
+
     <#if jobRunning>
     <p class="empty-state" id="categorize-status">Categorizing… this keeps running in the background, feel free to navigate away.</p>
     </#if>

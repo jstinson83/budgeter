@@ -33,6 +33,11 @@
       </#list>
     </div>
 
+    <#if (pieSlices?size > 0)>
+    <h2 class="dashboard-section-title">Where it went</h2>
+    <#include "_pie-chart.ftl">
+    </#if>
+
     <h2 class="dashboard-section-title">Coverage</h2>
     <div class="dashboard-card-grid">
       <#list coverage as c>

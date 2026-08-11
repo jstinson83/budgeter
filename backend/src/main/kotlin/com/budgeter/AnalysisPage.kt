@@ -25,8 +25,8 @@ fun analysisPageModel(
         .sumOf { it.amount }
 
     val labelById = categories.associateBy({ it.id }, { it.label })
-    val categoryTotals = periodTransactions
-        .groupBy { it.category }
+    val groupedByCategory = periodTransactions.groupBy { it.category }
+    val categoryTotals = groupedByCategory
         .map { (categoryId, transactions) -> Triple(categoryId, transactions.sumOf { it.amount }, transactions.size) }
         .sortedBy { (_, total, _) -> total }
         .map { (categoryId, total, count) ->
@@ -50,9 +50,19 @@ fun analysisPageModel(
                 "href" to "/analysis/category/$slug?year=$year&month=$month"
             )
         }
+    // Same category grouping as categoryTotals above, keyed by label instead
+    // of id/slug - INVESTMENT is deliberately included here (unlike
+    // netChange's exclusion above): a pie chart answering "where did the
+    // money go" should show an investment contribution as a real outflow,
+    // even though it isn't spending for net-change purposes.
+    val pieSlices = pieChartModel(
+        groupedByCategory.mapKeys { (categoryId, _) -> categoryId?.let { labelById[it] ?: it } ?: "Uncategorized" }
+            .mapValues { (_, transactions) -> transactions.sumOf { it.amount } }
+    )
 
     return mapOf(
         "categoryTotals" to categoryTotals,
+        "pieSlices" to pieSlices,
         "netChange" to formatSignedAmount(netChange),
         "netChangeClass" to amountClass(netChange),
         "year" to year,
