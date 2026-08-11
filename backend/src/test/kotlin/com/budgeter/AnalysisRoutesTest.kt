@@ -42,7 +42,7 @@ class AnalysisRoutesTest {
     }
 
     @Test
-    fun testCategorizeButtonAppearsForUncategorizedTransactionsAndGroupsTotalsAfterCategorizing() = testApplication {
+    fun testUncategorizedTransactionsAreCategorizedAutomaticallyOnPageLoad() = testApplication {
         val categorizer = FakeTransactionCategorizer("GROCERIES")
         testModule(transactionCategorizer = categorizer)
         val client = signInFakeUser()
@@ -50,19 +50,16 @@ class AnalysisRoutesTest {
         val today = java.time.LocalDate.now()
         client.importCsv("$today,Metro Grocery,42.10,,957.90\n$today,Payroll,,2500.00,3457.90")
 
-        val beforeCategorize = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
-        assertTrue(beforeCategorize.bodyAsText().contains("Process 2 new transaction(s)"))
+        // No button to click - loading the page is what triggers
+        // categorization now (see CategorizationJob.kt).
+        val result = client.triggerCategorizeAndAwaitResult()
+        assertEquals("Categorized 2 of 2 transaction(s)", result.message)
 
-        client.post("/analysis/categorize")
-        val finalStatus = client.waitForCategorizationToFinish()
-        assertEquals("Categorized 2 of 2 transaction(s)", finalStatus.message)
-
+        // The message banner is one-shot (see CategorizationJobManager.
+        // consumeTerminal) - a later, unrelated page load shows the
+        // now-categorized totals but not a repeat of the same banner.
         val afterCategorize = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
-        val body = afterCategorize.bodyAsText()
-        assertTrue(body.contains("Groceries"))
-        // The "process" button (distinct from the "Categorized ..." success
-        // banner also on this page) is gone now that nothing's left pending.
-        assertFalse(body.contains("new transaction(s)"))
+        assertTrue(afterCategorize.bodyAsText().contains("Groceries"))
         assertEquals(1, categorizer.callCount)
     }
 
@@ -77,7 +74,7 @@ class AnalysisRoutesTest {
                 "2026-06-10,Payroll,,2500.00,3457.90\n" +
                 "2026-06-15,Brokerage Contribution,300.00,,3157.90"
         )
-        client.post("/analysis/categorize")
+        client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
         client.waitForCategorizationToFinish()
 
         // Move the investment contribution out of OTHER (where the fake
@@ -117,14 +114,12 @@ class AnalysisRoutesTest {
         val client = signInFakeUser()
 
         client.importCsv("${java.time.LocalDate.now()},Metro Grocery,42.10,,957.90")
-        client.post("/analysis/categorize")
+        client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
         client.waitForCategorizationToFinish()
         assertEquals(1, categorizer.callCount)
 
-        val secondAttempt = client.post("/analysis/categorize")
-        val redirect = secondAttempt.headers[HttpHeaders.Location]!!
-        assertEquals("No new transactions to categorize", Url(redirect).parameters["message"])
-        // No second call to the categorizer - nothing left to categorize.
+        // Loading the page again finds nothing new to categorize.
+        client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
         assertEquals(1, categorizer.callCount)
     }
 
@@ -142,16 +137,14 @@ class AnalysisRoutesTest {
         client.importCsv("$today,.....TFR-TO C/C,200.00,,795.00", accountType = "BANK")
         client.importCsv("$today,PAYMENT - THANK YOU,,200.00,300.00", accountType = "CREDIT_CARD")
 
-        val categorizeResponse = client.post("/analysis/categorize")
-        val redirect = categorizeResponse.headers[HttpHeaders.Location]!!
-        assertEquals("Matched 1 transfer(s)", Url(redirect).parameters["message"])
+        // Transfer matching is synchronous, so its result shows up on the
+        // very page load that triggered it (see CategorizationJob.kt).
+        val page = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
+        val body = page.bodyAsText()
+        assertTrue(body.contains("Matched 1 transfer(s)"))
         // Neither leg went to the (fake) Gemini categorizer.
         assertEquals(0, categorizer.callCount)
-
-        val page = client.get(redirect)
-        val body = page.bodyAsText()
-        // Excluded from analysis entirely - no "Transfer" bucket, and no
-        // leftover "process" button since both rows are now categorized.
+        // Excluded from analysis entirely - no "Transfer" bucket.
         assertFalse(body.contains("Transfer"))
         assertTrue(body.contains("No transactions in this period"))
     }
@@ -168,9 +161,8 @@ class AnalysisRoutesTest {
         // categorization rather than being silently dropped.
         client.importCsv("$today,.....TFR-TO C/C,200.00,,795.00", accountType = "BANK")
 
-        client.post("/analysis/categorize")
-        val finalStatus = client.waitForCategorizationToFinish()
-        assertEquals("Categorized 1 of 1 transaction(s)", finalStatus.message)
+        val result = client.triggerCategorizeAndAwaitResult()
+        assertEquals("Categorized 1 of 1 transaction(s)", result.message)
         assertEquals(1, categorizer.callCount)
     }
 
@@ -186,23 +178,22 @@ class AnalysisRoutesTest {
         // credit-card leg present yet it falls through to (fake) Gemini and
         // gets stuck with an ordinary spending category.
         client.importCsv("$today,.....TFR-TO C/C,200.00,,795.00", accountType = "BANK")
-        client.post("/analysis/categorize")
-        client.waitForCategorizationToFinish()
+        client.triggerCategorizeAndAwaitResult()
         assertEquals(1, categorizer.callCount)
 
-        // The credit-card leg only shows up in a later upload/categorize
-        // session. It should still be recognized as the other half of the
-        // same transfer, correcting the bank leg's earlier wrong category
-        // rather than leaving it stuck.
+        // The credit-card leg only shows up in a later upload session. It
+        // should still be recognized as the other half of the same
+        // transfer, correcting the bank leg's earlier wrong category
+        // rather than leaving it stuck - both synchronous, so the result
+        // shows up on the very page load that triggers it.
         client.importCsv("$today,PAYMENT - THANK YOU,,200.00,300.00", accountType = "CREDIT_CARD")
-        val secondCategorize = client.post("/analysis/categorize")
-        val redirect = secondCategorize.headers[HttpHeaders.Location]!!
-        assertEquals("Matched 1 transfer(s)", Url(redirect).parameters["message"])
+        val result = client.triggerCategorizeAndAwaitResult()
+        assertEquals("Matched 1 transfer(s)", result.message)
         // No new Gemini call this pass - the bank leg is corrected without
         // ever being re-sent for analysis.
         assertEquals(1, categorizer.callCount)
 
-        val page = client.get(redirect)
+        val page = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
         val body = page.bodyAsText()
         assertFalse(body.contains("Transfer"))
         assertTrue(body.contains("No transactions in this period"))
@@ -249,7 +240,7 @@ class AnalysisRoutesTest {
         val client = signInFakeUser()
 
         client.importCsv("2026-06-15,June Groceries,15.00,,985.00\n2026-07-15,July Groceries,25.00,,960.00")
-        client.post("/analysis/categorize")
+        client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
         client.waitForCategorizationToFinish()
 
         val juneCategory = client.get("/analysis/category/groceries?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
@@ -285,30 +276,13 @@ class AnalysisRoutesTest {
     }
 
     @Test
-    fun testCategorizeRedirectPreservesTheMonthBeingViewed() = testApplication {
-        val categorizer = FakeTransactionCategorizer("GROCERIES")
-        testModule(transactionCategorizer = categorizer)
-        val client = signInFakeUser()
-
-        client.importCsv("2026-06-15,June Groceries,15.00,,985.00")
-
-        val response = client.post("/analysis/categorize") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("year=2026&month=6")
-        }
-        val redirect = response.headers[HttpHeaders.Location]!!
-        assertEquals("2026", Url(redirect).parameters["year"])
-        assertEquals("6", Url(redirect).parameters["month"])
-    }
-
-    @Test
     fun testRecategorizeUpdatesTheTransactionAndSavesARuleForFutureImports() = testApplication {
         val categorizer = FakeTransactionCategorizer("OTHER")
         testModule(transactionCategorizer = categorizer)
         val client = signInFakeUser()
 
         client.importCsv("2026-06-15,COFFEE SHOP 1234,4.50,,995.50")
-        client.post("/analysis/categorize")
+        client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
         client.waitForCategorizationToFinish()
 
         val otherPage = client.get("/analysis/category/other?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
@@ -328,12 +302,8 @@ class AnalysisRoutesTest {
         // A second, differently-worded coffee-shop transaction should now be
         // caught by the saved rule instead of falling through to Gemini.
         client.importCsv("2026-06-20,COFFEE SHOP 5678,5.25,,990.25")
-        val secondCategorize = client.post("/analysis/categorize") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("year=2026&month=6")
-        }
-        val secondRedirect = secondCategorize.headers[HttpHeaders.Location]!!
-        assertEquals("Applied 1 rule(s)", Url(secondRedirect).parameters["message"])
+        val secondPage = client.get("/analysis?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        assertTrue(secondPage.bodyAsText().contains("Applied 1 rule(s)"))
         // Called once for the first coffee transaction (no rule existed
         // yet at that point) - not called again for the second, which the
         // rule created from the first catches instead.
@@ -377,12 +347,10 @@ class AnalysisRoutesTest {
         val client = signInFakeUser()
 
         client.importCsv("${java.time.LocalDate.now()},Metro Grocery,42.10,,957.90")
-        client.post("/analysis/categorize")
 
+        // This same page load both starts the job and shows it running.
         val whileRunning = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
-        val runningBody = whileRunning.bodyAsText()
-        assertTrue(runningBody.contains("Categorizing"))
-        assertFalse(runningBody.contains("Process 1 new transaction(s)"))
+        assertTrue(whileRunning.bodyAsText().contains("Categorizing"))
 
         client.waitForCategorizationToFinish()
 
@@ -393,20 +361,19 @@ class AnalysisRoutesTest {
     }
 
     @Test
-    fun testSecondCategorizeRequestWhileOneIsRunningReportsAlreadyInProgress() = testApplication {
+    fun testSecondPageLoadWhileCategorizationIsRunningDoesNotStartADuplicateJob() = testApplication {
         val categorizer = SlowTransactionCategorizer("GROCERIES")
         testModule(transactionCategorizer = categorizer)
         val client = signInFakeUser()
 
         client.importCsv("${java.time.LocalDate.now()},Metro Grocery,42.10,,957.90")
-        client.post("/analysis/categorize")
+        client.get("/analysis") { header(HttpHeaders.Accept, "text/html") } // starts the job
 
-        val secondResponse = client.post("/analysis/categorize")
-        val redirect = secondResponse.headers[HttpHeaders.Location]!!
-        assertEquals("Categorization already in progress", Url(redirect).parameters["message"])
+        val secondLoad = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
+        assertTrue(secondLoad.bodyAsText().contains("Categorizing"))
 
         client.waitForCategorizationToFinish()
-        // Only the first request's job ever actually ran the categorizer.
+        // Only the first page load's job ever actually ran the categorizer.
         assertEquals(1, categorizer.callCount)
     }
 
@@ -420,12 +387,7 @@ class AnalysisRoutesTest {
         val client = signInFakeUser()
 
         client.importCsv("${java.time.LocalDate.now()},Metro Grocery,42.10,,957.90")
-        client.post("/analysis/categorize")
-        val finalStatus = client.waitForCategorizationToFinish()
-        assertEquals("FAILED", finalStatus.status)
-        assertTrue(finalStatus.error!!.contains("Categorization failed"))
-
-        val page = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
-        assertTrue(page.bodyAsText().contains("Categorization failed"))
+        val result = client.triggerCategorizeAndAwaitResult()
+        assertTrue(result.error!!.contains("Categorization failed"))
     }
 }

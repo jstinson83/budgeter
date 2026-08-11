@@ -198,8 +198,9 @@ class FakeTransactionCategorizer(private val categoryId: String = "OTHER") : Tra
 
 // Like FakeTransactionCategorizer, but suspends for a bit before returning
 // - lets a test observe a categorize job while it's still RUNNING (e.g. the
-// "already in progress" case, or the /analysis page's job-running panel),
-// which a same-tick fake would never leave a window to catch.
+// /analysis page's job-running panel, or that a second page load while one
+// is in flight doesn't start a duplicate job), which a same-tick fake would
+// never leave a window to catch.
 class SlowTransactionCategorizer(private val categoryId: String = "OTHER", private val delayMs: Long = 200) : TransactionCategorizer {
     var callCount: Int = 0
         private set
@@ -212,10 +213,10 @@ class SlowTransactionCategorizer(private val categoryId: String = "OTHER", priva
 }
 
 // Polls /analysis/categorize/status until the background job started by a
-// POST /analysis/categorize leaves RUNNING (see CategorizationJob.kt) -
-// tests need this instead of asserting on the POST's own redirect, since
-// that redirect now returns immediately while the Gemini call happens on
-// an application-scoped coroutine.
+// GET /analysis (categorization now runs automatically on page load - see
+// CategorizationJob.kt) leaves RUNNING - tests need this since a GET
+// /analysis that starts a job returns immediately while the Gemini call
+// happens on an application-scoped coroutine.
 private val statusJson = Json { ignoreUnknownKeys = true }
 
 suspend fun HttpClient.waitForCategorizationToFinish(): CategorizationJobStatusResponse {
@@ -226,4 +227,26 @@ suspend fun HttpClient.waitForCategorizationToFinish(): CategorizationJobStatusR
         delay(10)
     }
     error("Categorization job did not finish in time")
+}
+
+data class CategorizeResult(val message: String?, val error: String?)
+
+private val bannerSuccessRegex = Regex("""banner-success">([^<]*)</p>""")
+private val bannerErrorRegex = Regex("""banner-error">([^<]*)</p>""")
+
+// GET /analysis both triggers categorization and, if it finishes fast
+// enough, consumes and displays its own result in the very same response
+// (see CategorizationJobManager.consumeTerminal) - whether that happens
+// depends on coroutine scheduling, not anything a test controls, so a fast
+// fake categorizer can race either way. This checks the triggering
+// response for an inline banner first, falling back to polling the status
+// endpoint (safe only when the triggering response *didn't* already show
+// a result, i.e. the job was still RUNNING), so tests get the eventual
+// result regardless of which way the race goes.
+suspend fun HttpClient.triggerCategorizeAndAwaitResult(url: String = "/analysis"): CategorizeResult {
+    val body = get(url) { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+    bannerSuccessRegex.find(body)?.let { return CategorizeResult(it.groupValues[1], null) }
+    bannerErrorRegex.find(body)?.let { return CategorizeResult(null, it.groupValues[1]) }
+    val status = waitForCategorizationToFinish()
+    return CategorizeResult(status.message, status.error)
 }

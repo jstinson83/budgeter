@@ -11,7 +11,6 @@ fun analysisPageModel(
     monthLabel: String,
     prevHref: String,
     nextHref: String,
-    uncategorizedCount: Int,
     message: String?,
     error: String?,
     jobRunning: Boolean
@@ -59,7 +58,6 @@ fun analysisPageModel(
         "monthLabel" to monthLabel,
         "prevHref" to prevHref,
         "nextHref" to nextHref,
-        "uncategorizedCount" to uncategorizedCount,
         "message" to message,
         "error" to error,
         "jobRunning" to jobRunning

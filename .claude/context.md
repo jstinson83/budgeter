@@ -99,39 +99,67 @@ month, with the same category total repeated at the top of the page
 (`analysisCategoryPageModel` in `AnalysisPage.kt` recomputes it from the
 same filtered transaction list, rather than passing it through from
 `/analysis`) -
-`AnalysisRoutes.kt`'s `resolveYearMonth` is the single place both routes
-(and the categorize POST, which carries the viewed month via hidden form
-fields so its redirect doesn't jump back to the current month) resolve
-`year`/`month` from. Originally shipped as rolling "last week/month/year"
-windows from `LocalDate.now()`; replaced with calendar-month paging plus
-the drill-down page since the rolling windows were too coarse to actually
-browse spending by. The maintainer has said they want a persistent,
-precomputed version later (a cron-job-like thing, computing and storing
-category totals instead of recomputing per page load); not built yet.
+`AnalysisRoutes.kt`'s `resolveYearMonth` is the single place both `GET`
+routes resolve `year`/`month` from. Originally shipped as rolling "last
+week/month/year" windows from `LocalDate.now()`; replaced with
+calendar-month paging plus the drill-down page since the rolling windows
+were too coarse to actually browse spending by. The maintainer has said
+they want a persistent, precomputed version later (a cron-job-like thing,
+computing and storing category totals instead of recomputing per page
+load); not built yet.
 
-- **Categorize button no longer blocks the request** (`AnalysisRoutes.kt`,
-  `CategorizationJob.kt`): `TransferMatcher`/`CategorizationRuleMatcher`
-  still run synchronously (fast, deterministic, no network call) and their
-  result is still in the POST's own redirect message when they clear
-  everything pending. Only the Gemini leg - the one that can actually be
-  slow/large - runs on an application-scoped coroutine
-  (`CategorizationJobManager`, one job per `ownerId` at a time, in-memory)
-  that outlives the POST. `GET /analysis` shows a "Categorizing…" panel
-  instead of the button while a job is `RUNNING` (checked via
-  `CategorizationJobManager.consumeTerminal`, which also folds a just-
-  finished job's message/error into the page once, like the existing
-  query-param message/error banners, then forgets it) and an inline script
-  in `analysis.ftl` polls `GET /analysis/categorize/status` (JSON,
-  `CategorizationJobStatusResponse` - the app's first JSON endpoint) every
-  2s, reloading the page once the job leaves `RUNNING`. This was a
-  deliberate choice over adding real infrastructure (a queue, Cloud Tasks,
-  etc.): Cloud Run only allocates CPU to an instance while it has a request
-  in flight (this service doesn't have "CPU always allocated" on), so the
-  job only makes real progress while some request - the original POST, or
-  one of the status polls - is being served. The polling isn't just for the
-  UI; it's what keeps the job's CPU allocated between Gemini calls. The
-  maintainer has used this pattern successfully on other Cloud Run
-  services before.
+- **Categorization is fully automatic now - there is no button and no
+  `POST /analysis/categorize`** (`AnalysisRoutes.kt`, `CategorizationJob.kt`).
+  `CategorizationJobManager.categorize(ownerId)` owns the whole pass and is
+  called unconditionally at the top of every `GET /analysis`: it fetches
+  this owner's pending transactions itself and is a safe no-op when
+  there's nothing pending or a job's already running (never re-bills
+  Gemini for an already-categorized transaction or duplicates an in-flight
+  job - loading the page is what replaces the old button). `TransferMatcher`/
+  `CategorizationRuleMatcher` still run synchronously (fast, deterministic,
+  no network call); when they clear everything pending, their combined
+  result is recorded as an already-`DONE` job, so it shows up as the
+  message banner on that very page load. Only the Gemini leg - the one
+  that can actually be slow/large - runs on an application-scoped
+  coroutine (`CategorizationJobManager`, one job per `ownerId` at a time,
+  in-memory) that outlives the request. `GET /analysis` shows a
+  "Categorizing…" panel instead of the (removed) button while a job is
+  `RUNNING` (checked via `CategorizationJobManager.consumeTerminal`, which
+  also folds a just-finished job's message/error into the page once, like
+  the existing query-param message/error banners, then forgets it - a
+  `FAILED` job is not remembered past that one display, so the very next
+  page load retries it automatically) and an inline script in `analysis.ftl`
+  polls `GET /analysis/categorize/status` (JSON, `CategorizationJobStatusResponse`
+  - the app's first JSON endpoint) every 2s, reloading the page once the
+  job leaves `RUNNING`. This was a deliberate choice over adding real
+  infrastructure (a queue, Cloud Tasks, etc.): Cloud Run only allocates CPU
+  to an instance while it has a request in flight (this service doesn't
+  have "CPU always allocated" on), so the job only makes real progress
+  while some request - the page load that started it, or one of the status
+  polls - is being served. The polling isn't just for the UI; it's what
+  keeps the job's CPU allocated between Gemini calls. The maintainer has
+  used this pattern successfully on other Cloud Run services before. The
+  maintainer's own reasoning for dropping the manual step: categorization
+  is idempotent (`uncategorized(ownerId)` below) so re-triggering it costs
+  nothing when there's nothing new, and there's no legitimate reason to
+  ever *want* transactions left uncategorized.
+  - Gotcha hit while building this: `CategorizationJobManager`'s
+    background coroutine used to call `categoryStore.all(ownerId)` itself
+    (for the Gemini leg's allowed-category list) *concurrently* with
+    `GET /analysis`'s own `categoryStore.all(ownerId)` call for rendering.
+    `CategoryRepository.all()` lazily seeds `BUILT_IN_CATEGORIES` on first
+    read per owner with a plain check-then-write (`FakeCategoryRepository`
+    in tests; `FirestoreCategoryStore` should be checked for the same
+    pattern if this ever bites in production) - two concurrent first-reads
+    for the same owner both see "not seeded yet" and both write the full
+    built-in set, creating duplicate `Category` rows with the same id.
+    Fixed by having `categorize()` fetch the category list synchronously
+    *before* launching the background coroutine, so it's sequenced before
+    (not concurrent with) the route handler's own call. Caught by
+    `CategoryRoutesTest`'s disable-category test, which started failing
+    ~100% of the time once this feature's background job made the race
+    trivially easy to hit (previously only two real concurrent requests -
+    e.g. two browser tabs - could trigger it).
 - `GeminiTransactionCategorizer.categorize()` also now chunks internally
   (`BATCH_SIZE = 40`, `GeminiCategorizer.kt`) instead of sending every
   pending transaction in one Gemini call - this is what actually fixes
@@ -154,8 +182,8 @@ category totals instead of recomputing per page load); not built yet.
 - `TransactionRepository.uncategorized(ownerId)` (default method: filters
   `all(ownerId)` in memory) is what makes categorization idempotent - once a
   transaction has a category it's permanently excluded from future
-  `/analysis/categorize` calls, so pressing the button repeatedly never
-  re-analyzes (or re-bills Gemini for) the same transaction twice.
+  `categorize()` calls, so loading `/analysis` repeatedly never re-analyzes
+  (or re-bills Gemini for) the same transaction twice.
 - `GeminiTransactionCategorizer` (`GeminiCategorizer.kt`) calls the Gemini
   API directly over REST (`generativelanguage.googleapis.com`, model
   `gemini-3.5-flash`) using a `responseSchema` that constrains output to

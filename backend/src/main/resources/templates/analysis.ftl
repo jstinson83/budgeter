@@ -33,12 +33,6 @@
 
     <#if jobRunning>
     <p class="empty-state" id="categorize-status">Categorizing… this keeps running in the background, feel free to navigate away.</p>
-    <#elseif uncategorizedCount gt 0>
-    <form method="post" action="/analysis/categorize" class="upload-form">
-      <input type="hidden" name="year" value="${year?c}">
-      <input type="hidden" name="month" value="${month?c}">
-      <button type="submit" class="button">Process ${uncategorizedCount} new transaction(s)</button>
-    </form>
     </#if>
 
     <#if (categoryTotals?size == 0)>

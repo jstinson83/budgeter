@@ -13,9 +13,9 @@ import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
 
-// Resolves the calendar month being viewed from either query params (GET)
-// or form params (POST, see /analysis/categorize) - both are a Ktor
-// Parameters, so one helper covers both call sites. Falls back to the
+// Resolves the calendar month being viewed from either query params (GET
+// /analysis) or form params (POST /analysis/recategorize) - both are a
+// Ktor Parameters, so one helper covers both call sites. Falls back to the
 // current month on anything missing, unparseable, or out of range
 // (including a year extreme enough that LocalDate.of itself throws)
 // rather than erroring the whole page over a malformed link.
@@ -46,6 +46,14 @@ fun Route.analysisRoutes(
         val monthStart = LocalDate.of(year, month, 1)
         val monthEnd = monthStart.plusMonths(1)
 
+        // Categorization is no longer a manual step - every load of this
+        // page is also a chance to run it. Safe to call unconditionally:
+        // categorize() is a no-op when there's nothing pending or a job's
+        // already running for this owner (see CategorizationJob.kt), so
+        // this never re-bills Gemini for an already-categorized
+        // transaction or duplicates an in-flight job.
+        categorizationJobManager.categorize(ownerId)
+
         val all = transactionStore.all(ownerId)
         // TRANSFER excluded here, not just left out of a bucket - it's
         // money moving between the user's own accounts, not spending or
@@ -53,7 +61,6 @@ fun Route.analysisRoutes(
         val periodTransactions = all.filter {
             !it.date.isBefore(monthStart) && it.date.isBefore(monthEnd) && it.category != TRANSFER_CATEGORY_ID
         }
-        val uncategorizedCount = all.count { it.category == null }
 
         val prev = monthStart.minusMonths(1)
         val next = monthStart.plusMonths(1)
@@ -62,7 +69,9 @@ fun Route.analysisRoutes(
         // that ever shows a finished job's outcome, so it also forgets that
         // job once shown - otherwise a later unrelated visit would keep
         // re-displaying the same "Categorized ..." banner indefinitely (see
-        // CategorizationJob.kt).
+        // CategorizationJob.kt). For a job that finished synchronously
+        // above (transfer/rule matches with nothing left for Gemini),
+        // this is also what surfaces its message on this very page load.
         val jobState = categorizationJobManager.consumeTerminal(ownerId)
         val jobRunning = jobState?.status == CategorizationJobStatus.RUNNING
         val message = call.request.queryParameters["message"]
@@ -77,7 +86,6 @@ fun Route.analysisRoutes(
             monthLabel(monthStart),
             prevHref = "/analysis?year=${prev.year}&month=${prev.monthValue}",
             nextHref = "/analysis?year=${next.year}&month=${next.monthValue}",
-            uncategorizedCount,
             message,
             error,
             jobRunning
@@ -137,32 +145,12 @@ fun Route.analysisRoutes(
         call.respond(FreeMarkerContent("analysis-category.ftl", model))
     }
 
-    post("/analysis/categorize") {
-        val ownerId = call.requireUserId()
-        // The categorize button's form always submits hidden year/month
-        // fields (see analysis.ftl), but a bare POST with no body - as
-        // every pre-existing test in this file sends - isn't
-        // form-urlencoded at all, and receiveParameters() throws on that
-        // rather than returning empty. Falling back to Parameters.Empty
-        // just means resolveYearMonth defaults to the current month, same
-        // as if the fields were present but blank.
-        val formParams = try { call.receiveParameters() } catch (e: Exception) { Parameters.Empty }
-        val (year, month) = resolveYearMonth(formParams)
-        val monthParams = "year=$year&month=$month"
-
-        // categorizationJobManager owns the whole pass (transfer/rule
-        // matching, then the Gemini leg as a background job) - see
-        // CategorizationJob.kt.
-        val message = categorizationJobManager.categorize(ownerId)
-        call.respondRedirect("/analysis?$monthParams&message=${message.encodeURLQueryComponent()}")
-    }
-
     // Inline "Recategorize" action from an /analysis/category/{slug}
     // drill-down row (analysis-category.ftl): fixes this one transaction
     // immediately (it's already categorized - OTHER, or whatever the
     // pending-transaction pass picked - so it won't come back through
-    // /analysis/categorize's uncategorized() pass on its own) and saves a
-    // CategorizationRule so the same description auto-applies going
+    // CategorizationJobManager's uncategorized() pass on its own) and saves
+    // a CategorizationRule so the same description auto-applies going
     // forward, without redoing this by hand every month.
     post("/analysis/recategorize") {
         val ownerId = call.requireUserId()
