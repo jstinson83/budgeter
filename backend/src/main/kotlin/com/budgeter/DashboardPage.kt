@@ -130,16 +130,16 @@ fun categoryMovers(transactions: List<Transaction>, categories: List<Category>, 
         .take(limit)
 }
 
-// Current-month spend by category, keyed by label - feeds the dashboard's
-// pie chart. TRANSFER is excluded (never real spending, see
+// Spend by category over [start, end), keyed by label - feeds the
+// dashboard's pie chart, which rolls up the same trailing window as the
+// money in/out bar chart (NET_CHANGE_TREND_MONTHS) rather than just the
+// current month. TRANSFER is excluded (never real spending, see
 // analysisEligible above); unlike analysisEligible, INVESTMENT is kept -
 // a pie chart answering "where did the money go" should show an investment
 // contribution as a real outflow, the same reasoning /analysis's own pie
 // chart uses (AnalysisPage.kt).
-private fun categoryTotalsByLabel(transactions: List<Transaction>, categories: List<Category>, month: YearMonth): Map<String, Double> {
+private fun categoryTotalsByLabel(transactions: List<Transaction>, categories: List<Category>, start: LocalDate, end: LocalDate): Map<String, Double> {
     val labelById = categories.associateBy({ it.id }, { it.label })
-    val start = month.atDay(1)
-    val end = month.plusMonths(1).atDay(1)
     return transactions
         .filter { it.category != TRANSFER_CATEGORY_ID && !it.date.isBefore(start) && it.date.isBefore(end) }
         .groupBy { it.category?.let { id -> labelById[id] ?: id } ?: "Uncategorized" }
@@ -165,7 +165,9 @@ fun dashboardPageModel(transactions: List<Transaction>, categories: List<Categor
     val maxAbsNetChange = netChangeSeries.maxOfOrNull { kotlin.math.abs(it.second) }?.takeIf { it > 0 } ?: 1.0
     val movers = categoryMovers(transactions, categories, currentMonth)
     val biggest = biggestExpense(transactions, currentMonth)
-    val pieSlices = pieChartModel(categoryTotalsByLabel(transactions, categories, currentMonth))
+    val pieRangeStart = currentMonth.minusMonths((NET_CHANGE_TREND_MONTHS - 1).toLong()).atDay(1)
+    val pieRangeEnd = currentMonth.plusMonths(1).atDay(1)
+    val pieSlices = pieChartModel(categoryTotalsByLabel(transactions, categories, pieRangeStart, pieRangeEnd))
 
     return mapOf(
         "hasTransactions" to transactions.isNotEmpty(),
@@ -194,7 +196,8 @@ fun dashboardPageModel(transactions: List<Transaction>, categories: List<Categor
                 "amount" to formatSignedAmount(total),
                 "amountClass" to amountClass(total),
                 "barPercent" to ((kotlin.math.abs(total) / maxAbsNetChange) * 100).toInt(),
-                "isNegative" to (total < 0)
+                "isNegative" to (total < 0),
+                "href" to "/analysis?year=${month.year}&month=${month.monthValue}"
             )
         },
         "pieSlices" to pieSlices,
