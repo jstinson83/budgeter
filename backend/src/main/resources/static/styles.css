@@ -335,6 +335,10 @@ h1, h2 {
   border-color: var(--brass);
 }
 
+.month-nav-arrow-disabled {
+  opacity: 0.35;
+}
+
 .month-nav-label {
   font-family: var(--serif);
   font-weight: 600;

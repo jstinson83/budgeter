@@ -18,14 +18,22 @@ import java.util.Locale
 // Ktor Parameters, so one helper covers both call sites. Falls back to the
 // current month on anything missing, unparseable, or out of range
 // (including a year extreme enough that LocalDate.of itself throws)
-// rather than erroring the whole page over a malformed link.
+// rather than erroring the whole page over a malformed link. Also clamps
+// anything after the current month back to the current month - there's no
+// such thing as next month's transactions, and this is the one place both
+// the nav arrows and a hand-edited URL go through, so clamping here covers
+// both.
 private fun resolveYearMonth(params: Parameters): Pair<Int, Int> {
     val today = LocalDate.now()
     val year = params["year"]?.toIntOrNull() ?: today.year
     val month = params["month"]?.toIntOrNull()?.takeIf { it in 1..12 } ?: today.monthValue
     return try {
-        LocalDate.of(year, month, 1)
-        year to month
+        val resolved = LocalDate.of(year, month, 1)
+        if (resolved.isAfter(LocalDate.of(today.year, today.monthValue, 1))) {
+            today.year to today.monthValue
+        } else {
+            year to month
+        }
     } catch (e: DateTimeException) {
         today.year to today.monthValue
     }
@@ -33,6 +41,12 @@ private fun resolveYearMonth(params: Parameters): Pair<Int, Int> {
 
 private fun monthLabel(monthStart: LocalDate): String =
     "${monthStart.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${monthStart.year}"
+
+// Short "Jul 2026" form used on the prev/next nav links themselves, so
+// which way is forward in time doesn't depend on remembering an arrow
+// convention - the target month is right there next to the arrow.
+private fun shortMonthLabel(monthStart: LocalDate): String =
+    "${monthStart.month.getDisplayName(TextStyle.SHORT, Locale.getDefault())} ${monthStart.year}"
 
 fun Route.analysisRoutes(
     transactionStore: TransactionRepository,
@@ -66,6 +80,12 @@ fun Route.analysisRoutes(
 
         val prev = monthStart.minusMonths(1)
         val next = monthStart.plusMonths(1)
+        // Current calendar month is as far forward as navigation goes -
+        // there's nothing to show past it, so the "next" link disappears
+        // entirely here rather than linking to a month resolveYearMonth
+        // would just clamp back down anyway.
+        val today = LocalDate.now()
+        val isCurrentMonth = year == today.year && month == today.monthValue
 
         // consumeTerminal rather than status: this is the one page render
         // that ever shows a finished job's outcome, so it also forgets that
@@ -87,7 +107,9 @@ fun Route.analysisRoutes(
             month,
             monthLabel(monthStart),
             prevHref = "/analysis?year=${prev.year}&month=${prev.monthValue}",
-            nextHref = "/analysis?year=${next.year}&month=${next.monthValue}",
+            prevMonthLabel = shortMonthLabel(prev),
+            nextHref = if (isCurrentMonth) null else "/analysis?year=${next.year}&month=${next.monthValue}",
+            nextMonthLabel = if (isCurrentMonth) null else shortMonthLabel(next),
             message,
             error,
             jobRunning
