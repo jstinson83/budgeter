@@ -254,6 +254,41 @@ request/response schema.
   status is stuck at `EXTRACTING` forever with no coroutine left to finish
   it or mark it `FAILED` - not addressed, since Cloud Run instance restarts
   mid-extraction haven't actually been observed yet.
+- **`geminiHttpClient`'s CIO engine has its own built-in 15s request
+  timeout, independent of Cloud Run's** - hit right after the fix above
+  shipped: moving extraction off the request thread fixed the Cloud Run
+  timeout, but the very next real upload still failed, this time with
+  `Request timeout has expired [url=...generateContent, request_timeout=
+  unknown ms]`. The `unknown` is the tell - the `HttpTimeout` plugin was
+  never installed on `geminiHttpClient`, so that's not a
+  plugin-configured timeout firing (which would show the real configured
+  number); it's Ktor's CIO engine itself, which has its own
+  `requestTimeout` (default 15000ms) applied regardless of whether the
+  plugin is installed. A large/complex house-document PDF routinely takes
+  Gemini longer than 15s to respond to, even with `thinkingBudget = 0`.
+  Fixed by setting `engine { requestTimeout = 300_000 }` in
+  `geminiHttpClient`'s config (`Application.kt`) - raises the same limit
+  for both Gemini callers (categorization and extraction) since they share
+  this client. Categorization hadn't hit this yet only because its chunked
+  batches happen to finish under 15s each, not because it's exempt - worth
+  remembering if a larger chunk size is ever tried there.
+- **Failed/stuck documents can be retried or deleted** from
+  `/house/documents/{id}` (`house-document.ftl`'s "Retry extraction"/
+  "Delete document" buttons, `POST /house/documents/{id}/retry` and
+  `/delete` in `HouseRoutes.kt`) - added once the timeout above started
+  actually happening in production and there was no way to recover a
+  failed upload short of a Firestore console edit. Retry re-downloads the
+  already-uploaded GCS blob (`DocumentBlobStore.download`) rather than
+  requiring a re-upload - a document row only ever exists once
+  `documentBlobStore.upload()` has already succeeded, since upload happens
+  before the Firestore row is created (see the upload handler). Retry also
+  clears any facts a previous attempt already wrote
+  (`HouseFactRepository.deleteForDocument`) before re-running extraction,
+  so it can't leave duplicates. Delete removes the Firestore row, its
+  facts, and the GCS blob together; `house-document.ftl` hides the button
+  while `EXTRACTING` (the route itself doesn't enforce this) since the
+  background job would otherwise keep writing facts for a `documentId`
+  whose parent record no longer exists.
 - **Local dev needs the same ADC as Firestore** - `documentStorageClient`
   (`Application.kt`, `StorageOptions.getDefaultInstance().service`) fails
   the same way `firestoreClient` does without `gcloud auth

@@ -117,6 +117,43 @@ fun Route.houseRoutes(
         call.respondText(Json.encodeToString(response), ContentType.Application.Json)
     }
 
+    // Re-runs extraction against the document's already-uploaded GCS blob -
+    // no re-upload needed, since a document row only ever exists once that
+    // upload already succeeded (documentBlobStore.upload() happens before
+    // houseDocumentStore.add() in the upload handler above). Clears any
+    // facts a previous attempt already wrote first, so retrying after a
+    // partial success can't leave duplicates. house-document.ftl only shows
+    // this button for a FAILED document, but the route itself doesn't
+    // enforce that - safe to call from any state.
+    post("/house/documents/{id}/retry") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val document = houseDocumentStore.get(ownerId, id) ?: return@post call.respond(HttpStatusCode.NotFound)
+
+        val pdfBytes = documentBlobStore.download(document.storagePath)
+        houseFactStore.deleteForDocument(ownerId, id)
+        houseDocumentStore.updateStatus(ownerId, id, HouseDocumentStatus.EXTRACTING)
+        houseFactExtractionJobManager.start(ownerId, id, document.filename, pdfBytes)
+
+        call.respondRedirect("/house/documents/$id")
+    }
+
+    // Removes a document's facts, its GCS blob, and the document record
+    // itself. Not offered while EXTRACTING (house-document.ftl hides the
+    // button then) - the background job would otherwise keep writing facts
+    // for a documentId that no longer has a parent record after this runs.
+    post("/house/documents/{id}/delete") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val document = houseDocumentStore.get(ownerId, id) ?: return@post call.respond(HttpStatusCode.NotFound)
+
+        houseFactStore.deleteForDocument(ownerId, id)
+        documentBlobStore.delete(document.storagePath)
+        houseDocumentStore.delete(ownerId, id)
+
+        call.respondRedirect("/house?message=${"Deleted ${document.filename}".encodeURLQueryComponent()}")
+    }
+
     // homeownerContext is either one of house-document.ftl's preset quick
     // answers or the free-text "Add my own explanation" field - both submit
     // the same form field, so this handler treats them identically. The

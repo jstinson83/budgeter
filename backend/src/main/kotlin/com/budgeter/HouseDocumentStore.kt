@@ -27,6 +27,7 @@ interface HouseDocumentRepository {
     suspend fun all(ownerId: String): List<HouseDocument>
     suspend fun get(ownerId: String, id: String): HouseDocument?
     suspend fun updateStatus(ownerId: String, id: String, status: HouseDocumentStatus, error: String? = null)
+    suspend fun delete(ownerId: String, id: String)
 }
 
 class FirestoreHouseDocumentStore(private val firestore: Firestore) : HouseDocumentRepository {
@@ -71,6 +72,11 @@ class FirestoreHouseDocumentStore(private val firestore: Firestore) : HouseDocum
         collection.document(id).update(mapOf("status" to status.name, "error" to error)).get()
     }
 
+    override suspend fun delete(ownerId: String, id: String) {
+        get(ownerId, id) ?: return
+        collection.document(id).delete().get()
+    }
+
     private fun toHouseDocument(id: String, data: Map<String, Any?>): HouseDocument = HouseDocument(
         id = id,
         ownerId = data["ownerId"] as? String ?: "",
@@ -90,4 +96,5 @@ interface DocumentBlobStore {
     // download().
     suspend fun upload(ownerId: String, documentId: String, filename: String, bytes: ByteArray): String
     suspend fun download(storagePath: String): ByteArray
+    suspend fun delete(storagePath: String)
 }

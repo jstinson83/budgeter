@@ -19,6 +19,20 @@ private class ThrowingHouseFactExtractor : HouseFactExtractor {
         error("Gemini API request failed (503): upstream unavailable")
 }
 
+// Fails on its first call, then succeeds - lets a test drive a document to
+// FAILED and then exercise the retry button recovering it, without needing
+// two separate extractor instances wired into two separate requests.
+private class FailOnceThenSucceedHouseFactExtractor : HouseFactExtractor {
+    var callCount: Int = 0
+        private set
+
+    override suspend fun extract(filename: String, pdfBytes: ByteArray): List<ExtractedFact> {
+        callCount++
+        if (callCount == 1) error("Gemini API request failed (503): upstream unavailable")
+        return listOf(ExtractedFact("Roof replaced in 2019", FactType.EVENT, "roof replaced 2019", false, null))
+    }
+}
+
 class HouseRoutesTest {
     @Test
     fun testHousePageRequiresSignIn() = testApplication {
@@ -200,6 +214,52 @@ class HouseRoutesTest {
         val documentPage = client.get(redirect).bodyAsText()
         assertTrue(documentPage.contains("Extraction failed"))
         assertTrue(documentPage.contains("upstream unavailable"))
+    }
+
+    @Test
+    fun testRetryingAFailedDocumentReextractsFromTheAlreadyUploadedBlob() = testApplication {
+        val extractor = FailOnceThenSucceedHouseFactExtractor()
+        testModule(houseFactExtractor = extractor)
+        val client = signInFakeUser()
+
+        val uploadResponse = client.submitFormWithBinaryData(url = "/house/documents/upload", formData = pdfFormData())
+        val documentUrl = uploadResponse.headers[HttpHeaders.Location]!!
+        val documentId = documentUrl.substringAfterLast("/")
+        client.waitForExtractionToFinish(documentId)
+        assertTrue(client.get(documentUrl).bodyAsText().contains("Extraction failed"))
+
+        val retryResponse = client.submitForm(url = "/house/documents/$documentId/retry", formParameters = parameters {})
+        assertEquals(HttpStatusCode.Found, retryResponse.status)
+        assertEquals("/house/documents/$documentId", retryResponse.headers[HttpHeaders.Location])
+
+        val status = client.waitForExtractionToFinish(documentId)
+        assertEquals("EXTRACTED", status.status)
+        // No re-upload happened - the retry re-read the same blob
+        // documentBlobStore.upload() wrote on the original request.
+        assertEquals(2, extractor.callCount)
+
+        val documentPage = client.get(documentUrl).bodyAsText()
+        assertTrue(documentPage.contains("Roof replaced in 2019"))
+        assertFalse(documentPage.contains("Extraction failed"))
+    }
+
+    @Test
+    fun testDeletingADocumentRemovesItAndItsFacts() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val uploadResponse = client.submitFormWithBinaryData(url = "/house/documents/upload", formData = pdfFormData())
+        val documentUrl = uploadResponse.headers[HttpHeaders.Location]!!
+        val documentId = documentUrl.substringAfterLast("/")
+        client.waitForExtractionToFinish(documentId)
+
+        val deleteResponse = client.submitForm(url = "/house/documents/$documentId/delete", formParameters = parameters {})
+        assertEquals(HttpStatusCode.Found, deleteResponse.status)
+        assertTrue(deleteResponse.headers[HttpHeaders.Location]!!.startsWith("/house?message="))
+
+        assertEquals(HttpStatusCode.NotFound, client.get(documentUrl).status)
+        val housePage = client.get("/house") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(housePage.contains("No documents yet"))
     }
 
     @Test

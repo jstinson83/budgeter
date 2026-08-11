@@ -29,4 +29,9 @@ class GcsDocumentBlobStore(private val storage: Storage, private val bucket: Str
             ?: error("House document blob not found: $storagePath")
         return blob.getContent()
     }
+
+    override suspend fun delete(storagePath: String) {
+        check(bucket.isNotBlank()) { "HOUSE_DOCUMENTS_BUCKET is not set" }
+        storage.delete(BlobId.of(bucket, storagePath))
+    }
 }

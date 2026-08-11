@@ -219,6 +219,10 @@ class FakeHouseDocumentRepository : HouseDocumentRepository {
         val index = documents.indexOfFirst { it.ownerId == ownerId && it.id == id }
         if (index != -1) documents[index] = documents[index].copy(status = status, error = error)
     }
+
+    override suspend fun delete(ownerId: String, id: String) {
+        documents.removeAll { it.ownerId == ownerId && it.id == id }
+    }
 }
 
 // In-memory stand-in for FirestoreHouseFactStore.
@@ -254,6 +258,10 @@ class FakeHouseFactRepository : HouseFactRepository {
         facts[index] = updated
         return updated
     }
+
+    override suspend fun deleteForDocument(ownerId: String, documentId: String) {
+        facts.removeAll { it.ownerId == ownerId && it.documentId == documentId }
+    }
 }
 
 // In-memory stand-in for GcsDocumentBlobStore - keeps the test suite from
@@ -269,6 +277,10 @@ class FakeDocumentBlobStore : DocumentBlobStore {
 
     override suspend fun download(storagePath: String): ByteArray =
         blobs[storagePath] ?: error("House document blob not found: $storagePath")
+
+    override suspend fun delete(storagePath: String) {
+        blobs.remove(storagePath)
+    }
 }
 
 // Stands in for GeminiHouseFactExtractor - returns a fixed, small set of
