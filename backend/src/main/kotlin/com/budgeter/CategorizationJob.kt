@@ -17,27 +17,32 @@ data class CategorizationJobState(
 @Serializable
 data class CategorizationJobStatusResponse(val status: String, val message: String? = null, val error: String? = null)
 
-// Owns a household's whole categorize pass - not a generic job runner that
-// some caller hands work to, but the thing that actually knows how to
+// Owns a household's whole categorize pass - not a generic job runner some
+// caller hands work to, but the thing that actually knows how to
 // categorize (TransferMatcher, then CategorizationRuleMatcher, then
 // Gemini), same as GeminiTransactionCategorizer owns how to talk to
-// Gemini. AnalysisRoutes.kt's POST /analysis/categorize just calls
-// categorize(ownerId) and redirects with whatever message comes back.
+// Gemini. There's no manual trigger anymore: AnalysisRoutes.kt's GET
+// /analysis calls categorize(ownerId) on every load, and it's a safe
+// no-op when there's nothing pending or a job's already running - so
+// loading the page is what replaces the old "Process N transactions"
+// button.
 //
 // TransferMatcher/CategorizationRuleMatcher run synchronously (fast,
-// deterministic, no reason to leave the request for them). Only the Gemini
-// leg continues on an application-scoped coroutine that outlives the POST,
-// so a large pending batch isn't bounded by Cloud Run's request timeout.
-// Cloud Run only allocates CPU to an instance while it has a request in
-// flight (this service doesn't have "CPU always allocated" on), so the job
-// only makes real progress while some request - the original POST, or one
-// of /analysis's status polls (see analysis.ftl) - is being served;
-// polling isn't just for the UI, it's what keeps this job's CPU allocated
-// between the chunked Gemini calls GeminiTransactionCategorizer now makes
-// (see GeminiCategorizer.kt). One job per owner at a time, kept in-memory
-// rather than Firestore - it's transient progress state, not data worth
-// surviving a restart, and this app runs a single Cloud Run instance's
-// worth of traffic.
+// deterministic, no reason to leave the request for them, and their
+// combined result is recorded as an already-DONE job so it shows up in
+// the very page load that triggered it). Only the Gemini leg continues on
+// an application-scoped coroutine that outlives the request, so a large
+// pending batch isn't bounded by Cloud Run's request timeout. Cloud Run
+// only allocates CPU to an instance while it has a request in flight
+// (this service doesn't have "CPU always allocated" on), so the job only
+// makes real progress while some request - the page load that started it,
+// or one of /analysis's status polls (see analysis.ftl) - is being
+// served; polling isn't just for the UI, it's what keeps this job's CPU
+// allocated between the chunked Gemini calls GeminiTransactionCategorizer
+// now makes (see GeminiCategorizer.kt). One job per owner at a time, kept
+// in-memory rather than Firestore - it's transient progress state, not
+// data worth surviving a restart, and this app runs a single Cloud Run
+// instance's worth of traffic.
 class CategorizationJobManager(
     private val scope: CoroutineScope,
     private val transactionStore: TransactionRepository,
@@ -48,14 +53,16 @@ class CategorizationJobManager(
     private val jobs = ConcurrentHashMap<String, CategorizationJobState>()
 
     // Fetches this owner's pending transactions and runs the full
-    // categorize pass, returning the message AnalysisRoutes.kt redirects
-    // with. Transfer/rule matches (and their combined message) are applied
-    // before this suspends on anything Gemini-related, so a caller with
-    // nothing left to categorize gets its final answer immediately instead
-    // of a "started" message for a job that has nothing to do.
-    suspend fun categorize(ownerId: String): String {
+    // categorize pass. A no-op if there's nothing pending, or if a job's
+    // already running for this owner (left alone rather than clobbered,
+    // even if this call's own matching below would otherwise resolve
+    // synchronously, so its eventual DONE/FAILED write isn't stomped on by
+    // a stale one from this call). Called from AnalysisRoutes.kt's GET
+    // /analysis on every page load.
+    suspend fun categorize(ownerId: String) {
         val pending = transactionStore.uncategorized(ownerId)
-        if (pending.isEmpty()) return "No new transactions to categorize"
+        if (pending.isEmpty()) return
+        if (jobs[ownerId]?.status == CategorizationJobStatus.RUNNING) return
 
         // Claimed before Gemini ever sees these rows - otherwise it'd burn
         // a request trying to categorize "TFR-TO C/C" / "PAYMENT - THANK
@@ -95,14 +102,26 @@ class CategorizationJobManager(
         if (ruleMatches.isNotEmpty()) syncMessageParts += "Applied ${ruleMatches.size} rule(s)"
 
         val remaining = afterTransferMatch.filterNot { it.id in ruleMatches }
-        if (remaining.isEmpty()) return syncMessageParts.joinToString(", ")
+        if (remaining.isEmpty()) {
+            // pending was non-empty and remaining is empty, so at least one
+            // of transferMatches/ruleMatches matched something - syncMessageParts
+            // is guaranteed non-empty here.
+            jobs[ownerId] = CategorizationJobState(CategorizationJobStatus.DONE, message = syncMessageParts.joinToString(", "))
+            return
+        }
 
-        if (jobs[ownerId]?.status == CategorizationJobStatus.RUNNING) return "Categorization already in progress"
+        // Fetched here, synchronously, rather than from inside the launched
+        // coroutine below: this call and the GET /analysis handler's own
+        // categoryStore.all(ownerId) (for rendering) would otherwise run
+        // concurrently, and a repository that lazily seeds built-in
+        // categories on first read (see CategoryStore.kt) isn't
+        // necessarily safe against two concurrent first-reads both seeding
+        // at once and creating duplicates.
+        val categories = categoryStore.all(ownerId).filter { it.active }
 
         jobs[ownerId] = CategorizationJobState(CategorizationJobStatus.RUNNING)
         scope.launch {
             jobs[ownerId] = try {
-                val categories = categoryStore.all(ownerId).filter { it.active }
                 val categorized = transactionCategorizer.categorize(remaining, categories)
                 if (categorized.isNotEmpty()) transactionStore.updateCategories(ownerId, categorized)
                 val message = (syncMessageParts + "Categorized ${categorized.size} of ${remaining.size} transaction(s)").joinToString(", ")
@@ -111,7 +130,6 @@ class CategorizationJobManager(
                 CategorizationJobState(CategorizationJobStatus.FAILED, error = "Categorization failed: ${e.message}")
             }
         }
-        return "Categorizing ${remaining.size} transaction(s)…"
     }
 
     // Non-consuming - the frontend's poll loop reads this repeatedly and

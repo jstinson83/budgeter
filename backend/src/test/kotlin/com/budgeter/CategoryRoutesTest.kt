@@ -104,7 +104,8 @@ class CategoryRoutesTest {
         val client = signInFakeUser()
 
         client.importCsv("2026-06-15,Metro Grocery,15.00,,985.00")
-        client.post("/analysis/categorize")
+        client.get("/analysis") { header(HttpHeaders.Accept, "text/html") } // triggers categorization
+        client.waitForCategorizationToFinish()
         client.post("/categories/GROCERIES/toggle") // disable it
 
         val drillDown = client.get("/analysis/category/groceries?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
@@ -130,11 +131,10 @@ class CategoryRoutesTest {
         assertTrue(client.get("/categories") { header(HttpHeaders.Accept, "text/html") }.bodyAsText().contains("NETFLIX"))
 
         client.importCsv("2026-06-15,NETFLIX.COM,15.99,,984.01")
-        val categorizeResponse = client.post("/analysis/categorize") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("year=2026&month=6")
-        }
-        assertEquals("Applied 1 rule(s)", Url(categorizeResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+        // Rule matching is synchronous, so its result shows up on the very
+        // page load that triggers categorization (see CategorizationJob.kt).
+        val page = client.get("/analysis?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        assertTrue(page.bodyAsText().contains("Applied 1 rule(s)"))
         assertEquals(0, categorizer.callCount)
     }
 
