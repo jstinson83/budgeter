@@ -111,25 +111,32 @@ load); not built yet.
 - **Categorization is fully automatic now - there is no button and no
   `POST /analysis/categorize`** (`AnalysisRoutes.kt`, `CategorizationJob.kt`).
   `CategorizationJobManager.categorize(ownerId)` owns the whole pass and is
-  called unconditionally at the top of every `GET /analysis`: it fetches
-  this owner's pending transactions itself and is a safe no-op when
-  there's nothing pending or a job's already running (never re-bills
-  Gemini for an already-categorized transaction or duplicates an in-flight
-  job - loading the page is what replaces the old button). `TransferMatcher`/
-  `CategorizationRuleMatcher` still run synchronously (fast, deterministic,
-  no network call); when they clear everything pending, their combined
-  result is recorded as an already-`DONE` job, so it shows up as the
-  message banner on that very page load. Only the Gemini leg - the one
-  that can actually be slow/large - runs on an application-scoped
-  coroutine (`CategorizationJobManager`, one job per `ownerId` at a time,
-  in-memory) that outlives the request. `GET /analysis` shows a
-  "Categorizing…" panel instead of the (removed) button while a job is
-  `RUNNING` (checked via `CategorizationJobManager.consumeTerminal`, which
-  also folds a just-finished job's message/error into the page once, like
-  the existing query-param message/error banners, then forgets it - a
-  `FAILED` job is not remembered past that one display, so the very next
-  page load retries it automatically) and an inline script in `analysis.ftl`
-  polls `GET /analysis/categorize/status` (JSON, `CategorizationJobStatusResponse`
+  called unconditionally at the top of every `GET /analysis` (loading the
+  page is what replaces the old button) - a cheap no-op once there's
+  nothing left to fix. Three steps, in order, each covered in more detail
+  where noted:
+  1. **Transfer/interest categorization** (`TransferMatcher` - see Third
+     feature below for the full mechanics). Synchronous, deterministic, no
+     network call, and scans the owner's *entire* transaction history every
+     time regardless of current category - not scoped to what's newly
+     pending.
+  2. **Household rules** (`CategorizationRuleMatcher`), applied to whatever
+     the step above didn't claim and is still `uncategorized`. Also
+     synchronous and free.
+  3. **Gemini**, for whatever's left after steps 1-2 - the only network-bound
+     step, so the only one backgrounded (below).
+  If steps 1-2 alone clear everything pending, their combined result is
+  recorded as an already-`DONE` job, so it shows up as the message banner
+  on that very page load with no Gemini call at all. Otherwise step 3 runs
+  on an application-scoped coroutine (`CategorizationJobManager`, one job
+  per `ownerId` at a time, in-memory) that outlives the request. `GET
+  /analysis` shows a "Categorizing…" panel while a job is `RUNNING`
+  (checked via `CategorizationJobManager.consumeTerminal`, which also folds
+  a just-finished job's message/error into the page once, like the
+  existing query-param message/error banners, then forgets it - a `FAILED`
+  job is not remembered past that one display, so the very next page load
+  retries it automatically) and an inline script in `analysis.ftl` polls
+  `GET /analysis/categorize/status` (JSON, `CategorizationJobStatusResponse`
   - the app's first JSON endpoint) every 2s, reloading the page once the
   job leaves `RUNNING`. This was a deliberate choice over adding real
   infrastructure (a queue, Cloud Tasks, etc.): Cloud Run only allocates CPU
@@ -140,9 +147,17 @@ load); not built yet.
   keeps the job's CPU allocated between Gemini calls. The maintainer has
   used this pattern successfully on other Cloud Run services before. The
   maintainer's own reasoning for dropping the manual step: categorization
-  is idempotent (`uncategorized(ownerId)` below) so re-triggering it costs
+  is idempotent (steps 2-3, via `uncategorized(ownerId)` below - step 1 is
+  its own kind of idempotent, see Third feature) so re-triggering it costs
   nothing when there's nothing new, and there's no legitimate reason to
   ever *want* transactions left uncategorized.
+  - A Gemini job already `RUNNING` for this owner only blocks *launching a
+    new* Gemini job (step 3) - steps 1-2 always run to completion on every
+    `categorize()` call regardless of another job's status, so an unrelated
+    in-flight Gemini pass never blocks transfer detection or rules. Bit by
+    this exact gap once: the `RUNNING` guard originally sat at the top of
+    `categorize()`, before steps 1-2 ran at all - see Third feature's
+    gotcha writeup for the full story.
   - Gotcha hit while building this: `CategorizationJobManager`'s
     background coroutine used to call `categoryStore.all(ownerId)` itself
     (for the Gemini leg's allowed-category list) *concurrently* with
@@ -180,10 +195,11 @@ load); not built yet.
   than a fixed enum as of the categories/rules management page - categories
   are per-owner and user-editable now, not a single compile-time set.
 - `TransactionRepository.uncategorized(ownerId)` (default method: filters
-  `all(ownerId)` in memory) is what makes categorization idempotent - once a
-  transaction has a category it's permanently excluded from future
-  `categorize()` calls, so loading `/analysis` repeatedly never re-analyzes
-  (or re-bills Gemini for) the same transaction twice.
+  `all(ownerId)` in memory) is what makes rules/Gemini (steps 2-3 above)
+  idempotent - once a transaction has a category it's permanently excluded
+  from both, so loading `/analysis` repeatedly never re-analyzes (or
+  re-bills Gemini for) the same transaction twice. Step 1 (transfer/interest
+  categorization) deliberately does *not* use this - see Third feature.
 - `GeminiTransactionCategorizer` (`GeminiCategorizer.kt`) calls the Gemini
   API directly over REST (`generativelanguage.googleapis.com`, model
   `gemini-3.5-flash`) using a `responseSchema` that constrains output to
