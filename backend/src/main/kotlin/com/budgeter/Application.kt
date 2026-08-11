@@ -70,7 +70,13 @@ fun Application.module(
     transactionCategorizer: TransactionCategorizer = geminiCategorizer,
     categorizationRuleStore: CategorizationRuleRepository = FirestoreCategorizationRuleStore(firestoreClient),
     categoryStore: CategoryRepository = FirestoreCategoryStore(firestoreClient),
-    categorizationJobManager: CategorizationJobManager = CategorizationJobManager(CoroutineScope(SupervisorJob() + Dispatchers.Default))
+    categorizationJobManager: CategorizationJobManager = CategorizationJobManager(
+        CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        transactionStore,
+        categorizationRuleStore,
+        categoryStore,
+        transactionCategorizer
+    )
 ) {
     install(FreeMarker) {
         templateLoader = ClassTemplateLoader(this::class.java.classLoader, "templates")
@@ -96,7 +102,7 @@ fun Application.module(
             dashboardRoutes(transactionStore, categoryStore)
 
             transactionRoutes(transactionStore)
-            analysisRoutes(transactionStore, transactionCategorizer, categorizationRuleStore, categoryStore, categorizationJobManager)
+            analysisRoutes(transactionStore, categorizationRuleStore, categoryStore, categorizationJobManager)
             categoryRoutes(categoryStore, categorizationRuleStore)
         }
     }

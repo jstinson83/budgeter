@@ -36,7 +36,6 @@ private fun monthLabel(monthStart: LocalDate): String =
 
 fun Route.analysisRoutes(
     transactionStore: TransactionRepository,
-    transactionCategorizer: TransactionCategorizer,
     categorizationRuleStore: CategorizationRuleRepository,
     categoryStore: CategoryRepository,
     categorizationJobManager: CategorizationJobManager
@@ -151,66 +150,10 @@ fun Route.analysisRoutes(
         val (year, month) = resolveYearMonth(formParams)
         val monthParams = "year=$year&month=$month"
 
-        val pending = transactionStore.uncategorized(ownerId)
-        if (pending.isEmpty()) {
-            call.respondRedirect("/analysis?$monthParams&message=${"No new transactions to categorize".encodeURLQueryComponent()}")
-            return@post
-        }
-
-        // Transfer matching runs first and is claimed (updateCategories)
-        // before Gemini ever sees these rows - otherwise it'd burn a
-        // request trying to categorize "TFR-TO C/C" / "PAYMENT - THANK YOU"
-        // rows as ordinary spending, and could mis-bucket the credit-card
-        // leg as INCOME.
-        val transferMatches = TransferMatcher.match(pending)
-        if (transferMatches.isNotEmpty()) {
-            transactionStore.updateCategories(ownerId, transferMatches)
-        }
-
-        // Household-defined rules (see CategorizationRuleMatcher) run next,
-        // also before Gemini - same "deterministic and free beats a guess
-        // that costs an API call" reasoning, just for patterns the user
-        // picked via the /analysis/category/{slug} "Recategorize" action
-        // instead of TransferMatcher's fixed templates.
-        val afterTransferMatch = pending.filterNot { it.id in transferMatches }
-        val rules = categorizationRuleStore.all(ownerId)
-        val ruleMatches = CategorizationRuleMatcher.match(rules, afterTransferMatch)
-        if (ruleMatches.isNotEmpty()) {
-            transactionStore.updateCategories(ownerId, ruleMatches)
-        }
-
-        // transferMatches holds both legs of every matched pair, so its
-        // size is always even - divide by 2 for the pair count.
-        val syncMessageParts = mutableListOf<String>()
-        if (transferMatches.isNotEmpty()) syncMessageParts += "Matched ${transferMatches.size / 2} transfer(s)"
-        if (ruleMatches.isNotEmpty()) syncMessageParts += "Applied ${ruleMatches.size} rule(s)"
-
-        val remaining = afterTransferMatch.filterNot { it.id in ruleMatches }
-        if (remaining.isEmpty()) {
-            val message = syncMessageParts.joinToString(", ")
-            call.respondRedirect("/analysis?$monthParams&message=${message.encodeURLQueryComponent()}")
-            return@post
-        }
-
-        // Only the Gemini leg runs as a background job - transfer/rule
-        // matching above is deterministic and fast, no reason to make it
-        // async too. The job outlives this request (see
-        // CategorizationJobManager) so a large `remaining` isn't bounded by
-        // Cloud Run's request timeout; analysis.ftl's poll loop picks up
-        // the result once it lands.
-        val categoriesForGemini = categoryStore.all(ownerId).filter { it.active }
-        val started = categorizationJobManager.start(ownerId) {
-            val categorized = transactionCategorizer.categorize(remaining, categoriesForGemini)
-            if (categorized.isNotEmpty()) {
-                transactionStore.updateCategories(ownerId, categorized)
-            }
-            (syncMessageParts + "Categorized ${categorized.size} of ${remaining.size} transaction(s)").joinToString(", ")
-        }
-        val message = if (started) {
-            "Categorizing ${remaining.size} transaction(s)…"
-        } else {
-            "Categorization already in progress"
-        }
+        // categorizationJobManager owns the whole pass (transfer/rule
+        // matching, then the Gemini leg as a background job) - see
+        // CategorizationJob.kt.
+        val message = categorizationJobManager.categorize(ownerId)
         call.respondRedirect("/analysis?$monthParams&message=${message.encodeURLQueryComponent()}")
     }
 
