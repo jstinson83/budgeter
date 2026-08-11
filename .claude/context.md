@@ -537,7 +537,16 @@ candidate facts via Gemini, resolve the ambiguous ones. New top-level
   /house/documents/{id}/status` every 2s and reloads once the document
   leaves `EXTRACTING`. See `CLAUDE.md`'s House Knowledge gotchas for the
   full reasoning and the one known gap (a mid-extraction instance restart
-  leaves the document stuck at `EXTRACTING`).
+  leaves the document stuck at `EXTRACTING`). `geminiHttpClient`'s CIO
+  engine also needed an explicit `requestTimeout` (300s) - its built-in
+  15s default was firing on large documents independently of the above;
+  see `CLAUDE.md` for the full story.
+- **Retry/delete**: `/house/documents/{id}` has "Retry extraction" (shown
+  only when `FAILED`) and "Delete document" buttons
+  (`POST /house/documents/{id}/retry`/`/delete` in `HouseRoutes.kt`) - retry
+  re-extracts from the already-uploaded GCS blob, delete removes the
+  document, its facts, and the blob together. See `CLAUDE.md` for why each
+  exists and their edge-case handling.
 - **Review flow**: `/house/documents/{id}` splits a document's facts into
   "Needs your input" (`needsReview`) and "Known" (everything else).
   Ambiguous facts get four preset quick-answer buttons (Longstanding

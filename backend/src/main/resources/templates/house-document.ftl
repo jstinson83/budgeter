@@ -30,6 +30,19 @@
     <p class="empty-state">Extracting facts from this document&hellip;</p>
     </#if>
 
+    <div class="document-actions">
+      <#if document.status == "FAILED">
+      <form method="post" action="/house/documents/${document.id}/retry">
+        <button type="submit" class="button button-small">Retry extraction</button>
+      </form>
+      </#if>
+      <#if document.status != "EXTRACTING">
+      <form method="post" action="/house/documents/${document.id}/delete" onsubmit="return confirm('Delete ${document.filename} and its facts? This can&#39;t be undone.');">
+        <button type="submit" class="button button-small button-secondary">Delete document</button>
+      </form>
+      </#if>
+    </div>
+
     <#if (needsReviewFacts?size gt 0)>
     <h2>Needs your input</h2>
     <div class="transaction-list">

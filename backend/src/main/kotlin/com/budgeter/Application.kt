@@ -54,6 +54,22 @@ private val firestoreClient: Firestore by lazy {
 // categorization gotchas).
 private val geminiHttpClient: HttpClient by lazy {
     HttpClient(CIO) {
+        engine {
+            // CIO's engine has its own built-in request timeout (default
+            // 15s) that applies independently of the HttpTimeout plugin
+            // (which isn't installed here) - a well-known Ktor gotcha. Hit
+            // in production on a real house-document upload: Gemini's
+            // response for a large/complex PDF took longer than 15s and the
+            // call was aborted with "Request timeout has expired
+            // [...,request_timeout=unknown ms]" - the "unknown" is the
+            // giveaway this is CIO's internal timeout firing rather than a
+            // HttpTimeout-plugin-configured one (which would show the real
+            // configured value in the message). Both Gemini calls this
+            // client makes (categorization, house fact extraction) can
+            // legitimately run past 15s, so this raises it well above what
+            // either should ever need.
+            requestTimeout = 300_000
+        }
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true; encodeDefaults = true })
         }

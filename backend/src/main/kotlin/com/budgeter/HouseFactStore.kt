@@ -60,6 +60,13 @@ interface HouseFactRepository {
         all(ownerId).filter { it.documentId == documentId }
 
     suspend fun resolve(ownerId: String, id: String, homeownerContext: String): HouseFact?
+
+    // Used by document deletion/retry (HouseRoutes.kt) - deletion removes a
+    // document's facts along with it, and retry clears out any facts a
+    // previous attempt already wrote before re-running extraction, so a
+    // second attempt on the same document can never leave duplicates
+    // behind.
+    suspend fun deleteForDocument(ownerId: String, documentId: String)
 }
 
 class FirestoreHouseFactStore(private val firestore: Firestore) : HouseFactRepository {
@@ -99,6 +106,14 @@ class FirestoreHouseFactStore(private val firestore: Firestore) : HouseFactRepos
         val existing = all(ownerId).find { it.id == id } ?: return null
         collection.document(id).update(mapOf("homeownerContext" to homeownerContext, "needsReview" to false)).get()
         return existing.copy(homeownerContext = homeownerContext, needsReview = false)
+    }
+
+    override suspend fun deleteForDocument(ownerId: String, documentId: String) {
+        val existing = forDocument(ownerId, documentId)
+        if (existing.isEmpty()) return
+        val batch = firestore.batch()
+        existing.forEach { batch.delete(collection.document(it.id)) }
+        batch.commit().get()
     }
 
     private fun factToMap(ownerId: String, documentId: String, extracted: ExtractedFact, createdAt: Instant): Map<String, Any?> = mapOf(
