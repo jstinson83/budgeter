@@ -130,6 +130,22 @@ fun categoryMovers(transactions: List<Transaction>, categories: List<Category>, 
         .take(limit)
 }
 
+// Current-month spend by category, keyed by label - feeds the dashboard's
+// pie chart. TRANSFER is excluded (never real spending, see
+// analysisEligible above); unlike analysisEligible, INVESTMENT is kept -
+// a pie chart answering "where did the money go" should show an investment
+// contribution as a real outflow, the same reasoning /analysis's own pie
+// chart uses (AnalysisPage.kt).
+private fun categoryTotalsByLabel(transactions: List<Transaction>, categories: List<Category>, month: YearMonth): Map<String, Double> {
+    val labelById = categories.associateBy({ it.id }, { it.label })
+    val start = month.atDay(1)
+    val end = month.plusMonths(1).atDay(1)
+    return transactions
+        .filter { it.category != TRANSFER_CATEGORY_ID && !it.date.isBefore(start) && it.date.isBefore(end) }
+        .groupBy { it.category?.let { id -> labelById[id] ?: id } ?: "Uncategorized" }
+        .mapValues { (_, rows) -> rows.sumOf { it.amount } }
+}
+
 fun biggestExpense(transactions: List<Transaction>, month: YearMonth): NotableTransaction? {
     val start = month.atDay(1)
     val end = month.plusMonths(1).atDay(1)
@@ -149,6 +165,7 @@ fun dashboardPageModel(transactions: List<Transaction>, categories: List<Categor
     val maxAbsNetChange = netChangeSeries.maxOfOrNull { kotlin.math.abs(it.second) }?.takeIf { it > 0 } ?: 1.0
     val movers = categoryMovers(transactions, categories, currentMonth)
     val biggest = biggestExpense(transactions, currentMonth)
+    val pieSlices = pieChartModel(categoryTotalsByLabel(transactions, categories, currentMonth))
 
     return mapOf(
         "hasTransactions" to transactions.isNotEmpty(),
@@ -180,6 +197,7 @@ fun dashboardPageModel(transactions: List<Transaction>, categories: List<Categor
                 "isNegative" to (total < 0)
             )
         },
+        "pieSlices" to pieSlices,
         "movers" to movers.map {
             mapOf(
                 "label" to it.label,

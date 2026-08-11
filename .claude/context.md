@@ -487,6 +487,45 @@ this depended on (`Transaction.balance`, `ParsedTransaction.balance`) was
 reverted along with it - the CSV's 5th column goes back to being parsed and
 discarded, same as before this feature.
 
+## Seventh feature: spending pie chart (dashboard + `/analysis`)
+
+Both landing-page sections that already computed a per-category spend total
+for some period - the dashboard's current month (`DashboardPage.kt`) and
+`/analysis`'s viewed month (`AnalysisPage.kt`) - now also render a donut
+chart of where that spend went, via a shared `PieChart.kt` +
+`_pie-chart.ftl` partial (included from both `dashboard.ftl`, below "Money
+in/out" and above "Coverage", and `analysis.ftl`, below the net-change total
+and above the category list).
+
+- **Chartable set**: only categories with a net *outflow* for the period
+  (`pieChartSlices` in `PieChart.kt`) - a net-positive category (an income
+  category, or refunds outweighing spend) isn't "where the money went" and
+  is silently dropped rather than shown as a negative-size slice. Unlike
+  `analysisEligible`'s netChange calculation, `INVESTMENT` **is** included
+  here - a contribution is a real outflow from checking, which is what this
+  chart is answering, even though it's treated as neutral for net-change
+  purposes.
+- **Top 5 + "Other categories"**: beyond the 5 biggest slices, the rest are
+  summed into one bucket, ranked last regardless of its own size. Named
+  "Other categories" specifically (not "Other") so it doesn't collide with
+  the real built-in `OTHER` category (`CategoryStore.kt`), which can still
+  appear as its own top-5 slice.
+- **No JS chart library** (same "no framework" posture as the rest of the
+  app - see `analysis-category.ftl`/CLAUDE.md): each slice is one SVG
+  `<circle>` using the `stroke-dasharray`/`stroke-dashoffset` technique
+  (full-circumference dash pattern, offset by every earlier slice's
+  cumulative arc length) - only arc-length math, no trig. A native `<title>`
+  gives each slice a hover tooltip for free; the legend list (label, amount,
+  percent) is what actually carries identity, not color alone.
+- **Colors assigned by spend rank, not a stable per-category map**:
+  categories are per-owner and user-creatable (Fifth feature above), so
+  there's no fixed universe to hand a permanent color to. The 5-slot
+  categorical palette (`--pie-1`..`--pie-5` in `styles.css`, `--pie-other`
+  for the overflow bucket) was run through the data-viz skill's
+  `validate_palette.js` for both light and dark surfaces - passes CVD/
+  normal-vision separation; the light-mode contrast WARN on a few slots is
+  covered by the always-present text legend (the skill's "relief" rule).
+
 ## Configuration reference
 
 Concrete IDs and config values — the single source of truth for these
