@@ -612,6 +612,19 @@ h1, h2 {
   align-items: center;
   gap: 0.4rem;
   height: 100%;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.dashboard-trend-bar-col:hover .dashboard-trend-bar,
+.dashboard-trend-bar-col:focus-visible .dashboard-trend-bar {
+  opacity: 0.75;
+}
+
+.dashboard-trend-bar-col:hover .dashboard-trend-bar-label,
+.dashboard-trend-bar-col:focus-visible .dashboard-trend-bar-label {
+  color: var(--text);
 }
 
 .dashboard-trend-bar-track {

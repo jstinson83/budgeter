@@ -124,6 +124,41 @@ class DashboardPageTest {
     }
 
     @Test
+    fun testDashboardPageModelNetChangeSeriesLinksEachBarToItsMonthOnAnalysis() {
+        val model = dashboardPageModel(
+            listOf(tx("1", date = LocalDate.of(2026, 6, 15), amount = -10.0)),
+            emptyList(),
+            today = LocalDate.of(2026, 6, 20)
+        )
+
+        @Suppress("UNCHECKED_CAST")
+        val series = model["netChangeSeries"] as List<Map<String, Any?>>
+        assertEquals(
+            listOf("/analysis?year=2026&month=4", "/analysis?year=2026&month=5", "/analysis?year=2026&month=6"),
+            series.map { it["href"] }
+        )
+    }
+
+    @Test
+    fun testDashboardPageModelPieSlicesRollUpTheFullThreeMonthTrendWindow() {
+        val transactions = listOf(
+            // Within the 3-month window ending June: April, May, June.
+            tx("1", date = LocalDate.of(2026, 4, 10), amount = -50.0, category = "GROCERIES"),
+            tx("2", date = LocalDate.of(2026, 5, 10), amount = -30.0, category = "GROCERIES"),
+            tx("3", date = LocalDate.of(2026, 6, 10), amount = -20.0, category = "GROCERIES"),
+            // Outside the window - shouldn't contribute to the pie chart.
+            tx("4", date = LocalDate.of(2026, 1, 10), amount = -900.0, category = "GROCERIES")
+        )
+
+        val model = dashboardPageModel(transactions, emptyList(), today = LocalDate.of(2026, 6, 20))
+
+        @Suppress("UNCHECKED_CAST")
+        val pieSlices = model["pieSlices"] as List<Map<String, Any?>>
+        val groceries = pieSlices.single { it["label"] == "GROCERIES" }
+        assertEquals("100.00", groceries["amount"]) // 50 + 30 + 20 across the 3-month window, January excluded
+    }
+
+    @Test
     fun testDashboardPageModelSummarizesTheTrendAsASingleTotal() {
         val transactions = listOf(
             // Within the 3-month window ending June: April, May, June.

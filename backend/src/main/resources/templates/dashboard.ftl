@@ -24,17 +24,20 @@
     </div>
     <div class="dashboard-trend-bars">
       <#list netChangeSeries as m>
-      <div class="dashboard-trend-bar-col">
+      <a class="dashboard-trend-bar-col" href="${m.href}" aria-label="View ${m.label} summary">
         <div class="dashboard-trend-bar-track">
           <div class="dashboard-trend-bar <#if m.isNegative>dashboard-trend-bar-negative<#else>dashboard-trend-bar-positive</#if>" style="height: ${m.barPercent}%;"></div>
         </div>
         <span class="dashboard-trend-bar-label">${m.label}</span>
-      </div>
+      </a>
       </#list>
     </div>
 
     <#if (pieSlices?size > 0)>
     <h2 class="dashboard-section-title">Where it went</h2>
+    <div class="month-summary">
+      <span class="month-summary-label">Last ${netChangeTrendMonths?c} months</span>
+    </div>
     <#include "_pie-chart.ftl">
     </#if>
 
