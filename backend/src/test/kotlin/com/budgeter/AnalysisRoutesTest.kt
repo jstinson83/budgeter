@@ -300,6 +300,37 @@ class AnalysisRoutesTest {
     }
 
     @Test
+    fun testMonthNavHasNoNextLinkOnTheCurrentMonth() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        // No year/month params - defaults to (and thus views) the current
+        // calendar month, which is as far forward as navigation goes.
+        val response = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
+        val body = response.bodyAsText()
+        assertTrue(body.contains("month-nav-arrow-disabled"))
+        assertFalse(body.contains("aria-label=\"Go forward"))
+    }
+
+    @Test
+    fun testMonthNavCannotBeScrolledPastTheCurrentMonth() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val today = java.time.LocalDate.now()
+        val nextMonth = today.plusMonths(1)
+        // A future month requested directly by URL (e.g. a stale link, or
+        // hand-edited query params) is clamped back to the current month
+        // rather than rendering a period with no possible transactions.
+        val response = client.get("/analysis?year=${nextMonth.year}&month=${nextMonth.monthValue}") {
+            header(HttpHeaders.Accept, "text/html")
+        }
+        val body = response.bodyAsText()
+        assertFalse(body.contains(nextMonth.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault()) + " " + nextMonth.year))
+        assertTrue(body.contains(today.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault()) + " " + today.year))
+    }
+
+    @Test
     fun testDrillingIntoACategoryShowsOnlyItsTransactionsForTheSelectedMonth() = testApplication {
         val categorizer = FakeTransactionCategorizer("GROCERIES")
         testModule(transactionCategorizer = categorizer)

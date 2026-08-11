@@ -21,9 +21,13 @@
     </#if>
 
     <div class="month-nav">
-      <a href="${prevHref}" class="month-nav-arrow" aria-label="Previous month">&larr;</a>
+      <a href="${prevHref}" class="month-nav-arrow" aria-label="Go back to ${prevMonthLabel}">&larr; ${prevMonthLabel}</a>
       <span class="month-nav-label">${monthLabel}</span>
-      <a href="${nextHref}" class="month-nav-arrow" aria-label="Next month">&rarr;</a>
+      <#if nextHref??>
+      <a href="${nextHref}" class="month-nav-arrow" aria-label="Go forward to ${nextMonthLabel}">${nextMonthLabel} &rarr;</a>
+      <#else>
+      <span class="month-nav-arrow month-nav-arrow-disabled" aria-hidden="true">&rarr;</span>
+      </#if>
     </div>
 
     <div class="month-summary">
