@@ -5,9 +5,12 @@ import io.ktor.client.engine.mock.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.cookies.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.*
+import kotlinx.coroutines.delay
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
 /**
@@ -191,4 +194,36 @@ class FakeTransactionCategorizer(private val categoryId: String = "OTHER") : Tra
         callCount++
         return transactions.associate { it.id to categoryId }
     }
+}
+
+// Like FakeTransactionCategorizer, but suspends for a bit before returning
+// - lets a test observe a categorize job while it's still RUNNING (e.g. the
+// "already in progress" case, or the /analysis page's job-running panel),
+// which a same-tick fake would never leave a window to catch.
+class SlowTransactionCategorizer(private val categoryId: String = "OTHER", private val delayMs: Long = 200) : TransactionCategorizer {
+    var callCount: Int = 0
+        private set
+
+    override suspend fun categorize(transactions: List<Transaction>, categories: List<Category>): Map<String, String> {
+        callCount++
+        delay(delayMs)
+        return transactions.associate { it.id to categoryId }
+    }
+}
+
+// Polls /analysis/categorize/status until the background job started by a
+// POST /analysis/categorize leaves RUNNING (see CategorizationJob.kt) -
+// tests need this instead of asserting on the POST's own redirect, since
+// that redirect now returns immediately while the Gemini call happens on
+// an application-scoped coroutine.
+private val statusJson = Json { ignoreUnknownKeys = true }
+
+suspend fun HttpClient.waitForCategorizationToFinish(): CategorizationJobStatusResponse {
+    repeat(200) {
+        val text = get("/analysis/categorize/status").bodyAsText()
+        val status = statusJson.decodeFromString<CategorizationJobStatusResponse>(text)
+        if (status.status != "RUNNING") return status
+        delay(10)
+    }
+    error("Categorization job did not finish in time")
 }

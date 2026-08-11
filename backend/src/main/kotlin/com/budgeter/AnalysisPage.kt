@@ -13,7 +13,8 @@ fun analysisPageModel(
     nextHref: String,
     uncategorizedCount: Int,
     message: String?,
-    error: String?
+    error: String?,
+    jobRunning: Boolean
 ): Map<String, Any?> {
     // Investments excluded here, not from periodTransactions itself - an
     // INVESTMENT row still shows in categoryTotals below, it just shouldn't
@@ -60,7 +61,8 @@ fun analysisPageModel(
         "nextHref" to nextHref,
         "uncategorizedCount" to uncategorizedCount,
         "message" to message,
-        "error" to error
+        "error" to error,
+        "jobRunning" to jobRunning
     )
 }
 

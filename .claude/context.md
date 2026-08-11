@@ -105,11 +105,47 @@ fields so its redirect doesn't jump back to the current month) resolve
 `year`/`month` from. Originally shipped as rolling "last week/month/year"
 windows from `LocalDate.now()`; replaced with calendar-month paging plus
 the drill-down page since the rolling windows were too coarse to actually
-browse spending by. Deliberately a "quick version" otherwise:
-categorization is triggered by a button press and runs synchronously in
-the request, not a background/cron job. The maintainer has said they want
-a persistent, precomputed version later (a cron-job-like thing); this
-first pass intentionally doesn't build that yet.
+browse spending by. The maintainer has said they want a persistent,
+precomputed version later (a cron-job-like thing, computing and storing
+category totals instead of recomputing per page load); not built yet.
+
+- **Categorize button no longer blocks the request** (`AnalysisRoutes.kt`,
+  `CategorizationJob.kt`): `TransferMatcher`/`CategorizationRuleMatcher`
+  still run synchronously (fast, deterministic, no network call) and their
+  result is still in the POST's own redirect message when they clear
+  everything pending. Only the Gemini leg - the one that can actually be
+  slow/large - runs on an application-scoped coroutine
+  (`CategorizationJobManager`, one job per `ownerId` at a time, in-memory)
+  that outlives the POST. `GET /analysis` shows a "Categorizing…" panel
+  instead of the button while a job is `RUNNING` (checked via
+  `CategorizationJobManager.consumeTerminal`, which also folds a just-
+  finished job's message/error into the page once, like the existing
+  query-param message/error banners, then forgets it) and an inline script
+  in `analysis.ftl` polls `GET /analysis/categorize/status` (JSON,
+  `CategorizationJobStatusResponse` - the app's first JSON endpoint) every
+  2s, reloading the page once the job leaves `RUNNING`. This was a
+  deliberate choice over adding real infrastructure (a queue, Cloud Tasks,
+  etc.): Cloud Run only allocates CPU to an instance while it has a request
+  in flight (this service doesn't have "CPU always allocated" on), so the
+  job only makes real progress while some request - the original POST, or
+  one of the status polls - is being served. The polling isn't just for the
+  UI; it's what keeps the job's CPU allocated between Gemini calls. The
+  maintainer has used this pattern successfully on other Cloud Run
+  services before.
+- `GeminiTransactionCategorizer.categorize()` also now chunks internally
+  (`BATCH_SIZE = 40`, `GeminiCategorizer.kt`) instead of sending every
+  pending transaction in one Gemini call - this is what actually fixes
+  "categorization fails when there are too many transactions": a big
+  enough batch's JSON *response* (not the request) can exhaust the model's
+  output-token budget and come back as a `MAX_TOKENS` cutoff with no text
+  part (see CLAUDE.md's Gemini categorization gotchas - this already bit
+  at ~120 transactions in one call). Each chunk is its own request with its
+  own local 0-based indices, merged into one id-keyed result; the public
+  `categorize()` signature is unchanged. The background-job piece above
+  and this chunking piece are independent fixes for the same underlying
+  symptom - chunking is what makes a large batch succeed at all, the job
+  is what keeps a many-chunk batch from being cut off by Cloud Run's
+  request timeout.
 
 - `Transaction.category: String?` (`TransactionStore.kt`) is null until
   categorized, and holds a `Category.id` (see "Fifth feature" below) rather

@@ -17,6 +17,9 @@ import io.ktor.server.http.content.*
 import io.ktor.server.netty.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.serialization.json.Json
 
 fun main() {
@@ -66,7 +69,14 @@ fun Application.module(
     transactionStore: TransactionRepository = FirestoreTransactionStore(firestoreClient),
     transactionCategorizer: TransactionCategorizer = geminiCategorizer,
     categorizationRuleStore: CategorizationRuleRepository = FirestoreCategorizationRuleStore(firestoreClient),
-    categoryStore: CategoryRepository = FirestoreCategoryStore(firestoreClient)
+    categoryStore: CategoryRepository = FirestoreCategoryStore(firestoreClient),
+    categorizationJobManager: CategorizationJobManager = CategorizationJobManager(
+        CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        transactionStore,
+        categorizationRuleStore,
+        categoryStore,
+        transactionCategorizer
+    )
 ) {
     install(FreeMarker) {
         templateLoader = ClassTemplateLoader(this::class.java.classLoader, "templates")
@@ -75,6 +85,13 @@ fun Application.module(
     }
 
     installGoogleAuth(oauthClient, oauthRedirectBaseUrl, sessionSecret)
+
+    // Background categorization jobs are tied to this scope, not to any one
+    // request's - see CategorizationJob.kt. Cancelled on shutdown so a
+    // stopped test/dev instance doesn't leave orphaned coroutines running.
+    monitor.subscribe(ApplicationStopping) {
+        categorizationJobManager.cancel()
+    }
 
     routing {
         staticResources("/", "static")
@@ -85,7 +102,7 @@ fun Application.module(
             dashboardRoutes(transactionStore, categoryStore)
 
             transactionRoutes(transactionStore)
-            analysisRoutes(transactionStore, transactionCategorizer, categorizationRuleStore, categoryStore)
+            analysisRoutes(transactionStore, categorizationRuleStore, categoryStore, categorizationJobManager)
             categoryRoutes(categoryStore, categorizationRuleStore)
         }
     }

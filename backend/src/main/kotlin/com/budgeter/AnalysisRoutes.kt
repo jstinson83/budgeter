@@ -6,6 +6,8 @@ import io.ktor.server.freemarker.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.time.DateTimeException
 import java.time.LocalDate
 import java.time.format.TextStyle
@@ -34,9 +36,9 @@ private fun monthLabel(monthStart: LocalDate): String =
 
 fun Route.analysisRoutes(
     transactionStore: TransactionRepository,
-    transactionCategorizer: TransactionCategorizer,
     categorizationRuleStore: CategorizationRuleRepository,
-    categoryStore: CategoryRepository
+    categoryStore: CategoryRepository,
+    categorizationJobManager: CategorizationJobManager
 ) {
     get("/analysis") {
         val ownerId = call.requireUserId()
@@ -56,8 +58,17 @@ fun Route.analysisRoutes(
         val prev = monthStart.minusMonths(1)
         val next = monthStart.plusMonths(1)
 
+        // consumeTerminal rather than status: this is the one page render
+        // that ever shows a finished job's outcome, so it also forgets that
+        // job once shown - otherwise a later unrelated visit would keep
+        // re-displaying the same "Categorized ..." banner indefinitely (see
+        // CategorizationJob.kt).
+        val jobState = categorizationJobManager.consumeTerminal(ownerId)
+        val jobRunning = jobState?.status == CategorizationJobStatus.RUNNING
         val message = call.request.queryParameters["message"]
+            ?: jobState?.takeIf { it.status == CategorizationJobStatus.DONE }?.message
         val error = call.request.queryParameters["error"]
+            ?: jobState?.takeIf { it.status == CategorizationJobStatus.FAILED }?.error
         val model = analysisPageModel(
             periodTransactions,
             categoryStore.all(ownerId),
@@ -68,9 +79,25 @@ fun Route.analysisRoutes(
             nextHref = "/analysis?year=${next.year}&month=${next.monthValue}",
             uncategorizedCount,
             message,
-            error
+            error,
+            jobRunning
         ) + call.currentUserModel()
         call.respond(FreeMarkerContent("analysis.ftl", model))
+    }
+
+    // Polled by analysis.ftl's inline script while a categorize job is
+    // running (see CategorizationJob.kt for why polling matters beyond just
+    // the UI on Cloud Run). Non-consuming - every poll up to the one that
+    // sees a terminal state must see the same result.
+    get("/analysis/categorize/status") {
+        val ownerId = call.requireUserId()
+        val state = categorizationJobManager.status(ownerId)
+        val response = CategorizationJobStatusResponse(
+            status = state?.status?.name ?: "IDLE",
+            message = state?.message,
+            error = state?.error
+        )
+        call.respondText(Json.encodeToString(response), ContentType.Application.Json)
     }
 
     get("/analysis/category/{category}") {
@@ -123,52 +150,10 @@ fun Route.analysisRoutes(
         val (year, month) = resolveYearMonth(formParams)
         val monthParams = "year=$year&month=$month"
 
-        val pending = transactionStore.uncategorized(ownerId)
-        if (pending.isEmpty()) {
-            call.respondRedirect("/analysis?$monthParams&message=${"No new transactions to categorize".encodeURLQueryComponent()}")
-            return@post
-        }
-
-        // Transfer matching runs first and is claimed (updateCategories)
-        // before Gemini ever sees these rows - otherwise it'd burn a
-        // request trying to categorize "TFR-TO C/C" / "PAYMENT - THANK YOU"
-        // rows as ordinary spending, and could mis-bucket the credit-card
-        // leg as INCOME.
-        val transferMatches = TransferMatcher.match(pending)
-        if (transferMatches.isNotEmpty()) {
-            transactionStore.updateCategories(ownerId, transferMatches)
-        }
-
-        // Household-defined rules (see CategorizationRuleMatcher) run next,
-        // also before Gemini - same "deterministic and free beats a guess
-        // that costs an API call" reasoning, just for patterns the user
-        // picked via the /analysis/category/{slug} "Recategorize" action
-        // instead of TransferMatcher's fixed templates.
-        val afterTransferMatch = pending.filterNot { it.id in transferMatches }
-        val rules = categorizationRuleStore.all(ownerId)
-        val ruleMatches = CategorizationRuleMatcher.match(rules, afterTransferMatch)
-        if (ruleMatches.isNotEmpty()) {
-            transactionStore.updateCategories(ownerId, ruleMatches)
-        }
-
-        val remaining = afterTransferMatch.filterNot { it.id in ruleMatches }
-        val categorized = if (remaining.isEmpty()) emptyMap() else try {
-            transactionCategorizer.categorize(remaining, categoryStore.all(ownerId).filter { it.active })
-        } catch (e: Exception) {
-            call.respondRedirect("/analysis?$monthParams&error=${"Categorization failed: ${e.message}".encodeURLQueryComponent()}")
-            return@post
-        }
-        if (categorized.isNotEmpty()) {
-            transactionStore.updateCategories(ownerId, categorized)
-        }
-
-        // transferMatches holds both legs of every matched pair, so its
-        // size is always even - divide by 2 for the pair count.
-        val messageParts = mutableListOf<String>()
-        if (transferMatches.isNotEmpty()) messageParts += "Matched ${transferMatches.size / 2} transfer(s)"
-        if (ruleMatches.isNotEmpty()) messageParts += "Applied ${ruleMatches.size} rule(s)"
-        if (remaining.isNotEmpty()) messageParts += "Categorized ${categorized.size} of ${remaining.size} transaction(s)"
-        val message = messageParts.joinToString(", ")
+        // categorizationJobManager owns the whole pass (transfer/rule
+        // matching, then the Gemini leg as a background job) - see
+        // CategorizationJob.kt.
+        val message = categorizationJobManager.categorize(ownerId)
         call.respondRedirect("/analysis?$monthParams&message=${message.encodeURLQueryComponent()}")
     }
 
