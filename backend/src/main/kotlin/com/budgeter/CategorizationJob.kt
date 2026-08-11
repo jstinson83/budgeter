@@ -61,7 +61,21 @@ class CategorizationJobManager(
         // a request trying to categorize "TFR-TO C/C" / "PAYMENT - THANK
         // YOU" rows as ordinary spending, and could mis-bucket the
         // credit-card leg as INCOME.
-        val transferMatches = TransferMatcher.match(pending)
+        //
+        // The candidate pool for this isn't just `pending`: the two legs of
+        // a real transfer are routinely uploaded in separate sessions (bank
+        // statement today, credit-card statement next week), and by the
+        // time the second leg arrives the first has usually already been
+        // auto-categorized as ordinary spending. So this widens the pool to
+        // every transaction - regardless of its current category - within
+        // TransferMatcher's own date window of what's pending, letting a
+        // previously mis-categorized leg still be found and corrected.
+        // Bounded by that date window rather than the owner's whole history
+        // so this stays a targeted lookup, not a full rescan.
+        val windowStart = pending.minOf { it.date }.minusDays(TransferMatcher.DATE_WINDOW_DAYS)
+        val windowEnd = pending.maxOf { it.date }.plusDays(TransferMatcher.DATE_WINDOW_DAYS)
+        val transferCandidates = transactionStore.all(ownerId).filter { it.date in windowStart..windowEnd }
+        val transferMatches = TransferMatcher.match(transferCandidates)
         if (transferMatches.isNotEmpty()) transactionStore.updateCategories(ownerId, transferMatches)
 
         // Household-defined rules run next, also before Gemini - same

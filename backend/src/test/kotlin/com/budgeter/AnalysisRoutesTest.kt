@@ -175,6 +175,40 @@ class AnalysisRoutesTest {
     }
 
     @Test
+    fun testRetroactivelyMatchesATransferWhoseLegsWereUploadedInSeparateSessions() = testApplication {
+        val categorizer = FakeTransactionCategorizer("GROCERIES")
+        testModule(transactionCategorizer = categorizer)
+        val client = signInFakeUser()
+
+        val today = java.time.LocalDate.now()
+        // The bank leg is uploaded and categorized first - like
+        // testDoesNotMatchATransferWhenOnlyOneLegIsPresent, with no
+        // credit-card leg present yet it falls through to (fake) Gemini and
+        // gets stuck with an ordinary spending category.
+        client.importCsv("$today,.....TFR-TO C/C,200.00,,795.00", accountType = "BANK")
+        client.post("/analysis/categorize")
+        client.waitForCategorizationToFinish()
+        assertEquals(1, categorizer.callCount)
+
+        // The credit-card leg only shows up in a later upload/categorize
+        // session. It should still be recognized as the other half of the
+        // same transfer, correcting the bank leg's earlier wrong category
+        // rather than leaving it stuck.
+        client.importCsv("$today,PAYMENT - THANK YOU,,200.00,300.00", accountType = "CREDIT_CARD")
+        val secondCategorize = client.post("/analysis/categorize")
+        val redirect = secondCategorize.headers[HttpHeaders.Location]!!
+        assertEquals("Matched 1 transfer(s)", Url(redirect).parameters["message"])
+        // No new Gemini call this pass - the bank leg is corrected without
+        // ever being re-sent for analysis.
+        assertEquals(1, categorizer.callCount)
+
+        val page = client.get(redirect)
+        val body = page.bodyAsText()
+        assertFalse(body.contains("Transfer"))
+        assertTrue(body.contains("No transactions in this period"))
+    }
+
+    @Test
     fun testMonthFilterExcludesTransactionsOutsideTheSelectedCalendarMonth() = testApplication {
         testModule()
         val client = signInFakeUser()
