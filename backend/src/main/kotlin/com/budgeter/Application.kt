@@ -2,6 +2,8 @@ package com.budgeter
 
 import com.google.cloud.firestore.Firestore
 import com.google.cloud.firestore.FirestoreOptions
+import com.google.cloud.storage.Storage
+import com.google.cloud.storage.StorageOptions
 import freemarker.cache.ClassTemplateLoader
 import freemarker.core.HTMLOutputFormat
 import freemarker.template.Configuration
@@ -62,6 +64,18 @@ private val geminiCategorizer: TransactionCategorizer by lazy {
     GeminiTransactionCategorizer(geminiHttpClient, System.getenv("GEMINI_API_KEY") ?: "")
 }
 
+private val geminiHouseFactExtractor: HouseFactExtractor by lazy {
+    GeminiHouseFactExtractor(geminiHttpClient, System.getenv("GEMINI_API_KEY") ?: "")
+}
+
+// The bucket is provisioned manually in the GCP console, same as the
+// Firestore database and Cloud Run env vars - see CLAUDE.md's deploy
+// pipeline section. Falls back to "" like GEMINI_API_KEY does above; the
+// missing-config error only surfaces when a document is actually uploaded,
+// not at startup, so local dev without house-document work configured
+// still boots fine.
+private val documentStorageClient: Storage by lazy { StorageOptions.getDefaultInstance().service }
+
 fun Application.module(
     oauthClient: HttpClient = oauthHttpClient,
     oauthRedirectBaseUrl: String = System.getenv("OAUTH_REDIRECT_BASE_URL") ?: "http://localhost:8080",
@@ -76,7 +90,11 @@ fun Application.module(
         categorizationRuleStore,
         categoryStore,
         transactionCategorizer
-    )
+    ),
+    houseDocumentStore: HouseDocumentRepository = FirestoreHouseDocumentStore(firestoreClient),
+    houseFactStore: HouseFactRepository = FirestoreHouseFactStore(firestoreClient),
+    documentBlobStore: DocumentBlobStore = GcsDocumentBlobStore(documentStorageClient, System.getenv("HOUSE_DOCUMENTS_BUCKET") ?: ""),
+    houseFactExtractor: HouseFactExtractor = geminiHouseFactExtractor
 ) {
     install(FreeMarker) {
         templateLoader = ClassTemplateLoader(this::class.java.classLoader, "templates")
@@ -104,6 +122,7 @@ fun Application.module(
             transactionRoutes(transactionStore)
             analysisRoutes(transactionStore, categorizationRuleStore, categoryStore, categorizationJobManager)
             categoryRoutes(categoryStore, categorizationRuleStore, transactionStore)
+            houseRoutes(houseDocumentStore, houseFactStore, documentBlobStore, houseFactExtractor)
         }
     }
 }

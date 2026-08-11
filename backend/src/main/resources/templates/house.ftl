@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>House Knowledge · Home OS</title>
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="alternate icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+</head>
+<body>
+  <div class="container">
+    <#include "_nav.ftl">
+
+    <#if message??>
+    <p class="banner-success">${message}</p>
+    </#if>
+    <#if error??>
+    <p class="banner-error">${error}</p>
+    </#if>
+
+    <h1>House Knowledge</h1>
+
+    <form method="post" action="/house/documents/upload" enctype="multipart/form-data" class="upload-form">
+      <input type="file" name="file" accept=".pdf" required>
+      <button type="submit" class="button">Upload document</button>
+    </form>
+
+    <#if (documents?size == 0)>
+    <p class="empty-state">No documents yet. Upload a home inspection or engineering plans to get started.</p>
+    <#else>
+    <div class="transaction-list">
+      <#list documents as doc>
+      <a href="/house/documents/${doc.id}" class="transaction-row transaction-row-link">
+        <span class="transaction-description">${doc.filename}</span>
+        <span class="transaction-account">
+          <#if doc.status == "EXTRACTING">Extracting&hellip;
+          <#elseif doc.status == "FAILED">Extraction failed
+          <#elseif doc.status == "EXTRACTED">${doc.factCount} fact(s)<#if doc.needsReviewCount gt 0>, ${doc.needsReviewCount} need review</#if>
+          <#else>Uploaded
+          </#if>
+        </span>
+      </a>
+      </#list>
+    </div>
+    </#if>
+  </div>
+</body>
+</html>

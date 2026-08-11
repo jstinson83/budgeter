@@ -80,6 +80,10 @@ openssl rand -hex 32   # use as SESSION_SECRET
 `GEMINI_API_KEY` is optional for local dev unless you want to exercise the
 "Categorize" button on `/analysis` — without it, that request fails with a
 "GEMINI_API_KEY is not set" error banner but the rest of the app works fine.
+Likewise `HOUSE_DOCUMENTS_BUCKET` is only needed to exercise `/house`
+(document upload + fact extraction, see `product_spec.md`'s House Knowledge
+section) — it needs a real GCS bucket created manually first (see
+`.env.example`).
 
 ### 3. Run it
 
