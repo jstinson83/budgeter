@@ -22,10 +22,11 @@ data class CategorizationJobStatusResponse(val status: String, val message: Stri
 // categorize (TransferMatcher, then CategorizationRuleMatcher, then
 // Gemini), same as GeminiTransactionCategorizer owns how to talk to
 // Gemini. There's no manual trigger anymore: AnalysisRoutes.kt's GET
-// /analysis calls categorize(ownerId) on every load, and it's a safe
-// no-op when there's nothing pending or a job's already running - so
-// loading the page is what replaces the old "Process N transactions"
-// button.
+// /analysis calls categorize(ownerId) on every load, and it's a safe no-op
+// when there's nothing pending - so loading the page is what replaces the
+// old "Process N transactions" button. A job already RUNNING for this
+// owner only skips the Gemini launch, not the whole call - see
+// categorize()'s own comment for why.
 //
 // TransferMatcher/CategorizationRuleMatcher run synchronously (fast,
 // deterministic, no reason to leave the request for them, and their
@@ -53,16 +54,22 @@ class CategorizationJobManager(
     private val jobs = ConcurrentHashMap<String, CategorizationJobState>()
 
     // Fetches this owner's pending transactions and runs the full
-    // categorize pass. A no-op if there's nothing pending, or if a job's
-    // already running for this owner (left alone rather than clobbered,
-    // even if this call's own matching below would otherwise resolve
-    // synchronously, so its eventual DONE/FAILED write isn't stomped on by
-    // a stale one from this call). Called from AnalysisRoutes.kt's GET
-    // /analysis on every page load.
+    // categorize pass. A no-op if there's nothing pending. Called from
+    // AnalysisRoutes.kt's GET /analysis on every page load - now that
+    // that's automatic instead of a manual button click, a background
+    // Gemini job for this owner is often still RUNNING when a later load
+    // comes in (e.g. the bank leg of a transfer is still being categorized
+    // when the credit-card leg gets uploaded and the page reloads).
+    // TransferMatcher/CategorizationRuleMatcher must still run on every
+    // call regardless of that - they're synchronous and idempotent, and
+    // skipping them just because Gemini is busy elsewhere is what silently
+    // left real transfers unmatched. Only the Gemini launch itself is
+    // gated behind the RUNNING check, further down - one job per owner at
+    // a time, and this call's own jobs[] write is skipped rather than
+    // stomping the in-flight job's eventual DONE/FAILED result.
     suspend fun categorize(ownerId: String) {
         val pending = transactionStore.uncategorized(ownerId)
         if (pending.isEmpty()) return
-        if (jobs[ownerId]?.status == CategorizationJobStatus.RUNNING) return
 
         // Claimed before Gemini ever sees these rows - otherwise it'd burn
         // a request trying to categorize "TFR-TO C/C" / "PAYMENT - THANK
@@ -100,6 +107,14 @@ class CategorizationJobManager(
         val syncMessageParts = mutableListOf<String>()
         if (transferMatches.isNotEmpty()) syncMessageParts += "Matched ${transferMatches.size / 2} transfer(s)"
         if (ruleMatches.isNotEmpty()) syncMessageParts += "Applied ${ruleMatches.size} rule(s)"
+
+        // A background job for this owner is already in flight - don't
+        // touch jobs[ownerId] below (whether that would be a synchronous
+        // DONE from this call or a new RUNNING launch): whatever the
+        // in-flight job (or its own completion write) leaves there is the
+        // authoritative outcome to show. The transfer/rule matches applied
+        // above are unaffected by this and are already persisted either way.
+        if (jobs[ownerId]?.status == CategorizationJobStatus.RUNNING) return
 
         val remaining = afterTransferMatch.filterNot { it.id in ruleMatches }
         if (remaining.isEmpty()) {

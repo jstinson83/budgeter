@@ -200,6 +200,41 @@ class AnalysisRoutesTest {
     }
 
     @Test
+    fun testTransferMatchingStillRunsWhileAGeminiJobIsAlreadyInFlightForThisOwner() = testApplication {
+        val categorizer = SlowTransactionCategorizer("GROCERIES", delayMs = 300)
+        testModule(transactionCategorizer = categorizer)
+        val client = signInFakeUser()
+
+        val today = java.time.LocalDate.now()
+        // An ordinary transaction starts a slow background Gemini job.
+        client.importCsv("$today,Metro Grocery,42.10,,957.90")
+        client.get("/analysis") { header(HttpHeaders.Accept, "text/html") } // starts the job, still RUNNING
+
+        // Both legs of a transfer arrive and get viewed while that job is
+        // still in flight - now that categorization is automatic on every
+        // page load, this race is routine rather than a rare edge case
+        // (see CategorizationJob.kt). It must not stop transfer matching
+        // from running.
+        client.importCsv("$today,.....TFR-TO C/C,200.00,,795.00", accountType = "BANK")
+        client.importCsv("$today,PAYMENT - THANK YOU,,200.00,300.00", accountType = "CREDIT_CARD")
+        val whileRunning = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
+        assertTrue(whileRunning.bodyAsText().contains("Categorizing"))
+
+        client.waitForCategorizationToFinish()
+
+        val page = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
+        val body = page.bodyAsText()
+        // The transfer pair was matched despite the concurrent Gemini job -
+        // not silently left pending and later mis-sent to Gemini as
+        // ordinary spending.
+        assertFalse(body.contains("Transfer"))
+        assertTrue(body.contains("Groceries"))
+        // Only ever one Gemini call - for Metro Grocery. The transfer legs
+        // never got sent for analysis.
+        assertEquals(1, categorizer.callCount)
+    }
+
+    @Test
     fun testMonthFilterExcludesTransactionsOutsideTheSelectedCalendarMonth() = testApplication {
         testModule()
         val client = signInFakeUser()
