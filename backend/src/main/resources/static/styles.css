@@ -274,6 +274,68 @@ h1, h2 {
   color: var(--brass);
 }
 
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.nav-menu {
+  display: none;
+  position: relative;
+}
+
+.nav-menu-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 4px;
+  border: 1px solid var(--brass-line);
+  background: var(--surface);
+  color: var(--brass);
+  font-size: 1rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.nav-menu-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.nav-menu[open] .nav-menu-toggle {
+  border-color: var(--brass);
+}
+
+.nav-menu-panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  min-width: 160px;
+  padding: 0.75rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+@media (max-width: 640px) {
+  .nav-links {
+    display: none;
+  }
+
+  .nav-menu {
+    display: block;
+  }
+}
+
 /* Transactions */
 
 .banner-success,
