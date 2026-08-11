@@ -244,12 +244,12 @@ All matched-pair categorization (`TRANSFER_CATEGORY_ID`, `"TRANSFER"`,
 into its own bucket. Only mutually-unique pairs match; anything with more
 than one plausible counterpart on either side is left uncategorized rather
 than guessed, since a wrong match would silently vanish a real transaction
-from analysis. Runs automatically as the first step of the existing
-`/analysis/categorize` button (`AnalysisRoutes.kt`), before the remaining
-transactions go to Gemini - not a separate button. Currently assumes at
-most one bank account, one credit card, and one LOC (no per-account
-scoping beyond `accountType`); revisit if a second account of any of these
-types is ever added.
+from analysis. Runs automatically as the first step of every `categorize()`
+pass (`CategorizationJob.kt`), which itself now runs on every `GET
+/analysis` load rather than a manual button (see Second feature above).
+Currently assumes at most one bank account, one credit card, and one LOC
+(no per-account scoping beyond `accountType`); revisit if a second account
+of any of these types is ever added.
 
 The matcher's candidate pool is not just this pass's uncategorized
 transactions (`CategorizationJob.kt`): the two legs of a transfer are
@@ -262,6 +262,22 @@ of what's pending, letting a previously mis-categorized leg still be found
 and corrected retroactively. Bounded by that date window (derived from
 `pending`'s min/max date) rather than the owner's whole history, so this
 stays a targeted lookup rather than a full rescan every categorize click.
+
+Gotcha hit once categorization became automatic (see Second feature above):
+the "job already RUNNING for this owner" guard in `categorize()` originally
+sat at the very top of the function, before transfer/rule matching ran at
+all - so any time a background Gemini pass was already in flight for an
+owner (now routine, since every `GET /analysis` can kick one off, not just
+an explicit button click), a newly-completed transfer pair went unmatched
+for as long as that unrelated job kept running. It self-healed once
+`analysis.ftl`'s poll-and-reload picked up the job's completion and
+triggered another `categorize()` call, but until then a transfer could
+sit mis-categorized. Fixed by moving the RUNNING check to only gate the
+Gemini launch (its original purpose - avoid a duplicate concurrent job per
+owner), so transfer/rule matching now always runs to completion on every
+call regardless of another job's status; the call just skips writing to
+`jobs[ownerId]` itself when one's already in flight, so it doesn't stomp
+that job's eventual `DONE`/`FAILED` result.
 
 ### `INVESTMENT` category
 
