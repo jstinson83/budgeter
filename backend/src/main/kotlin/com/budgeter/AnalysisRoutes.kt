@@ -6,6 +6,8 @@ import io.ktor.server.freemarker.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.time.DateTimeException
 import java.time.LocalDate
 import java.time.format.TextStyle
@@ -36,7 +38,8 @@ fun Route.analysisRoutes(
     transactionStore: TransactionRepository,
     transactionCategorizer: TransactionCategorizer,
     categorizationRuleStore: CategorizationRuleRepository,
-    categoryStore: CategoryRepository
+    categoryStore: CategoryRepository,
+    categorizationJobManager: CategorizationJobManager
 ) {
     get("/analysis") {
         val ownerId = call.requireUserId()
@@ -56,8 +59,17 @@ fun Route.analysisRoutes(
         val prev = monthStart.minusMonths(1)
         val next = monthStart.plusMonths(1)
 
+        // consumeTerminal rather than status: this is the one page render
+        // that ever shows a finished job's outcome, so it also forgets that
+        // job once shown - otherwise a later unrelated visit would keep
+        // re-displaying the same "Categorized ..." banner indefinitely (see
+        // CategorizationJob.kt).
+        val jobState = categorizationJobManager.consumeTerminal(ownerId)
+        val jobRunning = jobState?.status == CategorizationJobStatus.RUNNING
         val message = call.request.queryParameters["message"]
+            ?: jobState?.takeIf { it.status == CategorizationJobStatus.DONE }?.message
         val error = call.request.queryParameters["error"]
+            ?: jobState?.takeIf { it.status == CategorizationJobStatus.FAILED }?.error
         val model = analysisPageModel(
             periodTransactions,
             categoryStore.all(ownerId),
@@ -68,9 +80,25 @@ fun Route.analysisRoutes(
             nextHref = "/analysis?year=${next.year}&month=${next.monthValue}",
             uncategorizedCount,
             message,
-            error
+            error,
+            jobRunning
         ) + call.currentUserModel()
         call.respond(FreeMarkerContent("analysis.ftl", model))
+    }
+
+    // Polled by analysis.ftl's inline script while a categorize job is
+    // running (see CategorizationJob.kt for why polling matters beyond just
+    // the UI on Cloud Run). Non-consuming - every poll up to the one that
+    // sees a terminal state must see the same result.
+    get("/analysis/categorize/status") {
+        val ownerId = call.requireUserId()
+        val state = categorizationJobManager.status(ownerId)
+        val response = CategorizationJobStatusResponse(
+            status = state?.status?.name ?: "IDLE",
+            message = state?.message,
+            error = state?.error
+        )
+        call.respondText(Json.encodeToString(response), ContentType.Application.Json)
     }
 
     get("/analysis/category/{category}") {
@@ -151,24 +179,38 @@ fun Route.analysisRoutes(
             transactionStore.updateCategories(ownerId, ruleMatches)
         }
 
-        val remaining = afterTransferMatch.filterNot { it.id in ruleMatches }
-        val categorized = if (remaining.isEmpty()) emptyMap() else try {
-            transactionCategorizer.categorize(remaining, categoryStore.all(ownerId).filter { it.active })
-        } catch (e: Exception) {
-            call.respondRedirect("/analysis?$monthParams&error=${"Categorization failed: ${e.message}".encodeURLQueryComponent()}")
-            return@post
-        }
-        if (categorized.isNotEmpty()) {
-            transactionStore.updateCategories(ownerId, categorized)
-        }
-
         // transferMatches holds both legs of every matched pair, so its
         // size is always even - divide by 2 for the pair count.
-        val messageParts = mutableListOf<String>()
-        if (transferMatches.isNotEmpty()) messageParts += "Matched ${transferMatches.size / 2} transfer(s)"
-        if (ruleMatches.isNotEmpty()) messageParts += "Applied ${ruleMatches.size} rule(s)"
-        if (remaining.isNotEmpty()) messageParts += "Categorized ${categorized.size} of ${remaining.size} transaction(s)"
-        val message = messageParts.joinToString(", ")
+        val syncMessageParts = mutableListOf<String>()
+        if (transferMatches.isNotEmpty()) syncMessageParts += "Matched ${transferMatches.size / 2} transfer(s)"
+        if (ruleMatches.isNotEmpty()) syncMessageParts += "Applied ${ruleMatches.size} rule(s)"
+
+        val remaining = afterTransferMatch.filterNot { it.id in ruleMatches }
+        if (remaining.isEmpty()) {
+            val message = syncMessageParts.joinToString(", ")
+            call.respondRedirect("/analysis?$monthParams&message=${message.encodeURLQueryComponent()}")
+            return@post
+        }
+
+        // Only the Gemini leg runs as a background job - transfer/rule
+        // matching above is deterministic and fast, no reason to make it
+        // async too. The job outlives this request (see
+        // CategorizationJobManager) so a large `remaining` isn't bounded by
+        // Cloud Run's request timeout; analysis.ftl's poll loop picks up
+        // the result once it lands.
+        val categoriesForGemini = categoryStore.all(ownerId).filter { it.active }
+        val started = categorizationJobManager.start(ownerId) {
+            val categorized = transactionCategorizer.categorize(remaining, categoriesForGemini)
+            if (categorized.isNotEmpty()) {
+                transactionStore.updateCategories(ownerId, categorized)
+            }
+            (syncMessageParts + "Categorized ${categorized.size} of ${remaining.size} transaction(s)").joinToString(", ")
+        }
+        val message = if (started) {
+            "Categorizing ${remaining.size} transaction(s)…"
+        } else {
+            "Categorization already in progress"
+        }
         call.respondRedirect("/analysis?$monthParams&message=${message.encodeURLQueryComponent()}")
     }
 

@@ -165,6 +165,48 @@ class GeminiCategorizerTest {
     }
 
     @Test
+    fun testSplitsALargeBatchIntoMultipleRequestsAndMergesTheResults() = runBlocking {
+        // Reproduces the real-world failure mode this fixes: sending every
+        // pending transaction in one Gemini call risks the JSON response
+        // itself exhausting the model's output-token budget once the batch
+        // is big enough (see CLAUDE.md's Gemini categorization gotchas,
+        // and the MAX_TOKENS test above). 85 transactions is more than
+        // twice GeminiTransactionCategorizer's internal batch size, so this
+        // must come back as multiple requests, each with its own local
+        // 0-based indices, merged into one result keyed by transaction id.
+        val transactions = (0 until 85).map { transaction("tx-$it", "Purchase $it", -it.toDouble()) }
+        var requestCount = 0
+        val client = HttpClient(MockEngine) {
+            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true; encodeDefaults = true }) }
+            engine {
+                addHandler { request ->
+                    requestCount++
+                    val body = (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
+                    // Count how many transactions this particular chunk's
+                    // prompt actually lists, so the response only echoes
+                    // back indices this chunk itself sent - a batch size
+                    // change shouldn't require this test to know the exact
+                    // number.
+                    val itemCount = Regex("""\d+: Purchase \d+""").findAll(body).count()
+                    val items = (0 until itemCount).joinToString(",") { """{\"index\":$it,\"category\":\"GROCERIES\"}""" }
+                    respond(
+                        """{"candidates":[{"content":{"parts":[{"text":"[$items]"}]},"finishReason":"STOP"}]}""",
+                        HttpStatusCode.OK,
+                        headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+                    )
+                }
+            }
+        }
+
+        val result = GeminiTransactionCategorizer(client, "fake-key").categorize(transactions, categories("GROCERIES"))
+
+        assertTrue(requestCount > 1, "expected the 85-transaction batch to be split across multiple requests, got $requestCount")
+        assertEquals(85, result.size)
+        assertEquals("GROCERIES", result["tx-0"])
+        assertEquals("GROCERIES", result["tx-84"])
+    }
+
+    @Test
     fun testMissingApiKeyThrowsBeforeMakingAnyRequest() = runBlocking {
         val transactions = listOf(transaction("tx-1", "Metro Grocery", -42.10))
         val client = HttpClient(MockEngine) {

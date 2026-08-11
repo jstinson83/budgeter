@@ -53,11 +53,11 @@ class AnalysisRoutesTest {
         val beforeCategorize = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
         assertTrue(beforeCategorize.bodyAsText().contains("Process 2 new transaction(s)"))
 
-        val categorizeResponse = client.post("/analysis/categorize")
-        val redirect = categorizeResponse.headers[HttpHeaders.Location]!!
-        assertEquals("Categorized 2 of 2 transaction(s)", Url(redirect).parameters["message"])
+        client.post("/analysis/categorize")
+        val finalStatus = client.waitForCategorizationToFinish()
+        assertEquals("Categorized 2 of 2 transaction(s)", finalStatus.message)
 
-        val afterCategorize = client.get(redirect)
+        val afterCategorize = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
         val body = afterCategorize.bodyAsText()
         assertTrue(body.contains("Groceries"))
         // The "process" button (distinct from the "Categorized ..." success
@@ -78,6 +78,7 @@ class AnalysisRoutesTest {
                 "2026-06-15,Brokerage Contribution,300.00,,3157.90"
         )
         client.post("/analysis/categorize")
+        client.waitForCategorizationToFinish()
 
         // Move the investment contribution out of OTHER (where the fake
         // categorizer dumped everything) and into INVESTMENT, the only
@@ -117,6 +118,7 @@ class AnalysisRoutesTest {
 
         client.importCsv("${java.time.LocalDate.now()},Metro Grocery,42.10,,957.90")
         client.post("/analysis/categorize")
+        client.waitForCategorizationToFinish()
         assertEquals(1, categorizer.callCount)
 
         val secondAttempt = client.post("/analysis/categorize")
@@ -166,9 +168,9 @@ class AnalysisRoutesTest {
         // categorization rather than being silently dropped.
         client.importCsv("$today,.....TFR-TO C/C,200.00,,795.00", accountType = "BANK")
 
-        val categorizeResponse = client.post("/analysis/categorize")
-        val redirect = categorizeResponse.headers[HttpHeaders.Location]!!
-        assertEquals("Categorized 1 of 1 transaction(s)", Url(redirect).parameters["message"])
+        client.post("/analysis/categorize")
+        val finalStatus = client.waitForCategorizationToFinish()
+        assertEquals("Categorized 1 of 1 transaction(s)", finalStatus.message)
         assertEquals(1, categorizer.callCount)
     }
 
@@ -214,6 +216,7 @@ class AnalysisRoutesTest {
 
         client.importCsv("2026-06-15,June Groceries,15.00,,985.00\n2026-07-15,July Groceries,25.00,,960.00")
         client.post("/analysis/categorize")
+        client.waitForCategorizationToFinish()
 
         val juneCategory = client.get("/analysis/category/groceries?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
         val body = juneCategory.bodyAsText()
@@ -272,6 +275,7 @@ class AnalysisRoutesTest {
 
         client.importCsv("2026-06-15,COFFEE SHOP 1234,4.50,,995.50")
         client.post("/analysis/categorize")
+        client.waitForCategorizationToFinish()
 
         val otherPage = client.get("/analysis/category/other?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
         val transactionId = Regex("""name="transactionId" value="([^"]+)"""").find(otherPage.bodyAsText())!!.groupValues[1]
@@ -333,6 +337,46 @@ class AnalysisRoutesTest {
     }
 
     @Test
+    fun testCategorizePageShowsRunningPanelWhileJobIsInFlightThenClearsOnCompletion() = testApplication {
+        val categorizer = SlowTransactionCategorizer("GROCERIES")
+        testModule(transactionCategorizer = categorizer)
+        val client = signInFakeUser()
+
+        client.importCsv("${java.time.LocalDate.now()},Metro Grocery,42.10,,957.90")
+        client.post("/analysis/categorize")
+
+        val whileRunning = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
+        val runningBody = whileRunning.bodyAsText()
+        assertTrue(runningBody.contains("Categorizing"))
+        assertFalse(runningBody.contains("Process 1 new transaction(s)"))
+
+        client.waitForCategorizationToFinish()
+
+        val afterFinish = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
+        val finishedBody = afterFinish.bodyAsText()
+        assertTrue(finishedBody.contains("Categorized 1 of 1 transaction(s)"))
+        assertFalse(finishedBody.contains("Categorizing"))
+    }
+
+    @Test
+    fun testSecondCategorizeRequestWhileOneIsRunningReportsAlreadyInProgress() = testApplication {
+        val categorizer = SlowTransactionCategorizer("GROCERIES")
+        testModule(transactionCategorizer = categorizer)
+        val client = signInFakeUser()
+
+        client.importCsv("${java.time.LocalDate.now()},Metro Grocery,42.10,,957.90")
+        client.post("/analysis/categorize")
+
+        val secondResponse = client.post("/analysis/categorize")
+        val redirect = secondResponse.headers[HttpHeaders.Location]!!
+        assertEquals("Categorization already in progress", Url(redirect).parameters["message"])
+
+        client.waitForCategorizationToFinish()
+        // Only the first request's job ever actually ran the categorizer.
+        assertEquals(1, categorizer.callCount)
+    }
+
+    @Test
     fun testCategorizationFailureShowsErrorBanner() = testApplication {
         val failingCategorizer = object : TransactionCategorizer {
             override suspend fun categorize(transactions: List<Transaction>, categories: List<Category>): Map<String, String> =
@@ -342,11 +386,12 @@ class AnalysisRoutesTest {
         val client = signInFakeUser()
 
         client.importCsv("${java.time.LocalDate.now()},Metro Grocery,42.10,,957.90")
-        val response = client.post("/analysis/categorize")
-        val redirect = response.headers[HttpHeaders.Location]!!
-        assertTrue(Url(redirect).parameters["error"] != null)
+        client.post("/analysis/categorize")
+        val finalStatus = client.waitForCategorizationToFinish()
+        assertEquals("FAILED", finalStatus.status)
+        assertTrue(finalStatus.error!!.contains("Categorization failed"))
 
-        val page = client.get(redirect)
+        val page = client.get("/analysis") { header(HttpHeaders.Accept, "text/html") }
         assertTrue(page.bodyAsText().contains("Categorization failed"))
     }
 }

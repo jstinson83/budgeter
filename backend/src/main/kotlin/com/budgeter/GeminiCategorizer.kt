@@ -37,6 +37,23 @@ class GeminiTransactionCategorizer(
         if (transactions.isEmpty()) return emptyMap()
         check(apiKey.isNotBlank()) { "GEMINI_API_KEY is not set" }
 
+        // Chunked rather than one call for the whole batch - a big enough
+        // pending list makes the JSON response itself (one object per
+        // transaction) exceed the model's output token budget, which reads
+        // as a MAX_TOKENS cutoff with no text part (see the finishReason
+        // check below, and CLAUDE.md's Gemini categorization gotchas - this
+        // already bit at ~120 transactions in one call). Each chunk is its
+        // own request with its own local 0-based indices, so a batch this
+        // size never happens again regardless of how many transactions are
+        // pending overall.
+        val result = mutableMapOf<String, String>()
+        for (batch in transactions.chunked(BATCH_SIZE)) {
+            result += categorizeBatch(batch, categories)
+        }
+        return result
+    }
+
+    private suspend fun categorizeBatch(transactions: List<Transaction>, categories: List<Category>): Map<String, String> {
         val requestBody = GeminiRequest(
             contents = listOf(GeminiContent(listOf(GeminiPart(buildPrompt(transactions))))),
             generationConfig = GeminiGenerationConfig(
@@ -129,6 +146,10 @@ class GeminiTransactionCategorizer(
         appendLine("Return a JSON array with one object per transaction, using its 0-based index exactly as given below (do not skip, reorder, or renumber).")
         appendLine()
         transactions.forEachIndexed { index, t -> appendLine("$index: ${t.description} (amount ${t.amount})") }
+    }
+
+    private companion object {
+        const val BATCH_SIZE = 40
     }
 }
 

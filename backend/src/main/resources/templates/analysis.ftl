@@ -31,7 +31,9 @@
       <span class="transaction-amount month-summary-amount ${netChangeClass}">${netChange}</span>
     </div>
 
-    <#if uncategorizedCount gt 0>
+    <#if jobRunning>
+    <p class="empty-state" id="categorize-status">Categorizing… this keeps running in the background, feel free to navigate away.</p>
+    <#elseif uncategorizedCount gt 0>
     <form method="post" action="/analysis/categorize" class="upload-form">
       <input type="hidden" name="year" value="${year?c}">
       <input type="hidden" name="month" value="${month?c}">
@@ -52,5 +54,28 @@
     </div>
     </#if>
   </div>
+
+  <#if jobRunning>
+  <script>
+    // No framework in this app - see analysis-category.ftl/CLAUDE.md. This
+    // just polls the categorize job's status every 2s and reloads once it
+    // leaves RUNNING - the page reload itself is what picks up the job's
+    // final message/error (see AnalysisRoutes.kt's GET /analysis) and
+    // refreshes the category totals below. Each poll is also what keeps
+    // this job's CPU allocated on Cloud Run between chunks - see
+    // CategorizationJob.kt.
+    (function poll() {
+      fetch('/analysis/categorize/status')
+        .then((response) => response.json())
+        .then((status) => {
+          if (status.status === 'RUNNING') {
+            setTimeout(poll, 2000);
+          } else {
+            window.location.reload();
+          }
+        });
+    })();
+  </script>
+  </#if>
 </body>
 </html>
