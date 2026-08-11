@@ -223,6 +223,18 @@ most one bank account, one credit card, and one LOC (no per-account
 scoping beyond `accountType`); revisit if a second account of any of these
 types is ever added.
 
+The matcher's candidate pool is not just this pass's uncategorized
+transactions (`CategorizationJob.kt`): the two legs of a transfer are
+routinely uploaded in separate sessions (bank statement today, credit-card
+statement next week), and by the time the second leg arrives the first has
+usually already been auto-categorized as ordinary spending by Gemini/rules.
+So `categorize()` widens `TransferMatcher`'s input to every transaction -
+regardless of its current category - within `TransferMatcher.DATE_WINDOW_DAYS`
+of what's pending, letting a previously mis-categorized leg still be found
+and corrected retroactively. Bounded by that date window (derived from
+`pending`'s min/max date) rather than the owner's whole history, so this
+stays a targeted lookup rather than a full rescan every categorize click.
+
 ### `INVESTMENT` category
 
 Tracks money moved into an investment/brokerage account, without modeling

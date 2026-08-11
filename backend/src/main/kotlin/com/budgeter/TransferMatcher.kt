@@ -45,7 +45,12 @@ object TransferMatcher {
     private const val BANK_INTEREST_PAYMENT_MARKER = "PYT TO:"
 
     private const val AMOUNT_EPSILON = 0.01
-    private const val DATE_WINDOW_DAYS = 5L
+
+    // Not private - CategorizationJob uses this to bound how far back/forward
+    // it widens its candidate pool when looking for a previously-categorized
+    // transfer leg, so that window stays in sync with what this matcher will
+    // actually consider plausible.
+    const val DATE_WINDOW_DAYS = 5L
 
     // Keyed by transaction id; every matched transaction (both legs of every
     // matched pair) maps to a category id.
