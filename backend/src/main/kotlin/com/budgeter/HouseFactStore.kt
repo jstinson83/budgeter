@@ -15,7 +15,16 @@ enum class FactType {
     SPECIFICATION,
     MAINTENANCE_REQUIREMENT,
     WARRANTY,
-    UNKNOWN
+    // A value or condition assumed for design/calculation/planning purposes
+    // rather than measured or verified - kept distinct from OBSERVATION so
+    // an engineering assumption can never be mistaken for a confirmed
+    // property of the house.
+    ASSUMPTION,
+    UNKNOWN,
+    // Something the document explicitly says was outside the inspection,
+    // investigation, or professional mandate - distinct from UNKNOWN, which
+    // is for things the document tried to determine and couldn't.
+    SCOPE_LIMITATION
 }
 
 // Flat top-level slice of product_spec.md's component hierarchy (Foundation,

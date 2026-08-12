@@ -152,26 +152,80 @@ class GeminiHouseFactExtractor(
     private fun buildPrompt(filename: String): String = """
         You are reading a home-related document ($filename) - a home inspection report, engineering/structural drawings, an invoice, or similar - for a household knowledge system.
 
-        Extract a list of discrete, durable facts worth remembering about the house. Each fact should be one specific, self-contained statement - not a summary of the whole document. Good examples: "The house contains steel structural columns", "Main electrical service is 200A", "Inspector observed two cracks in the rear foundation", "Roof flashing sealant should be inspected periodically". Skip boilerplate, disclaimers, and generic advice that isn't specific to this house.
+        Extract the durable knowledge this document contributes to the household's understanding of the house.
+
+        The goal is NOT to summarize the document or extract only its most notable specifications. Build a set of discrete facts that would still be useful to the homeowner, contractor, engineer, or AI assistant years from now.
+
+        Each fact should be one specific, self-contained statement. Do not combine unrelated facts into a paragraph, but do preserve meaningful relationships between components when the relationship itself is durable knowledge.
+
+        Extract facts about:
+
+        - The physical characteristics of the house
+        - Existing structural/mechanical/electrical components
+        - Renovations, construction, repairs, replacements, and other historical events
+        - New, proposed, removed, or modified components
+        - Technical specifications and dimensions
+        - Observed conditions and defects
+        - Diagnoses or interpretations explicitly stated by the document
+        - Assumptions used for engineering or design
+        - Things the document explicitly says are unknown, unverified, inaccessible, or outside its scope
+        - Document-specific maintenance requirements
+        - Warranties and guarantees
+        - Relationships between components, such as what supports what, what was replaced by what, or which component belongs to a particular renovation
+
+        For renovation, engineering, and construction documents, distinguish between EXISTING, NEW/PROPOSED, and MODIFIED elements whenever the document makes that distinction.
+
+        For technical drawings, do not limit extraction to individual specifications. Also capture the structural or construction system being designed: what was added or modified, where it is located when determinable, what supports it, what it supports, and how major components relate to one another.
+
+        For engineering documents, preserve important assumptions and scope limitations. For example, distinguish between:
+        - a value that was measured or verified
+        - a value assumed for design purposes
+        - a condition that was not investigated
+        - an existing element explicitly outside the engineer's mandate
+
+        Do not turn an assumption into a confirmed property of the house.
+
+        Do not infer causes, conditions, or structural conclusions that are not supported by the document.
 
         For each fact, assign exactly one type:
         - OBSERVATION: something someone actually saw, measured, or documented
         - CONDITION: an ongoing physical characteristic
-        - DIAGNOSIS: an explanation or interpretation of a condition
+        - DIAGNOSIS: an explanation or interpretation explicitly stated by the document
         - DECISION: something the homeowner decided
         - EVENT: something that happened to the house (construction, renovation, repair)
-        - SPECIFICATION: a known technical property
+        - SPECIFICATION: a known technical property or designed specification
         - MAINTENANCE_REQUIREMENT: something needing recurring attention
         - WARRANTY: a time-bound guarantee or coverage
+        - ASSUMPTION: a value or condition assumed for purposes of design, calculation, or planning
         - UNKNOWN: something the document explicitly says is not known or could not be determined
+        - SCOPE_LIMITATION: something the document explicitly says was outside the inspection, investigation, or professional mandate
 
         For each fact, also assign exactly one component of the house it's about:
-        - FOUNDATION, STRUCTURE, EXTERIOR, ROOF, PLUMBING, ELECTRICAL, HVAC, SAFETY
-        - OTHER: for anything that doesn't clearly belong to one of the above (e.g. general document metadata, or something spanning multiple components)
+        - FOUNDATION
+        - STRUCTURE
+        - EXTERIOR
+        - ROOF
+        - PLUMBING
+        - ELECTRICAL
+        - HVAC
+        - SAFETY
+        - OTHER: for anything that doesn't clearly belong to one of the above
 
-        Set needsReview to true only when the fact involves real ambiguity or interpretation the homeowner should weigh in on (e.g. a cause the document says is "not determined", a condition the document flags for "further assessment") - not for facts that are plainly stated. When needsReview is true, write a short, direct reviewQuestion asking the homeowner what they know about it. When needsReview is false, leave reviewQuestion as an empty string.
+        Set needsReview to true only when the document leaves a meaningful question that the homeowner may have personal knowledge about or where homeowner context could materially change the interpretation.
+
+        Examples:
+        - The document says the cause of a condition was not determined.
+        - The document identifies an existing condition but the homeowner may know whether it predates a renovation.
+        - The document says something was recommended for further investigation but the homeowner may know whether it was subsequently investigated or repaired.
+        - A renovation document describes work but does not establish whether it was actually completed.
+
+        Do NOT set needsReview merely because a fact is technical, unusual, or important.
+
+        When needsReview is true, write a short, direct reviewQuestion asking the homeowner for concrete information that could resolve the uncertainty. When needsReview is false, leave reviewQuestion as an empty string.
 
         Include a short, verbatim sourceQuote from the document backing each fact where one exists; leave it as an empty string if the fact is your own summary rather than a direct quote.
+
+        When possible, work useful source location information (such as a page number, drawing number, or section) into the fact's statement or sourceQuote, since there is no separate field for it.
 
         Return a JSON array with one object per fact.
     """.trimIndent()
