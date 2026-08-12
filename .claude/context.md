@@ -560,9 +560,14 @@ candidate facts via Gemini, resolve the ambiguous ones. New top-level
   deciding `needsReview`. `HouseFactExtractor.kt`'s `TwoPassHouseFactExtractor`
   just wires the two calls together behind the unchanged `HouseFactExtractor`
   interface, so `HouseFactExtractionJobManager`/`HouseRoutes.kt` didn't need
-  to change at all. Pass 2's prompt is written to take candidates "extracted
-  from one or more home-related documents" - deliberately generalized for a
-  future where it reconciles candidates gathered across a household's whole
+  to change at all. `TwoPassHouseFactExtractor.extract()` logs pass 1's
+  candidate count/content and pass 2's final fact count at INFO level (see
+  `CLAUDE.md`'s House Knowledge gotchas for why - candidates are otherwise
+  never persisted anywhere, so this is the only way to tell which pass is
+  responsible when recall looks thin). Pass 2's prompt is written to take
+  candidates "extracted from one or more home-related documents" -
+  deliberately generalized for a future where it reconciles candidates
+  gathered across a household's whole
   document set, not just one document's pass-1 output, though nothing wires
   that up yet; today it only ever sees one document's candidates per run.
   **Not yet exercised against the real Gemini API** - see `CLAUDE.md`'s
