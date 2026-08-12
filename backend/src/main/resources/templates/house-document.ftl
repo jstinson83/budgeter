@@ -53,7 +53,7 @@
           <span class="fact-type-badge">${fact.type?replace("_", " ")?lower_case}</span>
         </div>
         <#if fact.sourceQuote??>
-        <p class="fact-quote">&ldquo;${fact.sourceQuote}&rdquo;</p>
+        <p class="fact-quote">&ldquo;${fact.sourceQuote}&rdquo;<#if fact.sourceLocation??> <span class="fact-location">(${fact.sourceLocation})</span></#if></p>
         </#if>
         <#if fact.reviewQuestion??>
         <p class="fact-question">${fact.reviewQuestion}</p>
@@ -89,7 +89,7 @@
           <span class="fact-type-badge">${fact.type?replace("_", " ")?lower_case}</span>
         </div>
         <#if fact.sourceQuote??>
-        <p class="fact-quote">&ldquo;${fact.sourceQuote}&rdquo;</p>
+        <p class="fact-quote">&ldquo;${fact.sourceQuote}&rdquo;<#if fact.sourceLocation??> <span class="fact-location">(${fact.sourceLocation})</span></#if></p>
         </#if>
         <#if fact.homeownerContext??>
         <p class="fact-context">You said: ${fact.homeownerContext}</p>

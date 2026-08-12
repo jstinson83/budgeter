@@ -46,11 +46,42 @@ enum class Component {
     OTHER
 }
 
+// A fact's lifecycle status at the level the second extraction pass settles
+// on (see HouseFactNormalizer.kt) - a narrower cousin of CandidateStatus
+// (HouseFactCandidateExtractor.kt's first-pass vocabulary), which also
+// allows ASSUMED for a still-raw candidate. By the time a candidate has been
+// normalized into a fact, "this was assumed" is already captured by
+// FactType.ASSUMPTION, so FactStatus doesn't need its own ASSUMED value.
+enum class FactStatus {
+    EXISTING,
+    NEW,
+    MODIFIED,
+    REMOVED,
+    PROPOSED,
+    UNKNOWN,
+    NOT_APPLICABLE
+}
+
+// How durably important a fact is to remember, assigned by the normalizer
+// pass so a future UI can prioritize what's shown without a separate
+// ranking pass. Shared with CandidateStatus's sibling ExtractedCandidate -
+// pass 1 assigns a first guess, pass 2 (which sees the full, deduplicated
+// picture) can revise it.
+enum class Importance { HIGH, MEDIUM, LOW }
+
+// How a fact's statement is backed by its source - distinct from FactType,
+// which classifies what the fact is *about*, not the nature of the evidence
+// behind it. INFERRED covers a fact the normalizer synthesized by reasoning
+// across multiple candidates rather than reading directly off one of them.
+enum class EvidenceType { DOCUMENTED, MEASURED, OBSERVED, DESIGNED, ASSUMED, REPORTED, INFERRED }
+
 // A single knowledge item extracted from (or about) the house. This is a
 // deliberately narrow slice of the full Fact model in product_spec.md -
 // what/type/source/evidence(sourceQuote)/interpretation(homeownerContext) -
-// leaving status/time/location/confidence/related components-events-facts-
-// tasks/photos for later once there's real usage to design them against.
+// leaving time/related components-events-facts-tasks/photos for later once
+// there's real usage to design them against. status/importance/
+// sourceLocation/evidenceType were added when extraction moved to the
+// two-pass candidate-then-normalize pipeline (see HouseFactExtractor.kt).
 data class HouseFact(
     val id: String,
     val ownerId: String,
@@ -60,10 +91,24 @@ data class HouseFact(
     // What part of the house this fact is about - see Component. Assigned
     // by the extractor alongside type, not a separate pass.
     val component: Component,
+    // EXISTING/NEW/MODIFIED/REMOVED/PROPOSED/UNKNOWN/NOT_APPLICABLE - see
+    // FactStatus. Unrelated to HouseDocumentStatus (a document's own
+    // upload/extraction lifecycle) despite the similar name.
+    val status: FactStatus,
+    val importance: Importance,
     // Short verbatim excerpt from the source document backing this fact,
     // when Gemini could point to one - the "why do we believe this"
     // provenance the spec calls for, even in this narrow slice.
     val sourceQuote: String?,
+    // Page, drawing number, section, or other locator within the source
+    // document, when Gemini could determine one - kept separate from
+    // sourceQuote since a location isn't always a quotable string.
+    val sourceLocation: String?,
+    // See EvidenceType. Null (rather than a defaulted member) for a value
+    // the normalizer's response didn't parse cleanly - none of
+    // EvidenceType's members mean "not stated" the way FactStatus.UNKNOWN
+    // does for status, so there's no good non-null fallback to pick.
+    val evidenceType: EvidenceType?,
     // True for facts the extractor flagged as ambiguous/interpretive
     // (spec's "Identify ambiguity" MVP step) - most facts are NOT flagged
     // and are treated as accepted automatically.
@@ -117,7 +162,11 @@ class FirestoreHouseFactStore(private val firestore: Firestore) : HouseFactRepos
                 what = extracted.what,
                 type = extracted.type,
                 component = extracted.component,
+                status = extracted.status,
+                importance = extracted.importance,
                 sourceQuote = extracted.sourceQuote,
+                sourceLocation = extracted.sourceLocation,
+                evidenceType = extracted.evidenceType,
                 needsReview = extracted.needsReview,
                 reviewQuestion = extracted.reviewQuestion,
                 createdAt = createdAt
@@ -154,7 +203,11 @@ class FirestoreHouseFactStore(private val firestore: Firestore) : HouseFactRepos
         "what" to extracted.what,
         "type" to extracted.type.name,
         "component" to extracted.component.name,
+        "status" to extracted.status.name,
+        "importance" to extracted.importance.name,
         "sourceQuote" to extracted.sourceQuote,
+        "sourceLocation" to extracted.sourceLocation,
+        "evidenceType" to extracted.evidenceType?.name,
         "needsReview" to extracted.needsReview,
         "reviewQuestion" to extracted.reviewQuestion,
         "homeownerContext" to null,
@@ -168,7 +221,11 @@ class FirestoreHouseFactStore(private val firestore: Firestore) : HouseFactRepos
         what = data["what"] as? String ?: "",
         type = (data["type"] as? String)?.let { runCatching { FactType.valueOf(it) }.getOrNull() } ?: FactType.UNKNOWN,
         component = (data["component"] as? String)?.let { runCatching { Component.valueOf(it) }.getOrNull() } ?: Component.OTHER,
+        status = (data["status"] as? String)?.let { runCatching { FactStatus.valueOf(it) }.getOrNull() } ?: FactStatus.UNKNOWN,
+        importance = (data["importance"] as? String)?.let { runCatching { Importance.valueOf(it) }.getOrNull() } ?: Importance.MEDIUM,
         sourceQuote = data["sourceQuote"] as? String,
+        sourceLocation = data["sourceLocation"] as? String,
+        evidenceType = (data["evidenceType"] as? String)?.let { runCatching { EvidenceType.valueOf(it) }.getOrNull() },
         needsReview = data["needsReview"] as? Boolean ?: false,
         reviewQuestion = data["reviewQuestion"] as? String,
         homeownerContext = data["homeownerContext"] as? String,

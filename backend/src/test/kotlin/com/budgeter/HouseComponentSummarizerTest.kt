@@ -18,7 +18,11 @@ class HouseComponentSummarizerTest {
         what = "Roof flashing sealant should be inspected periodically",
         type = FactType.MAINTENANCE_REQUIREMENT,
         component = Component.ROOF,
+        status = FactStatus.EXISTING,
+        importance = Importance.MEDIUM,
         sourceQuote = "flashing sealant recommended for periodic inspection",
+        sourceLocation = null,
+        evidenceType = EvidenceType.DOCUMENTED,
         needsReview = false,
         reviewQuestion = null,
         createdAt = Instant.now()

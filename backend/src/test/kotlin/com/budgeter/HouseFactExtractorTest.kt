@@ -1,164 +1,77 @@
 package com.budgeter
 
-import io.ktor.client.*
-import io.ktor.client.engine.mock.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.http.*
-import io.ktor.http.content.OutgoingContent
-import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
-import java.util.Base64
 import kotlin.test.*
 
+// TwoPassHouseFactExtractor is pure orchestration - the actual Gemini calls
+// are covered by HouseFactCandidateExtractorTest.kt (pass 1) and
+// HouseFactNormalizerTest.kt (pass 2), so this only verifies pass 1's output
+// is what gets fed into pass 2, and pass 2's output is what comes back out.
 class HouseFactExtractorTest {
-    private val pdfBytes = "%PDF-1.4 fake pdf content".toByteArray()
+    private val candidate = ExtractedCandidate(
+        candidate = "House contains steel columns",
+        context = null,
+        sourceQuote = "steel columns observed",
+        sourceLocation = "page 4",
+        status = CandidateStatus.EXISTING,
+        importance = Importance.MEDIUM
+    )
 
-    private fun mockClientRespondingWith(body: String, status: HttpStatusCode = HttpStatusCode.OK): HttpClient = HttpClient(MockEngine) {
-        install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true; encodeDefaults = true }) }
-        engine {
-            addHandler {
-                respond(body, status, headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
-            }
+    private val fact = ExtractedFact(
+        what = "The house contains steel structural columns",
+        type = FactType.SPECIFICATION,
+        component = Component.STRUCTURE,
+        status = FactStatus.EXISTING,
+        importance = Importance.MEDIUM,
+        sourceQuote = "steel columns observed",
+        sourceLocation = "page 4",
+        evidenceType = EvidenceType.OBSERVED,
+        needsReview = false,
+        reviewQuestion = null
+    )
+
+    private class FakeCandidateExtractor(private val candidates: List<ExtractedCandidate>) : HouseFactCandidateExtractor {
+        var lastFilename: String? = null
+        var lastPdfBytes: ByteArray? = null
+
+        override suspend fun extractCandidates(filename: String, pdfBytes: ByteArray): List<ExtractedCandidate> {
+            lastFilename = filename
+            lastPdfBytes = pdfBytes
+            return candidates
+        }
+    }
+
+    private class FakeNormalizer(private val facts: List<ExtractedFact>) : HouseFactNormalizer {
+        var lastCandidates: List<ExtractedCandidate>? = null
+
+        override suspend fun normalize(candidates: List<ExtractedCandidate>): List<ExtractedFact> {
+            lastCandidates = candidates
+            return facts
         }
     }
 
     @Test
-    fun testMapsGeminiResponseItemsToExtractedFacts() = runBlocking {
-        val client = mockClientRespondingWith(
-            """{"candidates":[{"content":{"parts":[{"text":"[{\"what\":\"House contains steel columns\",\"type\":\"SPECIFICATION\",\"component\":\"STRUCTURE\",\"sourceQuote\":\"steel columns observed\",\"needsReview\":false,\"reviewQuestion\":\"\"}]"}]},"finishReason":"STOP"}]}"""
-        )
+    fun testFeedsPassOneCandidatesIntoPassTwoAndReturnsItsOutput() = runBlocking {
+        val candidateExtractor = FakeCandidateExtractor(listOf(candidate))
+        val normalizer = FakeNormalizer(listOf(fact))
+        val pdfBytes = "%PDF-1.4 fake".toByteArray()
 
-        val facts = GeminiHouseFactExtractor(client, "fake-key").extract("inspection.pdf", pdfBytes)
+        val result = TwoPassHouseFactExtractor(candidateExtractor, normalizer).extract("inspection.pdf", pdfBytes)
 
-        assertEquals(1, facts.size)
-        assertEquals("House contains steel columns", facts[0].what)
-        assertEquals(FactType.SPECIFICATION, facts[0].type)
-        assertEquals(Component.STRUCTURE, facts[0].component)
-        assertEquals("steel columns observed", facts[0].sourceQuote)
-        assertFalse(facts[0].needsReview)
-        assertNull(facts[0].reviewQuestion)
+        assertEquals("inspection.pdf", candidateExtractor.lastFilename)
+        assertSame(pdfBytes, candidateExtractor.lastPdfBytes)
+        assertEquals(listOf(candidate), normalizer.lastCandidates)
+        assertEquals(listOf(fact), result)
     }
 
     @Test
-    fun testBlankSourceQuoteAndReviewQuestionAreNormalizedToNull() = runBlocking {
-        val client = mockClientRespondingWith(
-            """{"candidates":[{"content":{"parts":[{"text":"[{\"what\":\"Cause not determined\",\"type\":\"CONDITION\",\"component\":\"STRUCTURE\",\"sourceQuote\":\"\",\"needsReview\":true,\"reviewQuestion\":\"What do you know about this?\"}]"}]},"finishReason":"STOP"}]}"""
-        )
+    fun testEmptyCandidateListStillReachesTheNormalizer() = runBlocking {
+        val candidateExtractor = FakeCandidateExtractor(emptyList())
+        val normalizer = FakeNormalizer(emptyList())
 
-        val facts = GeminiHouseFactExtractor(client, "fake-key").extract("inspection.pdf", pdfBytes)
+        val result = TwoPassHouseFactExtractor(candidateExtractor, normalizer).extract("inspection.pdf", "%PDF-1.4".toByteArray())
 
-        assertNull(facts[0].sourceQuote)
-        assertTrue(facts[0].needsReview)
-        assertEquals("What do you know about this?", facts[0].reviewQuestion)
-    }
-
-    @Test
-    fun testUnrecognizedTypeFallsBackToUnknownRatherThanDroppingTheFact() = runBlocking {
-        val client = mockClientRespondingWith(
-            """{"candidates":[{"content":{"parts":[{"text":"[{\"what\":\"Something odd\",\"type\":\"NOT_A_REAL_TYPE\",\"component\":\"OTHER\",\"sourceQuote\":\"\",\"needsReview\":false,\"reviewQuestion\":\"\"}]"}]},"finishReason":"STOP"}]}"""
-        )
-
-        val facts = GeminiHouseFactExtractor(client, "fake-key").extract("inspection.pdf", pdfBytes)
-
-        assertEquals(1, facts.size)
-        assertEquals(FactType.UNKNOWN, facts[0].type)
-    }
-
-    @Test
-    fun testUnrecognizedComponentFallsBackToOtherRatherThanDroppingTheFact() = runBlocking {
-        val client = mockClientRespondingWith(
-            """{"candidates":[{"content":{"parts":[{"text":"[{\"what\":\"Something odd\",\"type\":\"UNKNOWN\",\"component\":\"NOT_A_REAL_COMPONENT\",\"sourceQuote\":\"\",\"needsReview\":false,\"reviewQuestion\":\"\"}]"}]},"finishReason":"STOP"}]}"""
-        )
-
-        val facts = GeminiHouseFactExtractor(client, "fake-key").extract("inspection.pdf", pdfBytes)
-
-        assertEquals(1, facts.size)
-        assertEquals(Component.OTHER, facts[0].component)
-    }
-
-    @Test
-    fun testThrowsInsteadOfSilentlyReturningEmptyWhenGeminiProducesNoTextOutput() = runBlocking {
-        val client = mockClientRespondingWith("""{"candidates":[{"finishReason":"MAX_TOKENS"}]}""")
-
-        val exception = assertFailsWith<IllegalStateException> {
-            GeminiHouseFactExtractor(client, "fake-key").extract("inspection.pdf", pdfBytes)
-        }
-        assertTrue(exception.message!!.contains("MAX_TOKENS"))
-    }
-
-    @Test
-    fun testSurfacesGeminiApiErrorBodyInsteadOfGenericNoCandidatesMessage() = runBlocking {
-        val client = mockClientRespondingWith(
-            """{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}""",
-            HttpStatusCode.BadRequest
-        )
-
-        val exception = assertFailsWith<IllegalStateException> {
-            GeminiHouseFactExtractor(client, "fake-key").extract("inspection.pdf", pdfBytes)
-        }
-        assertTrue(exception.message!!.contains("400"))
-        assertTrue(exception.message!!.contains("API key not valid"))
-    }
-
-    @Test
-    fun testMissingApiKeyThrowsBeforeMakingAnyRequest() = runBlocking {
-        val client = HttpClient(MockEngine) {
-            engine { addHandler { error("Gemini should not be called without an API key") } }
-        }
-
-        val exception = assertFailsWith<IllegalStateException> {
-            GeminiHouseFactExtractor(client, "").extract("inspection.pdf", pdfBytes)
-        }
-        assertTrue(exception.message!!.contains("GEMINI_API_KEY"))
-    }
-
-    @Test
-    fun testDocumentAboveInlineSizeLimitThrowsBeforeMakingAnyRequest() = runBlocking {
-        val client = HttpClient(MockEngine) {
-            engine { addHandler { error("Gemini should not be called for an oversized document") } }
-        }
-        val oversized = ByteArray(15_000_001)
-
-        val exception = assertFailsWith<IllegalStateException> {
-            GeminiHouseFactExtractor(client, "fake-key").extract("inspection.pdf", oversized)
-        }
-        assertTrue(exception.message!!.contains("too large"))
-    }
-
-    @Test
-    fun testRequestBodyCarriesTheDocumentAsInlineDataWithNoStrayNullFields() = runBlocking {
-        // The Gemini Part message is a strict oneof (text XOR inlineData) -
-        // this codebase already hit exactly this kind of schema strictness
-        // once before (see CLAUDE.md's Gemini gotchas), so the two parts
-        // are built to never emit the other's field as an explicit null
-        // (see GeminiHouseFactExtractor's own comment). Assert on the
-        // literal outgoing JSON so a future refactor can't silently
-        // reintroduce that.
-        var capturedRequestBody: String? = null
-        val client = HttpClient(MockEngine) {
-            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true; encodeDefaults = true }) }
-            engine {
-                addHandler { request ->
-                    capturedRequestBody = (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
-                    respond(
-                        """{"candidates":[{"content":{"parts":[{"text":"[]"}]},"finishReason":"STOP"}]}""",
-                        HttpStatusCode.OK,
-                        headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
-                    )
-                }
-            }
-        }
-
-        GeminiHouseFactExtractor(client, "fake-key").extract("inspection.pdf", pdfBytes)
-
-        val body = assertNotNull(capturedRequestBody)
-        assertTrue(body.contains(""""mimeType":"application/pdf""""), "expected an inlineData part with the PDF mime type: $body")
-        assertTrue(body.contains(Base64.getEncoder().encodeToString(pdfBytes)), "expected the base64-encoded PDF bytes: $body")
-        assertFalse(body.contains(""""text":null""""), "the inlineData part must not also emit a null text field: $body")
-        assertFalse(body.contains(""""inlineData":null""""), "the text part must not also emit a null inlineData field: $body")
-        assertTrue(body.contains(""""type":"BOOLEAN""""), "expected the needsReview schema property to be typed BOOLEAN: $body")
-        assertTrue(body.contains(""""component":{"type":"STRING""""), "expected a component schema property: $body")
-        assertTrue(body.contains(""""FOUNDATION""""), "expected the component enum values to include FOUNDATION: $body")
+        assertEquals(emptyList(), normalizer.lastCandidates)
+        assertEquals(emptyList(), result)
     }
 }

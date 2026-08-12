@@ -80,8 +80,20 @@ private val geminiCategorizer: TransactionCategorizer by lazy {
     GeminiTransactionCategorizer(geminiHttpClient, System.getenv("GEMINI_API_KEY") ?: "")
 }
 
+private val geminiHouseFactCandidateExtractor: HouseFactCandidateExtractor by lazy {
+    GeminiHouseFactCandidateExtractor(geminiHttpClient, System.getenv("GEMINI_API_KEY") ?: "")
+}
+
+private val geminiHouseFactNormalizer: HouseFactNormalizer by lazy {
+    GeminiHouseFactNormalizer(geminiHttpClient, System.getenv("GEMINI_API_KEY") ?: "")
+}
+
+// Two-pass pipeline (see HouseFactExtractor.kt): pass 1 reads the PDF and
+// extracts recall-favoring candidates, pass 2 reconciles/dedupes them into
+// the final fact list. Both stages share the API key/HTTP client but are
+// separate Gemini calls.
 private val geminiHouseFactExtractor: HouseFactExtractor by lazy {
-    GeminiHouseFactExtractor(geminiHttpClient, System.getenv("GEMINI_API_KEY") ?: "")
+    TwoPassHouseFactExtractor(geminiHouseFactCandidateExtractor, geminiHouseFactNormalizer)
 }
 
 private val geminiComponentSummarizer: ComponentSummarizer by lazy {

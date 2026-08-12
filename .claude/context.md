@@ -507,32 +507,55 @@ candidate facts via Gemini, resolve the ambiguous ones. New top-level
   pipeline section - not yet created in GCP as of this feature landing).
 - **`HouseFact`** (`HouseFactStore.kt`, Firestore collection `houseFacts`)
   is a deliberately narrow slice of the spec's full `Fact` model:
-  what/type/sourceQuote/needsReview/reviewQuestion/homeownerContext only -
-  no status/time/location/confidence/related-components-events-facts-tasks/
-  photos yet. `FactType` started as the spec's 9-value taxonomy
-  (Observation/Condition/Diagnosis/Decision/Event/Specification/
-  MaintenanceRequirement/Warranty/Unknown) and has since grown two more -
-  `Assumption` (a value/condition assumed for design/calculation/planning,
-  as opposed to measured or verified) and `ScopeLimitation` (something the
-  document explicitly says was outside the inspection/investigation/
-  professional mandate, as opposed to `Unknown`'s "tried to determine and
-  couldn't") - added when the extraction prompt was strengthened to handle
-  engineering/structural documents, which routinely state both. Deferred
-  fields are deferred because there's no real usage to design them against
-  yet, not because they were rejected - see `product_spec.md`'s House
-  Knowledge section for the target shape this should grow toward.
-- **`GeminiHouseFactExtractor`** (`HouseFactExtractor.kt`) sends the whole
-  PDF inline (base64, `application/pdf` `inlineData` part) plus a text
-  prompt to `gemini-3.5-flash`'s `generateContent`, same direct-REST
-  pattern as `GeminiTransactionCategorizer` (no Google AI SDK dependency).
-  Capped at 15MB inline (`MAX_INLINE_BYTES`) with a clear error beyond
-  that - larger documents need the Gemini File API's separate upload step,
-  not implemented. Response schema constrains each item to
-  `{what, type, sourceQuote, needsReview, reviewQuestion}`; a fact needing
-  homeowner input is flagged `needsReview` with a `reviewQuestion` to show
-  them, mirroring the spec's "Identify ambiguity" MVP step. **Not yet
-  exercised against the real Gemini API** - see `CLAUDE.md`'s House
-  Knowledge gotchas for what to check first if the first real upload fails.
+  what/type/component/status/importance/sourceQuote/sourceLocation/
+  evidenceType/needsReview/reviewQuestion/homeownerContext - no
+  time/confidence/related-components-events-facts-tasks/photos yet.
+  `FactType` started as the spec's 9-value taxonomy (Observation/Condition/
+  Diagnosis/Decision/Event/Specification/MaintenanceRequirement/Warranty/
+  Unknown) and has since grown two more - `Assumption` (a value/condition
+  assumed for design/calculation/planning, as opposed to measured or
+  verified) and `ScopeLimitation` (something the document explicitly says
+  was outside the inspection/investigation/professional mandate, as opposed
+  to `Unknown`'s "tried to determine and couldn't"). `FactStatus`
+  (Existing/New/Modified/Removed/Proposed/Unknown/NotApplicable),
+  `Importance` (High/Medium/Low), and `EvidenceType` (Documented/Measured/
+  Observed/Designed/Assumed/Reported/Inferred) were added together when
+  extraction moved to the two-pass pipeline below - `sourceLocation` (page/
+  drawing number/section) came back at the same time, having briefly been
+  cut from the original single-pass prompt (see `CLAUDE.md`'s House
+  Knowledge gotchas) once there was a real field to hold it in rather than
+  burying it in prose. Deferred fields are deferred because there's no real
+  usage to design them against yet, not because they were rejected - see
+  `product_spec.md`'s House Knowledge section for the target shape this
+  should grow toward.
+- **Extraction is a two-pass pipeline**, not one Gemini call:
+  `HouseFactCandidateExtractor.kt`'s `GeminiHouseFactCandidateExtractor`
+  (pass 1) sends the whole PDF inline (base64, `application/pdf`
+  `inlineData` part) plus a recall-favoring prompt to `gemini-3.5-flash`'s
+  `generateContent`, same direct-REST pattern as `GeminiTransactionCategorizer`
+  (no Google AI SDK dependency) - capped at 15MB inline (`MAX_INLINE_BYTES`)
+  with a clear error beyond that, larger documents needing the Gemini File
+  API's separate upload step (not implemented). It returns a broad list of
+  `ExtractedCandidate` (`candidate`/`context`/`sourceQuote`/`sourceLocation`/
+  `status: CandidateStatus`/`importance`) - `CandidateStatus` is
+  `FactStatus`'s superset, adding `Assumed` for a candidate that hasn't yet
+  been decided to be a first-class `Assumption`-typed fact.
+  `HouseFactNormalizer.kt`'s `GeminiHouseFactNormalizer` (pass 2) is a
+  second, text-only Gemini call (no PDF - pass 1 already read the document)
+  that takes those candidates and reconciles/dedupes/classifies them into
+  the final `ExtractedFact` list actually persisted, assigning
+  `FactType`/`Component`/`FactStatus`/`Importance`/`EvidenceType` and
+  deciding `needsReview`. `HouseFactExtractor.kt`'s `TwoPassHouseFactExtractor`
+  just wires the two calls together behind the unchanged `HouseFactExtractor`
+  interface, so `HouseFactExtractionJobManager`/`HouseRoutes.kt` didn't need
+  to change at all. Pass 2's prompt is written to take candidates "extracted
+  from one or more home-related documents" - deliberately generalized for a
+  future where it reconciles candidates gathered across a household's whole
+  document set, not just one document's pass-1 output, though nothing wires
+  that up yet; today it only ever sees one document's candidates per run.
+  **Not yet exercised against the real Gemini API** - see `CLAUDE.md`'s
+  House Knowledge gotchas for what to check first if the first real upload
+  fails.
 - **Extraction runs on a background coroutine** (`HouseFactExtractionJobManager`,
   `HouseFactExtractionJob.kt`), same async-job-plus-poll pattern as Gemini
   categorization (`CategorizationJobManager`) - originally synchronous in

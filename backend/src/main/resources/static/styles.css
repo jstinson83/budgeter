@@ -866,6 +866,11 @@ h1, h2 {
   font-size: 0.9rem;
 }
 
+.fact-location {
+  font-style: normal;
+  font-size: 0.8rem;
+}
+
 .fact-question {
   margin: 0;
   font-weight: 600;
