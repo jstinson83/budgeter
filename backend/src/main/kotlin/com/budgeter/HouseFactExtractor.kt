@@ -225,8 +225,6 @@ class GeminiHouseFactExtractor(
 
         Include a short, verbatim sourceQuote from the document backing each fact where one exists; leave it as an empty string if the fact is your own summary rather than a direct quote.
 
-        When possible, work useful source location information (such as a page number, drawing number, or section) into the fact's statement or sourceQuote, since there is no separate field for it.
-
         Return a JSON array with one object per fact.
     """.trimIndent()
 
