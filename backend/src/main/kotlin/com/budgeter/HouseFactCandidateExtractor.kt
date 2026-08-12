@@ -32,12 +32,26 @@ data class ExtractedCandidate(
     val importance: Importance
 )
 
+// documentWalkthrough is a required field on Gemini's response, generated
+// before candidates in the same call (see buildPrompt's "Document
+// walkthrough" section) - not a third pass, just forcing pass 1 to write a
+// systematic, section-by-section description of the whole document
+// (including drawings/tables/legends) before it commits to a candidate
+// list, rather than jumping straight to pattern-matching the first
+// satisfying answer. Not persisted as a HouseFact - TwoPassHouseFactExtractor
+// logs it alongside the candidate list purely for debugging recall gaps
+// (see CLAUDE.md's House Knowledge gotchas).
+data class CandidateBatch(
+    val documentWalkthrough: String,
+    val candidates: List<ExtractedCandidate>
+)
+
 interface HouseFactCandidateExtractor {
     // documentContext is the homeowner's optional free-text background from
     // upload time (HouseDocument.context), e.g. "this is the 2017 kitchen
     // renovation, we removed the wall between the kitchen and dining room" -
     // grounding for interpreting the document, not document content itself.
-    suspend fun extractCandidates(filename: String, pdfBytes: ByteArray, documentContext: String?): List<ExtractedCandidate>
+    suspend fun extractCandidates(filename: String, pdfBytes: ByteArray, documentContext: String?): CandidateBatch
 }
 
 // DTOs below are prefixed CandidateExtraction* rather than reusing
@@ -60,7 +74,7 @@ class GeminiHouseFactCandidateExtractor(
     private val model: String = "gemini-3.5-flash"
 ) : HouseFactCandidateExtractor {
 
-    override suspend fun extractCandidates(filename: String, pdfBytes: ByteArray, documentContext: String?): List<ExtractedCandidate> {
+    override suspend fun extractCandidates(filename: String, pdfBytes: ByteArray, documentContext: String?): CandidateBatch {
         check(apiKey.isNotBlank()) { "GEMINI_API_KEY is not set" }
         // Same inline-upload size cap and reasoning as the original
         // single-pass extractor - see CLAUDE.md's House Knowledge gotchas.
@@ -84,21 +98,28 @@ class GeminiHouseFactCandidateExtractor(
             generationConfig = CandidateExtractionGenerationConfig(
                 thinkingConfig = CandidateExtractionThinkingConfig(thinkingBudget = 0),
                 responseSchema = CandidateExtractionSchema(
-                    items = CandidateExtractionSchemaItem(
-                        properties = mapOf(
-                            "candidate" to CandidateExtractionSchemaProperty(type = "STRING"),
-                            "context" to CandidateExtractionSchemaProperty(type = "STRING"),
-                            "sourceQuote" to CandidateExtractionSchemaProperty(type = "STRING"),
-                            "sourceLocation" to CandidateExtractionSchemaProperty(type = "STRING"),
-                            "status" to CandidateExtractionSchemaProperty(type = "STRING", enum = CandidateStatus.entries.map { it.name }),
-                            "importance" to CandidateExtractionSchemaProperty(type = "STRING", enum = Importance.entries.map { it.name })
-                        ),
-                        // All six required so every item always has every
-                        // key to read, even when empty - same "simpler
-                        // decoding" choice the rest of this codebase's
-                        // Gemini callers make.
-                        required = listOf("candidate", "context", "sourceQuote", "sourceLocation", "status", "importance")
-                    )
+                    properties = mapOf(
+                        "documentWalkthrough" to CandidateExtractionSchemaProperty(type = "STRING"),
+                        "candidates" to CandidateExtractionSchemaProperty(
+                            type = "ARRAY",
+                            items = CandidateExtractionSchemaItems(
+                                properties = mapOf(
+                                    "candidate" to CandidateExtractionSchemaProperty(type = "STRING"),
+                                    "context" to CandidateExtractionSchemaProperty(type = "STRING"),
+                                    "sourceQuote" to CandidateExtractionSchemaProperty(type = "STRING"),
+                                    "sourceLocation" to CandidateExtractionSchemaProperty(type = "STRING"),
+                                    "status" to CandidateExtractionSchemaProperty(type = "STRING", enum = CandidateStatus.entries.map { it.name }),
+                                    "importance" to CandidateExtractionSchemaProperty(type = "STRING", enum = Importance.entries.map { it.name })
+                                ),
+                                // All six required so every item always has
+                                // every key to read, even when empty - same
+                                // "simpler decoding" choice the rest of this
+                                // codebase's Gemini callers make.
+                                required = listOf("candidate", "context", "sourceQuote", "sourceLocation", "status", "importance")
+                            )
+                        )
+                    ),
+                    required = listOf("documentWalkthrough", "candidates")
                 )
             )
         )
@@ -126,21 +147,24 @@ class GeminiHouseFactCandidateExtractor(
             error("Gemini returned no output (finishReason=${candidate.finishReason ?: "unknown"})")
         }
 
-        val items = lenientCandidateJson.decodeFromString<List<CandidateItem>>(text)
-        return items.map { item ->
-            ExtractedCandidate(
-                candidate = item.candidate,
-                context = item.context.trim().ifEmpty { null },
-                sourceQuote = item.sourceQuote.trim().ifEmpty { null },
-                sourceLocation = item.sourceLocation.trim().ifEmpty { null },
-                // Falls back to UNKNOWN/MEDIUM for a malformed/unrecognized
-                // value rather than dropping the candidate - same "fall back
-                // rather than drop" reasoning the rest of this codebase's
-                // Gemini callers use.
-                status = runCatching { CandidateStatus.valueOf(item.status) }.getOrDefault(CandidateStatus.UNKNOWN),
-                importance = runCatching { Importance.valueOf(item.importance) }.getOrDefault(Importance.MEDIUM)
-            )
-        }
+        val result = lenientCandidateJson.decodeFromString<CandidateExtractionResult>(text)
+        return CandidateBatch(
+            documentWalkthrough = result.documentWalkthrough.trim(),
+            candidates = result.candidates.map { item ->
+                ExtractedCandidate(
+                    candidate = item.candidate,
+                    context = item.context.trim().ifEmpty { null },
+                    sourceQuote = item.sourceQuote.trim().ifEmpty { null },
+                    sourceLocation = item.sourceLocation.trim().ifEmpty { null },
+                    // Falls back to UNKNOWN/MEDIUM for a malformed/unrecognized
+                    // value rather than dropping the candidate - same "fall
+                    // back rather than drop" reasoning the rest of this
+                    // codebase's Gemini callers use.
+                    status = runCatching { CandidateStatus.valueOf(item.status) }.getOrDefault(CandidateStatus.UNKNOWN),
+                    importance = runCatching { Importance.valueOf(item.importance) }.getOrDefault(Importance.MEDIUM)
+                )
+            }
+        )
     }
 
     private fun buildPrompt(filename: String, documentContext: String?): String = """
@@ -176,9 +200,15 @@ ${homeownerContextBlock(documentContext)}
 
         If a document establishes that a condition predates, resulted from, or was addressed by a renovation or repair, preserve that temporal or causal relationship.
 
+        ## Document walkthrough
+
+        Before doing anything else, write the documentWalkthrough field described under "Output" below: a systematic, section-by-section, page-by-page, or drawing-by-drawing description of everything in the document - narrative text, tables, schedules, legends, and what each drawing actually shows, including every distinct piece and every entry in every legend or table. Do not skip a page or a drawing because it seems to duplicate another one - describe what is actually there. This is a working transcription to ground everything that follows, not a polished summary - it can be as long as it needs to be to actually cover the document, and it is not itself a candidate.
+
+        This matters because a document describing more than one independent system or area of work is easy to under-extract from if you jump straight to listing candidates and stop as soon as you've found one satisfying answer. Writing out what is actually on every page first is what catches the parts you'd otherwise skip.
+
         ## Orient yourself before extracting
 
-        Before pulling out individual facts, get oriented on what the document is actually about. This matters because a document describing more than one independent system or area of work is easy to under-extract from if you stop as soon as you've found one satisfying answer.
+        Using the walkthrough you just wrote, get oriented on what the document is actually about before pulling out individual candidates.
 
         First, capture the document's overall scope as a candidate of its own: what is this document, and what does it actually do to the house? State it in plain language a homeowner would understand, not professional jargon or a restatement of the title block - for example, "This 2017 renovation added a new window opening and a new steel structural support system along the first floor," not "Structural drawings for a residential reamenagement project."
 
@@ -291,14 +321,18 @@ ${homeownerContextBlock(documentContext)}
 
         For every candidate, preserve enough context to understand what the document actually says.
 
-        Return a JSON array. Each object should contain:
+        ## Output
 
-        - candidate: a concise statement of the potential knowledge
-        - context: additional context needed to interpret the candidate correctly
-        - sourceQuote: a short, verbatim quote supporting it, when available
-        - sourceLocation: page, drawing number, section, or other useful source location when available
-        - status: one of EXISTING, NEW, MODIFIED, REMOVED, PROPOSED, ASSUMED, UNKNOWN, or NOT_APPLICABLE
-        - importance: HIGH, MEDIUM, or LOW
+        Return a JSON object with exactly two top-level fields:
+
+        - documentWalkthrough: the systematic walkthrough described above, written before you extracted candidates
+        - candidates: a JSON array, where each object should contain:
+          - candidate: a concise statement of the potential knowledge
+          - context: additional context needed to interpret the candidate correctly
+          - sourceQuote: a short, verbatim quote supporting it, when available
+          - sourceLocation: page, drawing number, section, or other useful source location when available
+          - status: one of EXISTING, NEW, MODIFIED, REMOVED, PROPOSED, ASSUMED, UNKNOWN, or NOT_APPLICABLE
+          - importance: HIGH, MEDIUM, or LOW
 
         Do not attempt to produce the final Home OS fact types yet.
 
@@ -351,18 +385,26 @@ private data class CandidateExtractionGenerationConfig(
 @Serializable
 private data class CandidateExtractionThinkingConfig(val thinkingBudget: Int)
 
+// Top-level schema is now an OBJECT (documentWalkthrough + candidates), not
+// a bare ARRAY - see CandidateBatch's comment for why. CandidateExtraction
+// SchemaProperty's own `items` field is what lets the "candidates" property
+// itself describe an array of objects; only ever set for that one property.
 @Serializable
-private data class CandidateExtractionSchema(val type: String = "ARRAY", val items: CandidateExtractionSchemaItem)
-
-@Serializable
-private data class CandidateExtractionSchemaItem(
+private data class CandidateExtractionSchema(
     val type: String = "OBJECT",
     val properties: Map<String, CandidateExtractionSchemaProperty>,
     val required: List<String>
 )
 
 @Serializable
-private data class CandidateExtractionSchemaProperty(val type: String, val enum: List<String>? = null)
+private data class CandidateExtractionSchemaItems(
+    val type: String = "OBJECT",
+    val properties: Map<String, CandidateExtractionSchemaProperty>,
+    val required: List<String>
+)
+
+@Serializable
+private data class CandidateExtractionSchemaProperty(val type: String, val enum: List<String>? = null, val items: CandidateExtractionSchemaItems? = null)
 
 @Serializable
 private data class CandidateExtractionResponse(
@@ -381,6 +423,12 @@ private data class CandidateExtractionResponsePart(val text: String? = null)
 
 @Serializable
 private data class CandidateExtractionPromptFeedback(val blockReason: String? = null)
+
+@Serializable
+private data class CandidateExtractionResult(
+    val documentWalkthrough: String,
+    val candidates: List<CandidateItem>
+)
 
 @Serializable
 private data class CandidateItem(

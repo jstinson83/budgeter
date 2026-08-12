@@ -275,6 +275,43 @@ cap) but shares the same schema/response-decoding shape.
   is in pass 1's prompt/recall; if it *is* there but didn't survive to the
   final fact list, the bug is in pass 2's reconciliation/filtering instead
   of another pass-1 prompt tweak.
+- **Round 4, with the logging above in place: pass 2 is confirmed not to be
+  the bottleneck.** Two fresh real-document runs (one with homeowner
+  context, one without) logged cleanly: 10 candidates -> 9 facts, and 9
+  candidates -> 9 facts. The single drop was a legitimate merge (two
+  candidates both describing the W10x30/footing assembly, folded into one
+  fact) - not real information loss. Across both runs pass 2 preserved 18
+  of 19 candidates. This settles what the round-2/round-3 gotchas above
+  could only speculate about: the wood-beam-on-wood-posts system that has
+  never once appeared in a final fact list also never appeared as a pass-1
+  candidate in either run - a genuine pass-1 recall miss, not pass-2
+  pruning. Prompt wordsmithing (the "orient yourself" step, the
+  piece-supports-what and document-wide-inputs strengthening) had already
+  been tried three times on this exact gap without moving it, which is why
+  the next change was a different kind of lever entirely - see below.
+- **Pass 1 now writes a `documentWalkthrough` before extracting candidates**
+  (`CandidateBatch` in `HouseFactCandidateExtractor.kt`) - still one Gemini
+  call, not a third pass. The response schema changed from a bare array to
+  an object with two fields, `documentWalkthrough` (a systematic,
+  section-by-section, page-by-page description of everything in the
+  document - narrative text, tables, legends, and what each drawing shows)
+  and `candidates` (the same array as before, now nested). Schema field
+  order pushes Gemini to write the walkthrough first, in the same way
+  extended thinking would, but as a normal bounded schema field rather than
+  opaque reasoning tokens - deliberately chosen over just raising
+  `thinkingBudget` above its current `0` (see the categorization gotcha
+  above) because a required field is visible and loggable, and doesn't
+  carry the same "silently exhausts the output budget and returns
+  `MAX_TOKENS` with nothing" risk unbounded extended thinking already bit
+  this codebase with once. `TwoPassHouseFactExtractor.extract()` logs the
+  walkthrough as its own INFO line, separate from the candidate list, so a
+  future gap can be diagnosed more precisely than "pass 1 vs pass 2": if
+  something is missing from the walkthrough too, pass 1 never noticed it
+  at all; if it's in the walkthrough but never became a candidate, pass 1
+  noticed but failed to extract it - two different bugs. **Not yet tested
+  against a real document** - the next real upload/retry is what tells us
+  whether this actually moves the wood-system gap, or whether it needs the
+  `thinkingBudget` change too.
 - **Gemini's `Part` message is a strict oneof** (`text` XOR `inlineData`) -
   learned from the `encodeDefaults` gotcha above rather than hit fresh:
   since `geminiHttpClient`'s shared `Json` config has `encodeDefaults =
