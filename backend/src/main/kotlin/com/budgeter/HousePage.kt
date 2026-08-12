@@ -33,6 +33,7 @@ fun houseDocumentPageModel(document: HouseDocument, facts: List<HouseFact>, mess
             "id" to document.id,
             "filename" to document.filename,
             "status" to document.status.name,
+            "context" to document.context,
             "error" to document.error
         ),
         "needsReviewFacts" to needsReview.map { factModel(it) },

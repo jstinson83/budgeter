@@ -200,13 +200,14 @@ class FakeHouseDocumentRepository : HouseDocumentRepository {
     private val documents = mutableListOf<HouseDocument>()
     private var nextId = 0
 
-    override suspend fun add(ownerId: String, filename: String, storagePath: String): HouseDocument {
+    override suspend fun add(ownerId: String, filename: String, storagePath: String, context: String?): HouseDocument {
         val document = HouseDocument(
             id = "house-doc-${nextId++}",
             ownerId = ownerId,
             filename = filename,
             storagePath = storagePath,
             status = HouseDocumentStatus.UPLOADED,
+            context = context,
             uploadedAt = java.time.Instant.now()
         )
         documents += document
@@ -325,9 +326,12 @@ class FakeHouseFactExtractor(
 ) : HouseFactExtractor {
     var callCount: Int = 0
         private set
+    var lastDocumentContext: String? = null
+        private set
 
-    override suspend fun extract(filename: String, pdfBytes: ByteArray): List<ExtractedFact> {
+    override suspend fun extract(filename: String, pdfBytes: ByteArray, documentContext: String?): List<ExtractedFact> {
         callCount++
+        lastDocumentContext = documentContext
         return facts
     }
 }

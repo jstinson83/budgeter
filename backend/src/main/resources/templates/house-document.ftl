@@ -24,6 +24,10 @@
 
     <h1>${document.filename}</h1>
 
+    <#if document.context??>
+    <p class="fact-context">Context you provided: ${document.context}</p>
+    </#if>
+
     <#if document.status == "FAILED">
     <p class="banner-error">Extraction failed<#if document.error??>: ${document.error}</#if></p>
     <#elseif document.status == "EXTRACTING">

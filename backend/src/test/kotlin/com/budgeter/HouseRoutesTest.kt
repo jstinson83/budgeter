@@ -7,15 +7,16 @@ import io.ktor.http.*
 import io.ktor.server.testing.*
 import kotlin.test.*
 
-private fun pdfFormData(filename: String = "inspection.pdf", bytes: ByteArray = "%PDF-1.4 fake".toByteArray()) = formData {
+private fun pdfFormData(filename: String = "inspection.pdf", bytes: ByteArray = "%PDF-1.4 fake".toByteArray(), context: String? = null) = formData {
     append("file", bytes, Headers.build {
         append(HttpHeaders.ContentType, "application/pdf")
         append(HttpHeaders.ContentDisposition, "filename=\"$filename\"")
     })
+    context?.let { append("context", it) }
 }
 
 private class ThrowingHouseFactExtractor : HouseFactExtractor {
-    override suspend fun extract(filename: String, pdfBytes: ByteArray): List<ExtractedFact> =
+    override suspend fun extract(filename: String, pdfBytes: ByteArray, documentContext: String?): List<ExtractedFact> =
         error("Gemini API request failed (503): upstream unavailable")
 }
 
@@ -26,7 +27,7 @@ private class FailOnceThenSucceedHouseFactExtractor : HouseFactExtractor {
     var callCount: Int = 0
         private set
 
-    override suspend fun extract(filename: String, pdfBytes: ByteArray): List<ExtractedFact> {
+    override suspend fun extract(filename: String, pdfBytes: ByteArray, documentContext: String?): List<ExtractedFact> {
         callCount++
         if (callCount == 1) error("Gemini API request failed (503): upstream unavailable")
         return listOf(
@@ -122,6 +123,40 @@ class HouseRoutesTest {
         assertTrue(documentPage.contains("Found 2 thing(s) worth remembering about your house"))
         assertTrue(documentPage.contains("The house contains steel structural columns"))
         assertTrue(documentPage.contains("Central floor bulge cause not determined"))
+    }
+
+    @Test
+    fun testUploadingWithContextPersistsItAndPassesItToExtraction() = testApplication {
+        val extractor = FakeHouseFactExtractor()
+        testModule(houseFactExtractor = extractor)
+        val client = signInFakeUser()
+
+        val context = "This is the 2017 kitchen renovation, we removed the wall between the kitchen and dining room"
+        val response = client.submitFormWithBinaryData(url = "/house/documents/upload", formData = pdfFormData(context = context))
+        val redirect = response.headers[HttpHeaders.Location]
+        assertNotNull(redirect)
+        val documentId = redirect.substringAfterLast("/")
+        client.waitForExtractionToFinish(documentId)
+
+        assertEquals(context, extractor.lastDocumentContext)
+        val documentPage = client.get(redirect).bodyAsText()
+        assertTrue(documentPage.contains("Context you provided: $context"))
+    }
+
+    @Test
+    fun testUploadingWithNoContextLeavesItNull() = testApplication {
+        val extractor = FakeHouseFactExtractor()
+        testModule(houseFactExtractor = extractor)
+        val client = signInFakeUser()
+
+        val response = client.submitFormWithBinaryData(url = "/house/documents/upload", formData = pdfFormData())
+        val redirect = response.headers[HttpHeaders.Location]
+        assertNotNull(redirect)
+        client.waitForExtractionToFinish(redirect.substringAfterLast("/"))
+
+        assertNull(extractor.lastDocumentContext)
+        val documentPage = client.get(redirect).bodyAsText()
+        assertFalse(documentPage.contains("Context you provided"))
     }
 
     @Test

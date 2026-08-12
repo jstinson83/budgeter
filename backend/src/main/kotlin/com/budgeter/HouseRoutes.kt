@@ -41,10 +41,16 @@ fun Route.houseRoutes(
 
         var filename: String? = null
         var bytes: ByteArray? = null
+        var context: String? = null
         call.receiveMultipart().forEachPart { part ->
-            if (part is PartData.FileItem && bytes == null) {
-                filename = part.originalFileName
-                bytes = part.provider().toByteArray()
+            when {
+                part is PartData.FileItem && bytes == null -> {
+                    filename = part.originalFileName
+                    bytes = part.provider().toByteArray()
+                }
+                part is PartData.FormItem && part.name == "context" -> {
+                    context = part.value.trim().ifEmpty { null }
+                }
             }
             part.dispose()
         }
@@ -68,7 +74,7 @@ fun Route.houseRoutes(
         // Firestore document id - avoids a two-phase
         // create-then-patch-storagePath round trip just to learn an id.
         val storagePath = documentBlobStore.upload(ownerId, UUID.randomUUID().toString(), name, pdfBytes)
-        val document = houseDocumentStore.add(ownerId, name, storagePath)
+        val document = houseDocumentStore.add(ownerId, name, storagePath, context)
 
         // Marked EXTRACTING here, synchronously, before this request ends -
         // the background job (HouseFactExtractionJob.kt) only owns the
@@ -77,7 +83,7 @@ fun Route.houseRoutes(
         // finish; house-document.ftl polls GET /house/documents/{id}/status
         // while EXTRACTING and reloads once it isn't.
         houseDocumentStore.updateStatus(ownerId, document.id, HouseDocumentStatus.EXTRACTING)
-        houseFactExtractionJobManager.start(ownerId, document.id, name, pdfBytes)
+        houseFactExtractionJobManager.start(ownerId, document.id, name, pdfBytes, context)
 
         call.respondRedirect("/house/documents/${document.id}")
     }
@@ -135,7 +141,7 @@ fun Route.houseRoutes(
         val pdfBytes = documentBlobStore.download(document.storagePath)
         houseFactStore.deleteForDocument(ownerId, id)
         houseDocumentStore.updateStatus(ownerId, id, HouseDocumentStatus.EXTRACTING)
-        houseFactExtractionJobManager.start(ownerId, id, document.filename, pdfBytes)
+        houseFactExtractionJobManager.start(ownerId, id, document.filename, pdfBytes, document.context)
 
         call.respondRedirect("/house/documents/$id")
     }
