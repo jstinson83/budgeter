@@ -15,9 +15,10 @@ interface ComponentSummarizer {
 // into a short plain-language summary - a text-only Gemini call, no PDF and
 // no responseSchema needed since the output is just a paragraph rather than
 // structured JSON. Shares geminiHttpClient with GeminiTransactionCategorizer
-// and GeminiHouseFactExtractor, so it inherits the same status-before-decode
-// and empty-candidates/blank-text safeguards those already had to learn the
-// hard way - see CLAUDE.md's Gemini gotchas.
+// and the two-pass house fact extractors (HouseFactCandidateExtractor.kt,
+// HouseFactNormalizer.kt), so it inherits the same status-before-decode and
+// empty-candidates/blank-text safeguards those already had to learn the hard
+// way - see CLAUDE.md's Gemini gotchas.
 class GeminiComponentSummarizer(
     private val httpClient: HttpClient,
     private val apiKey: String,

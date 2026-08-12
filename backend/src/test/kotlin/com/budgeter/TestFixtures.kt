@@ -243,7 +243,11 @@ class FakeHouseFactRepository : HouseFactRepository {
                 what = it.what,
                 type = it.type,
                 component = it.component,
+                status = it.status,
+                importance = it.importance,
                 sourceQuote = it.sourceQuote,
+                sourceLocation = it.sourceLocation,
+                evidenceType = it.evidenceType,
                 needsReview = it.needsReview,
                 reviewQuestion = it.reviewQuestion,
                 createdAt = java.time.Instant.now()
@@ -288,13 +292,35 @@ class FakeDocumentBlobStore : DocumentBlobStore {
     }
 }
 
-// Stands in for GeminiHouseFactExtractor - returns a fixed, small set of
+// Stands in for TwoPassHouseFactExtractor - returns a fixed, small set of
 // facts (one needing review) so route tests can exercise the extraction ->
 // review flow without ever calling Gemini for real.
 class FakeHouseFactExtractor(
     private val facts: List<ExtractedFact> = listOf(
-        ExtractedFact("The house contains steel structural columns", FactType.SPECIFICATION, Component.STRUCTURE, "steel columns observed", false, null),
-        ExtractedFact("Central floor bulge cause not determined", FactType.CONDITION, Component.STRUCTURE, "cause not determined", true, "What's your understanding of this?")
+        ExtractedFact(
+            what = "The house contains steel structural columns",
+            type = FactType.SPECIFICATION,
+            component = Component.STRUCTURE,
+            status = FactStatus.EXISTING,
+            importance = Importance.MEDIUM,
+            sourceQuote = "steel columns observed",
+            sourceLocation = null,
+            evidenceType = EvidenceType.OBSERVED,
+            needsReview = false,
+            reviewQuestion = null
+        ),
+        ExtractedFact(
+            what = "Central floor bulge cause not determined",
+            type = FactType.CONDITION,
+            component = Component.STRUCTURE,
+            status = FactStatus.EXISTING,
+            importance = Importance.HIGH,
+            sourceQuote = "cause not determined",
+            sourceLocation = null,
+            evidenceType = EvidenceType.OBSERVED,
+            needsReview = true,
+            reviewQuestion = "What's your understanding of this?"
+        )
     )
 ) : HouseFactExtractor {
     var callCount: Int = 0

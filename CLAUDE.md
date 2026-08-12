@@ -197,20 +197,33 @@ shape.
 
 ## House Knowledge (Facts) gotchas
 
-`GeminiHouseFactExtractor` (`HouseFactExtractor.kt`) is what `POST
-/house/documents/upload` calls to turn an uploaded PDF into candidate
-`HouseFact` rows - see `.claude/context.md` for the feature's shape and
-request/response schema.
+Extraction is a two-pass pipeline that `POST /house/documents/upload`
+kicks off to turn an uploaded PDF into candidate `HouseFact` rows - pass 1
+(`HouseFactCandidateExtractor.kt`'s `GeminiHouseFactCandidateExtractor`)
+reads the PDF and produces recall-favoring candidates, pass 2
+(`HouseFactNormalizer.kt`'s `GeminiHouseFactNormalizer`) reconciles them
+into the final fact list, and `HouseFactExtractor.kt`'s
+`TwoPassHouseFactExtractor` wires the two together. See `.claude/context.md`
+for the full shape and request/response schemas. The gotchas below predate
+the pass 1/pass 2 split (from the original single-call
+`GeminiHouseFactExtractor`) but apply equally to whichever of the two
+Gemini calls is doing PDF/JSON work at the time - pass 1 owns the PDF
+`inlineData` part and its size cap, pass 2 is text-only (no PDF, no size
+cap) but shares the same schema/response-decoding shape.
 
 - **Not yet exercised against the real Gemini API.** This was built and
-  tested (route tests + a mocked-HTTP extractor test) without live network
-  access or a real `GEMINI_API_KEY` in the build sandbox. Route/store
-  behavior is well covered; the actual Gemini call is not. The first real
-  document upload in production is the real test - if it fails, check the
-  three gotchas above first (status-code-before-decode, `finishReason`/
-  `promptFeedback` on empty output, `encodeDefaults` on schema `"type"`
-  fields) since `GeminiHouseFactExtractor` was written to already account
-  for all three, but a fourth flavor of the same strictness is plausible.
+  tested (route tests + mocked-HTTP extractor tests for both passes)
+  without live network access or a real `GEMINI_API_KEY` in the build
+  sandbox. Route/store behavior is well covered; the actual Gemini calls
+  are not. The first real document upload in production is the real test -
+  if it fails, check the three gotchas below first (status-code-before-
+  decode, `finishReason`/`promptFeedback` on empty output, `encodeDefaults`
+  on schema `"type"` fields) since both `GeminiHouseFactCandidateExtractor`
+  and `GeminiHouseFactNormalizer` were written to already account for all
+  three, but a fourth flavor of the same strictness is plausible - and now
+  there are two Gemini calls in the path instead of one, so check which
+  pass actually failed (the error message's stage should make this
+  obvious) before assuming it's pass 1.
 - **Gemini's `Part` message is a strict oneof** (`text` XOR `inlineData`) -
   learned from the `encodeDefaults` gotcha above rather than hit fresh:
   since `geminiHttpClient`'s shared `Json` config has `encodeDefaults =
@@ -218,20 +231,33 @@ request/response schema.
   `"text": null` on the file part and `"inlineData": null` on the text
   part. Sidestepped by building each part as its own non-nullable
   `@Serializable` type and injecting it into the request as a raw
-  `JsonElement` (see `FactExtractionTextPart`/`FactExtractionInlineDataPart`
-  in `HouseFactExtractor.kt`) rather than turning off `encodeDefaults`
-  globally. `HouseFactExtractorTest`'s
+  `JsonElement` (see `CandidateTextPart`/`CandidateInlineDataPart` in
+  `HouseFactCandidateExtractor.kt`) rather than turning off
+  `encodeDefaults` globally. Only pass 1 needs this - pass 2
+  (`HouseFactNormalizer.kt`) only ever sends a single text part, so its
+  `FactNormalizationPart` doesn't have an `inlineData` field to spuriously
+  null out and can use the shared `encodeDefaults` config directly, same as
+  `ComponentSummaryPart`. `HouseFactCandidateExtractorTest`'s
   `testRequestBodyCarriesTheDocumentAsInlineDataWithNoStrayNullFields`
-  guards this.
+  guards pass 1's half of this.
 - **Inline upload only, capped at 15MB** (`MAX_INLINE_BYTES` in
-  `HouseFactExtractor.kt`) - Gemini's `generateContent` caps total request
-  size around 20MB and base64 inflates raw bytes ~33%, so this throws a
-  clear "too large" error rather than sending a request that fails deep
-  inside the HTTP call. A real inspection PDF with embedded photos can
+  `HouseFactCandidateExtractor.kt`) - Gemini's `generateContent` caps total
+  request size around 20MB and base64 inflates raw bytes ~33%, so this
+  throws a clear "too large" error rather than sending a request that fails
+  deep inside the HTTP call. A real inspection PDF with embedded photos can
   plausibly hit this; the fix is the Gemini File API's separate upload
   step, not implemented yet - revisit if this actually bites on a real
   document (this is exactly the kind of document the maintainer is
-  planning to upload first).
+  planning to upload first). Only applies to pass 1 - pass 2 never sees the
+  PDF, only pass 1's candidate list, which is orders of magnitude smaller.
+- **Two sequential Gemini calls means roughly double the wall-clock time**
+  per document compared to the original single-pass extractor - pass 2
+  can't start until pass 1's response is fully in hand. Each call still has
+  its own 300s CIO timeout (see below), so a pathological document could
+  now take up to ~10 minutes rather than ~5 before the job manager marks it
+  `FAILED`. Not addressed with a shorter per-call budget or a combined
+  timeout, since this hasn't been a real problem yet - worth revisiting if
+  extraction starts timing out in a way the single-pass version didn't.
 - **Extraction now runs on a background coroutine, not inline in the
   upload request** (`HouseFactExtractionJobManager` in
   `HouseFactExtractionJob.kt`) - originally synchronous, deliberately for

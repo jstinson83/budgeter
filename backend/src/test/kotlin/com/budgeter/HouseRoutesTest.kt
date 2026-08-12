@@ -29,7 +29,20 @@ private class FailOnceThenSucceedHouseFactExtractor : HouseFactExtractor {
     override suspend fun extract(filename: String, pdfBytes: ByteArray): List<ExtractedFact> {
         callCount++
         if (callCount == 1) error("Gemini API request failed (503): upstream unavailable")
-        return listOf(ExtractedFact("Roof replaced in 2019", FactType.EVENT, Component.ROOF, "roof replaced 2019", false, null))
+        return listOf(
+            ExtractedFact(
+                what = "Roof replaced in 2019",
+                type = FactType.EVENT,
+                component = Component.ROOF,
+                status = FactStatus.NEW,
+                importance = Importance.MEDIUM,
+                sourceQuote = "roof replaced 2019",
+                sourceLocation = null,
+                evidenceType = EvidenceType.DOCUMENTED,
+                needsReview = false,
+                reviewQuestion = null
+            )
+        )
     }
 }
 
