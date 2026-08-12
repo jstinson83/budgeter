@@ -247,14 +247,34 @@ cap) but shares the same schema/response-decoding shape.
   form, threaded through both passes as grounding, never as a substitute for
   what the document itself states) - since a structural drawing set alone
   frequently doesn't state its own architectural intent (why the work was
-  done), only what was built. Round 2 hasn't been re-tested against the real
-  document yet as of this change landing - if it's re-tried and still comes
-  back thin, don't assume another prompt tweak is the answer; consider
-  whether pass 2's "prefer a smaller set of meaningful facts" framing is
-  pruning real candidates rather than pass 1 failing to find them, since
-  pass 1's raw candidate count vs. pass 2's final fact count still isn't
-  logged anywhere - that instrumentation would answer the question directly
-  instead of guessing which pass is responsible.
+  done), only what was built. (3) Round 2 was re-tested: the design load
+  table finally came through (the document-wide-inputs fix worked), and a
+  homeowner-typed context of "2017 kitchen renovation, removed a load-bearing
+  wall" produced the first real plain-language scope fact any round had
+  managed - but the same run also *dropped* several facts that had appeared
+  in every single prior attempt (the LVL window header, the continuous
+  W10x45 beam, the new material grade specs), with no prompt change that
+  explains why. This is the important finding: extraction quality isn't
+  varying monotonically round to round, it's varying *run to run on the same
+  document* - the "easy," previously-reliable facts aren't actually
+  reliable. That rules out "just tune the prompt more" as a complete
+  strategy on its own, since a prompt fix that helps one run can't be
+  confirmed without seeing whether it costs something elsewhere on the next
+  run.
+- **Pass 1's raw candidate count and content are now logged**
+  (`TwoPassHouseFactExtractor.extract()` in `HouseFactExtractor.kt`, added
+  after the round 2 retest above made it clear guessing which pass was
+  responsible for a gap wasn't working) - every extraction logs pass 1's
+  candidate count plus each candidate's status/importance/text at INFO
+  level (visible in Cloud Logging with no config change), then a second
+  line with pass 2's final fact count against that same candidate count.
+  Candidates themselves are never persisted anywhere else - this log line
+  is the only record of what pass 1 actually produced before pass 2 got to
+  it. When recall looks thin on a future upload, check this log first:
+  if a missing fact's underlying candidate isn't in pass 1's list, the bug
+  is in pass 1's prompt/recall; if it *is* there but didn't survive to the
+  final fact list, the bug is in pass 2's reconciliation/filtering instead
+  of another pass-1 prompt tweak.
 - **Gemini's `Part` message is a strict oneof** (`text` XOR `inlineData`) -
   learned from the `encodeDefaults` gotcha above rather than hit fresh:
   since `geminiHttpClient`'s shared `Json` config has `encodeDefaults =
