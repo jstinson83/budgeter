@@ -35,11 +35,11 @@ class HouseFactExtractorTest {
         var lastPdfBytes: ByteArray? = null
         var lastDocumentContext: String? = null
 
-        override suspend fun extractCandidates(filename: String, pdfBytes: ByteArray, documentContext: String?): List<ExtractedCandidate> {
+        override suspend fun extractCandidates(filename: String, pdfBytes: ByteArray, documentContext: String?): CandidateBatch {
             lastFilename = filename
             lastPdfBytes = pdfBytes
             lastDocumentContext = documentContext
-            return candidates
+            return CandidateBatch(documentWalkthrough = "walkthrough", candidates = candidates)
         }
     }
 

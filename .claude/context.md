@@ -547,11 +547,18 @@ candidate facts via Gemini, resolve the ambiguous ones. New top-level
   `generateContent`, same direct-REST pattern as `GeminiTransactionCategorizer`
   (no Google AI SDK dependency) - capped at 15MB inline (`MAX_INLINE_BYTES`)
   with a clear error beyond that, larger documents needing the Gemini File
-  API's separate upload step (not implemented). It returns a broad list of
+  API's separate upload step (not implemented). It returns a
+  `CandidateBatch`: a `documentWalkthrough: String` plus a broad list of
   `ExtractedCandidate` (`candidate`/`context`/`sourceQuote`/`sourceLocation`/
   `status: CandidateStatus`/`importance`) - `CandidateStatus` is
   `FactStatus`'s superset, adding `Assumed` for a candidate that hasn't yet
-  been decided to be a first-class `Assumption`-typed fact.
+  been decided to be a first-class `Assumption`-typed fact. The walkthrough
+  is Gemini's own systematic, section-by-section description of the whole
+  document, written before candidates in the same schema-constrained
+  response (not a third Gemini call) - forces the model to actually
+  describe every page/drawing/table before it starts extracting, rather
+  than pattern-matching straight to the first satisfying answer. Not
+  persisted as a `HouseFact`; only logged (see below) for debugging recall.
   `HouseFactNormalizer.kt`'s `GeminiHouseFactNormalizer` (pass 2) is a
   second, text-only Gemini call (no PDF - pass 1 already read the document)
   that takes those candidates and reconciles/dedupes/classifies them into
