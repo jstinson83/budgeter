@@ -172,6 +172,18 @@ class GeminiHouseFactCandidateExtractor(
 
         If a document establishes that a condition predates, resulted from, or was addressed by a renovation or repair, preserve that temporal or causal relationship.
 
+        ## Orient yourself before extracting
+
+        Before pulling out individual facts, get oriented on what the document is actually about. This matters because a document describing more than one independent system or area of work is easy to under-extract from if you stop as soon as you've found one satisfying answer.
+
+        First, capture the document's overall scope as a candidate of its own: what is this document, and what does it actually do to the house? State it in plain language a homeowner would understand, not professional jargon or a restatement of the title block - for example, "This 2017 renovation added a new window opening and a new steel structural support system along the first floor," not "Structural drawings for a residential reamenagement project."
+
+        Next, identify the major moving pieces - the distinct systems, components, or areas of work the document actually addresses. For structural, engineering, or renovation drawings, a piece is typically one system: one beam-column-footing assembly, one new opening and its header, one wood-framed assembly, one mechanical system, and so on - a document is often doing more than one of these at once, in different locations, using different materials. For an inspection report, a piece is typically a major building system (roof, foundation, electrical, plumbing, HVAC, etc.). For an invoice or permit, a piece is typically one distinct scope of work. List every piece you find, including ones that only appear in a legend, schedule, or table rather than the main narrative, and ones that look similar to another piece - two independently-sized beams in two different locations are two pieces, not one. Do not stop after finding the first or most prominent piece; keep checking every legend, schedule, and table in the document against the pieces you've listed so far.
+
+        Then, for each piece, extract candidates covering what it is (plain language, with the technical specification attached as supporting detail), what constraints or assumptions were examined for it, what was actually decided or specified for it, and how it relates to other pieces (what it supports, what supports it, what it replaces, what it's part of).
+
+        This piece-by-piece pass is in addition to the general categories below, not a replacement for them - some candidates (a warranty, a general maintenance requirement, a fact about the existing house unrelated to any piece of this document's work) won't belong to any single piece and should still be captured.
+
         ## Renovation, construction, and engineering documents
 
         For renovation, engineering, architectural, and construction documents, distinguish between:
@@ -196,11 +208,7 @@ class GeminiHouseFactCandidateExtractor(
 
         However, preserve uncertainty when the document itself indicates that something was not completed or its status is unclear.
 
-        For technical drawings, do not limit extraction to individual specifications. Also capture the structural or construction system being described: what was added or modified, where it is located when determinable, what supports it, what it supports, and how major components relate to one another.
-
-        For engineering documents, preserve important assumptions and scope limitations.
-
-        Distinguish between:
+        For engineering documents, when extracting each piece's constraints (see "Orient yourself before extracting" above), distinguish between:
 
         - A value that was measured or verified
         - A value assumed for design purposes
