@@ -509,12 +509,18 @@ candidate facts via Gemini, resolve the ambiguous ones. New top-level
   is a deliberately narrow slice of the spec's full `Fact` model:
   what/type/sourceQuote/needsReview/reviewQuestion/homeownerContext only -
   no status/time/location/confidence/related-components-events-facts-tasks/
-  photos yet. `FactType` mirrors the spec's 9-value taxonomy
+  photos yet. `FactType` started as the spec's 9-value taxonomy
   (Observation/Condition/Diagnosis/Decision/Event/Specification/
-  MaintenanceRequirement/Warranty/Unknown) exactly. Deferred fields are
-  deferred because there's no real usage to design them against yet, not
-  because they were rejected - see `product_spec.md`'s House Knowledge
-  section for the target shape this should grow toward.
+  MaintenanceRequirement/Warranty/Unknown) and has since grown two more -
+  `Assumption` (a value/condition assumed for design/calculation/planning,
+  as opposed to measured or verified) and `ScopeLimitation` (something the
+  document explicitly says was outside the inspection/investigation/
+  professional mandate, as opposed to `Unknown`'s "tried to determine and
+  couldn't") - added when the extraction prompt was strengthened to handle
+  engineering/structural documents, which routinely state both. Deferred
+  fields are deferred because there's no real usage to design them against
+  yet, not because they were rejected - see `product_spec.md`'s House
+  Knowledge section for the target shape this should grow toward.
 - **`GeminiHouseFactExtractor`** (`HouseFactExtractor.kt`) sends the whole
   PDF inline (base64, `application/pdf` `inlineData` part) plus a text
   prompt to `gemini-3.5-flash`'s `generateContent`, same direct-REST
