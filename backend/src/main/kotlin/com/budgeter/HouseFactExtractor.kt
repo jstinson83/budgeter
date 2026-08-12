@@ -21,7 +21,11 @@ data class ExtractedFact(
 )
 
 interface HouseFactExtractor {
-    suspend fun extract(filename: String, pdfBytes: ByteArray): List<ExtractedFact>
+    // documentContext is the homeowner's optional free-text background from
+    // upload time (HouseDocument.context) - grounding for the extraction,
+    // not document content itself. See HouseFactCandidateExtractor.kt's and
+    // HouseFactNormalizer.kt's prompts for how it's used.
+    suspend fun extract(filename: String, pdfBytes: ByteArray, documentContext: String?): List<ExtractedFact>
 }
 
 // Runs the two-pass extraction pipeline: pass 1
@@ -38,8 +42,8 @@ class TwoPassHouseFactExtractor(
     private val candidateExtractor: HouseFactCandidateExtractor,
     private val normalizer: HouseFactNormalizer
 ) : HouseFactExtractor {
-    override suspend fun extract(filename: String, pdfBytes: ByteArray): List<ExtractedFact> {
-        val candidates = candidateExtractor.extractCandidates(filename, pdfBytes)
-        return normalizer.normalize(candidates)
+    override suspend fun extract(filename: String, pdfBytes: ByteArray, documentContext: String?): List<ExtractedFact> {
+        val candidates = candidateExtractor.extractCandidates(filename, pdfBytes, documentContext)
+        return normalizer.normalize(candidates, documentContext)
     }
 }

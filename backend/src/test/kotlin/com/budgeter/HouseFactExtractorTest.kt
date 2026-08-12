@@ -33,19 +33,23 @@ class HouseFactExtractorTest {
     private class FakeCandidateExtractor(private val candidates: List<ExtractedCandidate>) : HouseFactCandidateExtractor {
         var lastFilename: String? = null
         var lastPdfBytes: ByteArray? = null
+        var lastDocumentContext: String? = null
 
-        override suspend fun extractCandidates(filename: String, pdfBytes: ByteArray): List<ExtractedCandidate> {
+        override suspend fun extractCandidates(filename: String, pdfBytes: ByteArray, documentContext: String?): List<ExtractedCandidate> {
             lastFilename = filename
             lastPdfBytes = pdfBytes
+            lastDocumentContext = documentContext
             return candidates
         }
     }
 
     private class FakeNormalizer(private val facts: List<ExtractedFact>) : HouseFactNormalizer {
         var lastCandidates: List<ExtractedCandidate>? = null
+        var lastDocumentContext: String? = null
 
-        override suspend fun normalize(candidates: List<ExtractedCandidate>): List<ExtractedFact> {
+        override suspend fun normalize(candidates: List<ExtractedCandidate>, documentContext: String?): List<ExtractedFact> {
             lastCandidates = candidates
+            lastDocumentContext = documentContext
             return facts
         }
     }
@@ -56,11 +60,13 @@ class HouseFactExtractorTest {
         val normalizer = FakeNormalizer(listOf(fact))
         val pdfBytes = "%PDF-1.4 fake".toByteArray()
 
-        val result = TwoPassHouseFactExtractor(candidateExtractor, normalizer).extract("inspection.pdf", pdfBytes)
+        val result = TwoPassHouseFactExtractor(candidateExtractor, normalizer).extract("inspection.pdf", pdfBytes, "kitchen renovation")
 
         assertEquals("inspection.pdf", candidateExtractor.lastFilename)
         assertSame(pdfBytes, candidateExtractor.lastPdfBytes)
+        assertEquals("kitchen renovation", candidateExtractor.lastDocumentContext)
         assertEquals(listOf(candidate), normalizer.lastCandidates)
+        assertEquals("kitchen renovation", normalizer.lastDocumentContext)
         assertEquals(listOf(fact), result)
     }
 
@@ -69,7 +75,7 @@ class HouseFactExtractorTest {
         val candidateExtractor = FakeCandidateExtractor(emptyList())
         val normalizer = FakeNormalizer(emptyList())
 
-        val result = TwoPassHouseFactExtractor(candidateExtractor, normalizer).extract("inspection.pdf", "%PDF-1.4".toByteArray())
+        val result = TwoPassHouseFactExtractor(candidateExtractor, normalizer).extract("inspection.pdf", "%PDF-1.4".toByteArray(), null)
 
         assertEquals(emptyList(), normalizer.lastCandidates)
         assertEquals(emptyList(), result)

@@ -505,6 +505,18 @@ candidate facts via Gemini, resolve the ambiguous ones. New top-level
   document id (avoids a two-phase create-then-patch just to learn an id).
   Bucket name comes from `HOUSE_DOCUMENTS_BUCKET` (see `CLAUDE.md`'s deploy
   pipeline section - not yet created in GCP as of this feature landing).
+  Also carries an optional `context: String?` - free-text background the
+  homeowner can type into `house.ftl`'s upload form (e.g. "this is the 2017
+  kitchen renovation, we removed the wall between the kitchen and dining
+  room"). Added once real-document testing showed that documents like
+  structural engineering drawings often don't state their own architectural
+  intent - the drawings show *what* was built, not *why*. Threaded through
+  as `documentContext` to both extraction passes (see below) as grounding,
+  not document content - each pass's prompt is explicit that it must not
+  override or be treated as equivalent to what the document itself states.
+  `HouseRoutes.kt`'s upload handler reads it from a `PartData.FormItem`
+  named `context` alongside the file part; retry re-passes the persisted
+  `document.context` rather than requiring it to be re-typed.
 - **`HouseFact`** (`HouseFactStore.kt`, Firestore collection `houseFacts`)
   is a deliberately narrow slice of the spec's full `Fact` model:
   what/type/component/status/importance/sourceQuote/sourceLocation/

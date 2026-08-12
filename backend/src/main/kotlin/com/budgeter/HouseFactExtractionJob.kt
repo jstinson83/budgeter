@@ -47,11 +47,11 @@ class HouseFactExtractionJobManager(
     // is called (set synchronously in the upload handler, before this job
     // is started) - this only owns the actual Gemini call and the
     // EXTRACTED/FAILED transition once it's done.
-    fun start(ownerId: String, documentId: String, filename: String, pdfBytes: ByteArray) {
+    fun start(ownerId: String, documentId: String, filename: String, pdfBytes: ByteArray, documentContext: String?) {
         jobs[documentId] = ExtractionJobState(ExtractionJobStatus.RUNNING)
         scope.launch {
             jobs[documentId] = try {
-                val extracted = houseFactExtractor.extract(filename, pdfBytes)
+                val extracted = houseFactExtractor.extract(filename, pdfBytes, documentContext)
                 houseFactStore.addAll(ownerId, documentId, extracted)
                 houseDocumentStore.updateStatus(ownerId, documentId, HouseDocumentStatus.EXTRACTED)
                 ExtractionJobState(ExtractionJobStatus.DONE, factCount = extracted.size)

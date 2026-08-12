@@ -11,7 +11,11 @@ import kotlinx.serialization.json.Json
 private val lenientNormalizerJson = Json { ignoreUnknownKeys = true }
 
 interface HouseFactNormalizer {
-    suspend fun normalize(candidates: List<ExtractedCandidate>): List<ExtractedFact>
+    // documentContext is the same homeowner-provided background pass 1
+    // received (HouseDocument.context) - see
+    // HouseFactCandidateExtractor.kt's HouseFactCandidateExtractor for what
+    // it is and why it exists.
+    suspend fun normalize(candidates: List<ExtractedCandidate>, documentContext: String?): List<ExtractedFact>
 }
 
 // DTOs below are prefixed FactNormalization* for the same package-scoped
@@ -31,7 +35,7 @@ class GeminiHouseFactNormalizer(
     private val model: String = "gemini-3.5-flash"
 ) : HouseFactNormalizer {
 
-    override suspend fun normalize(candidates: List<ExtractedCandidate>): List<ExtractedFact> {
+    override suspend fun normalize(candidates: List<ExtractedCandidate>, documentContext: String?): List<ExtractedFact> {
         check(apiKey.isNotBlank()) { "GEMINI_API_KEY is not set" }
         // No candidates in means no facts out - matches
         // GeminiComponentSummarizer's "nothing to do" guard, and avoids a
@@ -39,7 +43,7 @@ class GeminiHouseFactNormalizer(
         if (candidates.isEmpty()) return emptyList()
 
         val requestBody = FactNormalizationRequest(
-            contents = listOf(FactNormalizationContent(listOf(FactNormalizationPart(buildPrompt(candidates))))),
+            contents = listOf(FactNormalizationContent(listOf(FactNormalizationPart(buildPrompt(candidates, documentContext))))),
             generationConfig = FactNormalizationGenerationConfig(
                 thinkingConfig = FactNormalizationThinkingConfig(thinkingBudget = 0),
                 responseSchema = FactNormalizationSchema(
@@ -115,7 +119,7 @@ class GeminiHouseFactNormalizer(
         }
     }
 
-    private fun buildPrompt(candidates: List<ExtractedCandidate>): String {
+    private fun buildPrompt(candidates: List<ExtractedCandidate>, documentContext: String?): String {
         val candidateLines = candidates.mapIndexed { index, item ->
             buildString {
                 append("${index + 1}. ${item.candidate}")
@@ -130,7 +134,7 @@ class GeminiHouseFactNormalizer(
             You are building the persistent knowledge model of a house.
 
             You are given candidate knowledge extracted from one or more home-related documents.
-
+${homeownerContextBlock(documentContext)}
             Candidates:
             $candidateLines
 
@@ -410,6 +414,22 @@ class GeminiHouseFactNormalizer(
             Do not add facts that are not supported by the supplied candidates or their sources.
         """.trimIndent()
     }
+}
+
+// Shared by both passes' prompts (see HouseFactCandidateExtractor.kt's
+// identical private copy - not deduplicated into a shared internal function
+// to avoid the cross-file coupling that isn't worth it for one paragraph of
+// text). Renders nothing when there's no homeowner-provided background, so
+// the prompt reads the same as before this field existed for the common
+// case of no context supplied.
+private fun homeownerContextBlock(documentContext: String?): String {
+    if (documentContext.isNullOrBlank()) return ""
+    return """
+
+            The homeowner has provided this background about the document(s) these candidates came from: "${documentContext.trim()}"
+
+            Use it to help you reconcile and interpret the candidates. Do not treat it as a substitute for what the candidates themselves establish, and do not let it override or contradict them - if the two disagree, trust the candidates and note the discrepancy. If the homeowner's background states something durable on its own that the candidates don't otherwise establish, include a fact for it, with evidenceType REPORTED.
+            """.trimIndent().prependIndent("            ")
 }
 
 @Serializable

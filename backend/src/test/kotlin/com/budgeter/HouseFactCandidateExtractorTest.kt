@@ -29,7 +29,7 @@ class HouseFactCandidateExtractorTest {
             """{"candidates":[{"content":{"parts":[{"text":"[{\"candidate\":\"House contains steel columns\",\"context\":\"observed in the crawlspace\",\"sourceQuote\":\"steel columns observed\",\"sourceLocation\":\"page 4\",\"status\":\"EXISTING\",\"importance\":\"MEDIUM\"}]"}]},"finishReason":"STOP"}]}"""
         )
 
-        val candidates = GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes)
+        val candidates = GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes, null)
 
         assertEquals(1, candidates.size)
         assertEquals("House contains steel columns", candidates[0].candidate)
@@ -46,7 +46,7 @@ class HouseFactCandidateExtractorTest {
             """{"candidates":[{"content":{"parts":[{"text":"[{\"candidate\":\"Cause not determined\",\"context\":\"\",\"sourceQuote\":\"\",\"sourceLocation\":\"\",\"status\":\"UNKNOWN\",\"importance\":\"LOW\"}]"}]},"finishReason":"STOP"}]}"""
         )
 
-        val candidates = GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes)
+        val candidates = GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes, null)
 
         assertNull(candidates[0].context)
         assertNull(candidates[0].sourceQuote)
@@ -59,7 +59,7 @@ class HouseFactCandidateExtractorTest {
             """{"candidates":[{"content":{"parts":[{"text":"[{\"candidate\":\"Something odd\",\"context\":\"\",\"sourceQuote\":\"\",\"sourceLocation\":\"\",\"status\":\"NOT_A_REAL_STATUS\",\"importance\":\"LOW\"}]"}]},"finishReason":"STOP"}]}"""
         )
 
-        val candidates = GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes)
+        val candidates = GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes, null)
 
         assertEquals(1, candidates.size)
         assertEquals(CandidateStatus.UNKNOWN, candidates[0].status)
@@ -71,7 +71,7 @@ class HouseFactCandidateExtractorTest {
             """{"candidates":[{"content":{"parts":[{"text":"[{\"candidate\":\"Something odd\",\"context\":\"\",\"sourceQuote\":\"\",\"sourceLocation\":\"\",\"status\":\"UNKNOWN\",\"importance\":\"NOT_A_REAL_IMPORTANCE\"}]"}]},"finishReason":"STOP"}]}"""
         )
 
-        val candidates = GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes)
+        val candidates = GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes, null)
 
         assertEquals(1, candidates.size)
         assertEquals(Importance.MEDIUM, candidates[0].importance)
@@ -82,7 +82,7 @@ class HouseFactCandidateExtractorTest {
         val client = mockClientRespondingWith("""{"candidates":[{"finishReason":"MAX_TOKENS"}]}""")
 
         val exception = assertFailsWith<IllegalStateException> {
-            GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes)
+            GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes, null)
         }
         assertTrue(exception.message!!.contains("MAX_TOKENS"))
     }
@@ -95,7 +95,7 @@ class HouseFactCandidateExtractorTest {
         )
 
         val exception = assertFailsWith<IllegalStateException> {
-            GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes)
+            GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes, null)
         }
         assertTrue(exception.message!!.contains("400"))
         assertTrue(exception.message!!.contains("API key not valid"))
@@ -108,7 +108,7 @@ class HouseFactCandidateExtractorTest {
         }
 
         val exception = assertFailsWith<IllegalStateException> {
-            GeminiHouseFactCandidateExtractor(client, "").extractCandidates("inspection.pdf", pdfBytes)
+            GeminiHouseFactCandidateExtractor(client, "").extractCandidates("inspection.pdf", pdfBytes, null)
         }
         assertTrue(exception.message!!.contains("GEMINI_API_KEY"))
     }
@@ -121,7 +121,7 @@ class HouseFactCandidateExtractorTest {
         val oversized = ByteArray(15_000_001)
 
         val exception = assertFailsWith<IllegalStateException> {
-            GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", oversized)
+            GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", oversized, null)
         }
         assertTrue(exception.message!!.contains("too large"))
     }
@@ -146,7 +146,7 @@ class HouseFactCandidateExtractorTest {
             }
         }
 
-        GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes)
+        GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes, null)
 
         val body = assertNotNull(capturedRequestBody)
         assertTrue(body.contains(""""mimeType":"application/pdf""""), "expected an inlineData part with the PDF mime type: $body")
@@ -155,5 +155,52 @@ class HouseFactCandidateExtractorTest {
         assertFalse(body.contains(""""inlineData":null""""), "the text part must not also emit a null inlineData field: $body")
         assertTrue(body.contains(""""status":{"type":"STRING""""), "expected a status schema property: $body")
         assertTrue(body.contains(""""ASSUMED""""), "expected the status enum values to include ASSUMED: $body")
+    }
+
+    @Test
+    fun testDocumentContextIsWovenIntoThePromptWhenProvided() = runBlocking {
+        var capturedRequestBody: String? = null
+        val client = HttpClient(MockEngine) {
+            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true; encodeDefaults = true }) }
+            engine {
+                addHandler { request ->
+                    capturedRequestBody = (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
+                    respond(
+                        """{"candidates":[{"content":{"parts":[{"text":"[]"}]},"finishReason":"STOP"}]}""",
+                        HttpStatusCode.OK,
+                        headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+                    )
+                }
+            }
+        }
+
+        GeminiHouseFactCandidateExtractor(client, "fake-key")
+            .extractCandidates("inspection.pdf", pdfBytes, "This is the 2017 kitchen renovation")
+
+        val body = assertNotNull(capturedRequestBody)
+        assertTrue(body.contains("This is the 2017 kitchen renovation"), "expected the homeowner context in the prompt text: $body")
+    }
+
+    @Test
+    fun testAbsentDocumentContextAddsNoExtraPromptText() = runBlocking {
+        var capturedRequestBody: String? = null
+        val client = HttpClient(MockEngine) {
+            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true; encodeDefaults = true }) }
+            engine {
+                addHandler { request ->
+                    capturedRequestBody = (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
+                    respond(
+                        """{"candidates":[{"content":{"parts":[{"text":"[]"}]},"finishReason":"STOP"}]}""",
+                        HttpStatusCode.OK,
+                        headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+                    )
+                }
+            }
+        }
+
+        GeminiHouseFactCandidateExtractor(client, "fake-key").extractCandidates("inspection.pdf", pdfBytes, null)
+
+        val body = assertNotNull(capturedRequestBody)
+        assertFalse(body.contains("The homeowner has provided"), "expected no homeowner-context block when none was supplied: $body")
     }
 }

@@ -18,12 +18,20 @@ data class HouseDocument(
     // DocumentBlobStore path, not a public URL - see GcsDocumentBlobStore.
     val storagePath: String,
     val status: HouseDocumentStatus,
+    // Free-text background the homeowner optionally provides at upload time
+    // (e.g. "this is the 2017 kitchen renovation, we removed the wall
+    // between the kitchen and dining room") - fed into both extraction
+    // passes as grounding context, not treated as document content itself.
+    // See HouseFactCandidateExtractor.kt/HouseFactNormalizer.kt for how
+    // it's used, and CLAUDE.md for why it was added: a structural drawing
+    // set alone often doesn't state its own architectural intent.
+    val context: String? = null,
     val error: String? = null,
     val uploadedAt: Instant
 )
 
 interface HouseDocumentRepository {
-    suspend fun add(ownerId: String, filename: String, storagePath: String): HouseDocument
+    suspend fun add(ownerId: String, filename: String, storagePath: String, context: String? = null): HouseDocument
     suspend fun all(ownerId: String): List<HouseDocument>
     suspend fun get(ownerId: String, id: String): HouseDocument?
     suspend fun updateStatus(ownerId: String, id: String, status: HouseDocumentStatus, error: String? = null)
@@ -33,7 +41,7 @@ interface HouseDocumentRepository {
 class FirestoreHouseDocumentStore(private val firestore: Firestore) : HouseDocumentRepository {
     private val collection = firestore.collection("houseDocuments")
 
-    override suspend fun add(ownerId: String, filename: String, storagePath: String): HouseDocument {
+    override suspend fun add(ownerId: String, filename: String, storagePath: String, context: String?): HouseDocument {
         val docRef = collection.document()
         val uploadedAt = Instant.now()
         docRef.set(
@@ -42,10 +50,11 @@ class FirestoreHouseDocumentStore(private val firestore: Firestore) : HouseDocum
                 "filename" to filename,
                 "storagePath" to storagePath,
                 "status" to HouseDocumentStatus.UPLOADED.name,
+                "context" to context,
                 "uploadedAt" to uploadedAt.toString()
             )
         ).get()
-        return HouseDocument(docRef.id, ownerId, filename, storagePath, HouseDocumentStatus.UPLOADED, uploadedAt = uploadedAt)
+        return HouseDocument(docRef.id, ownerId, filename, storagePath, HouseDocumentStatus.UPLOADED, context = context, uploadedAt = uploadedAt)
     }
 
     // Single-field ownerId equality filter, no orderBy - same
@@ -83,6 +92,7 @@ class FirestoreHouseDocumentStore(private val firestore: Firestore) : HouseDocum
         filename = data["filename"] as? String ?: "",
         storagePath = data["storagePath"] as? String ?: "",
         status = (data["status"] as? String)?.let { runCatching { HouseDocumentStatus.valueOf(it) }.getOrNull() } ?: HouseDocumentStatus.UPLOADED,
+        context = data["context"] as? String,
         error = data["error"] as? String,
         uploadedAt = (data["uploadedAt"] as? String)?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: Instant.EPOCH
     )

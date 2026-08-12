@@ -211,19 +211,50 @@ Gemini calls is doing PDF/JSON work at the time - pass 1 owns the PDF
 `inlineData` part and its size cap, pass 2 is text-only (no PDF, no size
 cap) but shares the same schema/response-decoding shape.
 
-- **Not yet exercised against the real Gemini API.** This was built and
-  tested (route tests + mocked-HTTP extractor tests for both passes)
-  without live network access or a real `GEMINI_API_KEY` in the build
-  sandbox. Route/store behavior is well covered; the actual Gemini calls
-  are not. The first real document upload in production is the real test -
-  if it fails, check the three gotchas below first (status-code-before-
-  decode, `finishReason`/`promptFeedback` on empty output, `encodeDefaults`
-  on schema `"type"` fields) since both `GeminiHouseFactCandidateExtractor`
-  and `GeminiHouseFactNormalizer` were written to already account for all
-  three, but a fourth flavor of the same strictness is plausible - and now
-  there are two Gemini calls in the path instead of one, so check which
-  pass actually failed (the error message's stage should make this
-  obvious) before assuming it's pass 1.
+- **Now exercised against the real Gemini API - request/response plumbing
+  works, extraction completeness is the live concern.** The three gotchas
+  below (status-code-before-decode, `finishReason`/`promptFeedback` on
+  empty output, `encodeDefaults` on schema `"type"` fields) never actually
+  bit in production - both passes ran cleanly against a real 11-page
+  structural engineering drawing set (2017 renovation) the first time a
+  real document was uploaded. What the mocked-HTTP tests couldn't have
+  caught, because it's not a wire-format bug: the first real run came back
+  with only 6 facts, missing an entire second new structural system (a
+  wood beam on wood posts, parallel to the steel system that *was*
+  captured), a design load table, new-material specs, and several specific
+  "existing element, out of mandate" callouts. Root cause was pass 1's
+  prompt having nothing forcing systematic document coverage - see the next
+  gotcha for what's been tried so far. If a future upload comes back
+  suspiciously thin, this - not a wire-format failure - is the first thing
+  to suspect; check the actual PDF against what came out before assuming
+  the pipeline itself is broken.
+- **Recall/completeness is tuned empirically against real documents, not
+  fully solved.** Two rounds against the same real structural drawing set
+  so far: (1) added an "orient yourself before extracting" step to pass 1 -
+  state the document's scope in plain language, enumerate every major
+  piece/system the document addresses (checking every legend/schedule/
+  table, not just the narrative), then extract each piece's constraints and
+  decisions - which caught a previously-missed wood support post but not
+  the wood beam it actually carries, plus new material/concrete specs, but
+  *still* missed the design load table. (2) strengthened pass 1 further:
+  a piece named only via a legend/schedule entry (e.g. a column labeled
+  "C-4") must also state what member it actually supports, not just restate
+  the legend entry; and document-wide inputs that don't belong to any single
+  piece (load tables, code editions, blanket material assumptions) are now
+  called out as their own explicit category to check for, alongside
+  "orient yourself"'s piece enumeration. Also added `HouseDocument.context`
+  - an optional homeowner-typed background field at upload time (`house.ftl`
+  form, threaded through both passes as grounding, never as a substitute for
+  what the document itself states) - since a structural drawing set alone
+  frequently doesn't state its own architectural intent (why the work was
+  done), only what was built. Round 2 hasn't been re-tested against the real
+  document yet as of this change landing - if it's re-tried and still comes
+  back thin, don't assume another prompt tweak is the answer; consider
+  whether pass 2's "prefer a smaller set of meaningful facts" framing is
+  pruning real candidates rather than pass 1 failing to find them, since
+  pass 1's raw candidate count vs. pass 2's final fact count still isn't
+  logged anywhere - that instrumentation would answer the question directly
+  instead of guessing which pass is responsible.
 - **Gemini's `Part` message is a strict oneof** (`text` XOR `inlineData`) -
   learned from the `encodeDefaults` gotcha above rather than hit fresh:
   since `geminiHttpClient`'s shared `Json` config has `encodeDefaults =

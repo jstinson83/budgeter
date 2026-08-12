@@ -33,7 +33,11 @@ data class ExtractedCandidate(
 )
 
 interface HouseFactCandidateExtractor {
-    suspend fun extractCandidates(filename: String, pdfBytes: ByteArray): List<ExtractedCandidate>
+    // documentContext is the homeowner's optional free-text background from
+    // upload time (HouseDocument.context), e.g. "this is the 2017 kitchen
+    // renovation, we removed the wall between the kitchen and dining room" -
+    // grounding for interpreting the document, not document content itself.
+    suspend fun extractCandidates(filename: String, pdfBytes: ByteArray, documentContext: String?): List<ExtractedCandidate>
 }
 
 // DTOs below are prefixed CandidateExtraction* rather than reusing
@@ -56,7 +60,7 @@ class GeminiHouseFactCandidateExtractor(
     private val model: String = "gemini-3.5-flash"
 ) : HouseFactCandidateExtractor {
 
-    override suspend fun extractCandidates(filename: String, pdfBytes: ByteArray): List<ExtractedCandidate> {
+    override suspend fun extractCandidates(filename: String, pdfBytes: ByteArray, documentContext: String?): List<ExtractedCandidate> {
         check(apiKey.isNotBlank()) { "GEMINI_API_KEY is not set" }
         // Same inline-upload size cap and reasoning as the original
         // single-pass extractor - see CLAUDE.md's House Knowledge gotchas.
@@ -72,7 +76,7 @@ class GeminiHouseFactCandidateExtractor(
             lenientCandidateJson.encodeToJsonElement(
                 CandidateInlineDataPart(CandidateInlineData("application/pdf", Base64.getEncoder().encodeToString(pdfBytes)))
             ),
-            lenientCandidateJson.encodeToJsonElement(CandidateTextPart(buildPrompt(filename)))
+            lenientCandidateJson.encodeToJsonElement(CandidateTextPart(buildPrompt(filename, documentContext)))
         )
 
         val requestBody = CandidateExtractionRequest(
@@ -139,9 +143,9 @@ class GeminiHouseFactCandidateExtractor(
         }
     }
 
-    private fun buildPrompt(filename: String): String = """
+    private fun buildPrompt(filename: String, documentContext: String?): String = """
         You are reading a home-related document ($filename) for a household knowledge system.
-
+${homeownerContextBlock(documentContext)}
         Extract the durable knowledge this document contributes to the household's understanding of the house.
 
         The goal is NOT to summarize the document. Identify discrete pieces of information that could become useful, durable knowledge about the house and its history.
@@ -180,9 +184,12 @@ class GeminiHouseFactCandidateExtractor(
 
         Next, identify the major moving pieces - the distinct systems, components, or areas of work the document actually addresses. For structural, engineering, or renovation drawings, a piece is typically one system: one beam-column-footing assembly, one new opening and its header, one wood-framed assembly, one mechanical system, and so on - a document is often doing more than one of these at once, in different locations, using different materials. For an inspection report, a piece is typically a major building system (roof, foundation, electrical, plumbing, HVAC, etc.). For an invoice or permit, a piece is typically one distinct scope of work. List every piece you find, including ones that only appear in a legend, schedule, or table rather than the main narrative, and ones that look similar to another piece - two independently-sized beams in two different locations are two pieces, not one. Do not stop after finding the first or most prominent piece; keep checking every legend, schedule, and table in the document against the pieces you've listed so far.
 
-        Then, for each piece, extract candidates covering what it is (plain language, with the technical specification attached as supporting detail), what constraints or assumptions were examined for it, what was actually decided or specified for it, and how it relates to other pieces (what it supports, what supports it, what it replaces, what it's part of).
+        Then, for each piece, extract candidates covering what it is (plain language, with the technical specification attached as supporting detail), what constraints or assumptions were examined for it, what was actually decided or specified for it, and how it relates to other pieces (what it supports, what supports it, what it replaces, what it's part of). When a piece is only named as an entry in a legend or schedule (e.g. a column or post labeled "C-4"), do not stop at restating that entry - find and state what member it actually carries (the beam, header, or slab it supports) and what it bears on, even if that member is documented elsewhere in the same set of drawings. A connector piece without the member it connects to is an incomplete candidate.
 
-        This piece-by-piece pass is in addition to the general categories below, not a replacement for them - some candidates (a warranty, a general maintenance requirement, a fact about the existing house unrelated to any piece of this document's work) won't belong to any single piece and should still be captured.
+        This piece-by-piece pass is in addition to, not a replacement for, two other kinds of candidates:
+
+        - Document-wide inputs that apply to the whole document rather than to one piece - design load tables (dead, live, snow, wind), code editions in effect, soil or material assumptions used throughout, and similar globally-applicable data. These are easy to miss because they don't belong to any single piece; check for them explicitly, the same way you check each piece.
+        - Anything else that doesn't belong to a piece at all - a warranty, a general maintenance requirement, a fact about the existing house unrelated to any piece of this document's work.
 
         ## Renovation, construction, and engineering documents
 
@@ -301,6 +308,22 @@ class GeminiHouseFactCandidateExtractor(
     private companion object {
         const val MAX_INLINE_BYTES = 15_000_000
     }
+}
+
+// Shared by both passes' prompts (see HouseFactNormalizer.kt's identical
+// private copy - not deduplicated into a shared internal function to avoid
+// the cross-file coupling that isn't worth it for one paragraph of text).
+// Renders nothing when there's no homeowner-provided background, so the
+// prompt reads the same as before this field existed for the common case of
+// no context supplied.
+private fun homeownerContextBlock(documentContext: String?): String {
+    if (documentContext.isNullOrBlank()) return ""
+    return """
+
+        The homeowner has provided this background about the document: "${documentContext.trim()}"
+
+        Use it to help you understand what the document covers and to resolve ambiguity about intent. Do not treat it as a substitute for what the document itself states, and do not let it override or contradict the document's own content - if the two disagree, trust the document and note the discrepancy. If the homeowner's background states something durable on its own (what was done, why, or when) that the document doesn't otherwise establish, capture that as its own candidate too.
+        """.trimIndent().prependIndent("        ")
 }
 
 @Serializable

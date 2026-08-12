@@ -26,6 +26,7 @@
 
     <form method="post" action="/house/documents/upload" enctype="multipart/form-data" class="upload-form">
       <input type="file" name="file" accept=".pdf" required>
+      <textarea name="context" placeholder="Optional: add context to help extraction, e.g. &quot;this is the 2017 kitchen renovation, we removed the wall between the kitchen and dining room&quot;" rows="2"></textarea>
       <button type="submit" class="button">Upload document</button>
     </form>
 
