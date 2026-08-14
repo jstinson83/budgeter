@@ -26,6 +26,15 @@ data class HouseDocument(
     // it's used, and CLAUDE.md for why it was added: a structural drawing
     // set alone often doesn't state its own architectural intent.
     val context: String? = null,
+    // Freeform pass-1/pass-2 diagnostic text from the most recent successful
+    // extraction (HouseFactExtractor.ExtractionResult.debugNotes) - lets
+    // house-document.ftl show what pass 1 actually saw/extracted without
+    // needing Cloud Logging access. See CLAUDE.md's House Knowledge gotchas
+    // for the debugging story this exists to shortcut. Only set on success;
+    // a failed extraction leaves whatever debugNotes a prior successful
+    // attempt left behind (if any), which is still useful context even
+    // though it's now stale.
+    val debugNotes: String? = null,
     val error: String? = null,
     val uploadedAt: Instant
 )
@@ -35,6 +44,7 @@ interface HouseDocumentRepository {
     suspend fun all(ownerId: String): List<HouseDocument>
     suspend fun get(ownerId: String, id: String): HouseDocument?
     suspend fun updateStatus(ownerId: String, id: String, status: HouseDocumentStatus, error: String? = null)
+    suspend fun updateDebugNotes(ownerId: String, id: String, debugNotes: String?)
     suspend fun delete(ownerId: String, id: String)
 }
 
@@ -81,6 +91,11 @@ class FirestoreHouseDocumentStore(private val firestore: Firestore) : HouseDocum
         collection.document(id).update(mapOf("status" to status.name, "error" to error)).get()
     }
 
+    override suspend fun updateDebugNotes(ownerId: String, id: String, debugNotes: String?) {
+        get(ownerId, id) ?: return
+        collection.document(id).update(mapOf("debugNotes" to debugNotes)).get()
+    }
+
     override suspend fun delete(ownerId: String, id: String) {
         get(ownerId, id) ?: return
         collection.document(id).delete().get()
@@ -93,6 +108,7 @@ class FirestoreHouseDocumentStore(private val firestore: Firestore) : HouseDocum
         storagePath = data["storagePath"] as? String ?: "",
         status = (data["status"] as? String)?.let { runCatching { HouseDocumentStatus.valueOf(it) }.getOrNull() } ?: HouseDocumentStatus.UPLOADED,
         context = data["context"] as? String,
+        debugNotes = data["debugNotes"] as? String,
         error = data["error"] as? String,
         uploadedAt = (data["uploadedAt"] as? String)?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: Instant.EPOCH
     )

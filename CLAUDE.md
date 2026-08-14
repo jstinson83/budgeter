@@ -312,6 +312,41 @@ cap) but shares the same schema/response-decoding shape.
   against a real document** - the next real upload/retry is what tells us
   whether this actually moves the wood-system gap, or whether it needs the
   `thinkingBudget` change too.
+- **Round 5: retested against the real document, wood system still
+  missing.** Two fresh runs (with and without homeowner context) after the
+  walkthrough change above - both came back clean and complete on
+  everything else (LVL header, both steel beams, all HSS columns/footings,
+  the design load table, both assumptions all present in both runs), but
+  the wood-beam-on-wood-posts system was absent from both final fact lists
+  again. That's six consecutive real-document attempts now. The next
+  diagnostic step is checking whether the *walkthrough itself* mentions the
+  wood system on a future run - if it doesn't, this has stopped being an
+  extraction-logic problem and become a vision/perception one (the model
+  isn't reading that part of the drawing at all, which no amount of
+  candidate-extraction prompting can fix); if the walkthrough does mention
+  it but no candidate follows, it's still a fixable extraction-logic gap.
+  Getting to that answer used to require pulling Cloud Logging output by
+  hand - see the next gotcha for why that friction is gone now. Separately,
+  footing E1's dimensions have been read three different ways across three
+  different attempts (6'×6'×12", 8"×8"×12", 18"×18"×12") - a real
+  OCR/reading-fidelity issue on a small table value, distinct from the
+  recall question above and not yet investigated.
+- **Extraction debug notes are now visible on the document page itself**,
+  not just Cloud Logging (`HouseDocument.debugNotes`, populated from
+  `HouseFactExtractor.ExtractionResult.debugNotes` by
+  `HouseFactExtractionJobManager` right after a successful extraction,
+  rendered in a collapsible "Extraction debug info" section on
+  `house-document.ftl`). Added because the round 4/5 diagnostic loop (ask
+  the maintainer to open Cloud Logging, filter, and paste lines back) was
+  real friction for what's otherwise a self-serve retry loop. Contains the
+  same text as the three INFO log lines
+  (`TwoPassHouseFactExtractor.extract()` still logs them too, unchanged) -
+  the document walkthrough, the full candidate list with status/importance,
+  and the pass 1 -> pass 2 count. Only written on a *successful* extraction
+  (same as facts) - a failed retry leaves whatever debug notes an earlier
+  successful attempt produced rather than clearing them, which is still
+  useful context but can be stale; not addressed further since it hasn't
+  been a real problem yet.
 - **Gemini's `Part` message is a strict oneof** (`text` XOR `inlineData`) -
   learned from the `encodeDefaults` gotcha above rather than hit fresh:
   since `geminiHttpClient`'s shared `Json` config has `encodeDefaults =

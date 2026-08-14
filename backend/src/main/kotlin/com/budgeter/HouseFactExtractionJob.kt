@@ -51,10 +51,11 @@ class HouseFactExtractionJobManager(
         jobs[documentId] = ExtractionJobState(ExtractionJobStatus.RUNNING)
         scope.launch {
             jobs[documentId] = try {
-                val extracted = houseFactExtractor.extract(filename, pdfBytes, documentContext)
-                houseFactStore.addAll(ownerId, documentId, extracted)
+                val result = houseFactExtractor.extract(filename, pdfBytes, documentContext)
+                houseFactStore.addAll(ownerId, documentId, result.facts)
                 houseDocumentStore.updateStatus(ownerId, documentId, HouseDocumentStatus.EXTRACTED)
-                ExtractionJobState(ExtractionJobStatus.DONE, factCount = extracted.size)
+                houseDocumentStore.updateDebugNotes(ownerId, documentId, result.debugNotes)
+                ExtractionJobState(ExtractionJobStatus.DONE, factCount = result.facts.size)
             } catch (e: Exception) {
                 houseDocumentStore.updateStatus(ownerId, documentId, HouseDocumentStatus.FAILED, e.message)
                 ExtractionJobState(ExtractionJobStatus.FAILED, error = e.message)
