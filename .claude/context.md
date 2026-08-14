@@ -516,7 +516,16 @@ candidate facts via Gemini, resolve the ambiguous ones. New top-level
   override or be treated as equivalent to what the document itself states.
   `HouseRoutes.kt`'s upload handler reads it from a `PartData.FormItem`
   named `context` alongside the file part; retry re-passes the persisted
-  `document.context` rather than requiring it to be re-typed.
+  `document.context` rather than requiring it to be re-typed. Also carries
+  `debugNotes: String?` - the most recent successful extraction's pass
+  1/pass 2 diagnostic text (`HouseFactExtractor.ExtractionResult.debugNotes`,
+  set by `HouseFactExtractionJobManager` right after a successful
+  extraction), rendered in a collapsible "Extraction debug info" section on
+  `house-document.ftl`. Added so recall gaps can be diagnosed by anyone
+  looking at the document page, not just whoever has Cloud Logging access -
+  see `CLAUDE.md`'s House Knowledge gotchas for the debugging story this
+  shortcuts. Stale after a failed retry (only updated on success), which is
+  an accepted tradeoff, not a bug - see `HouseDocument.debugNotes`'s comment.
 - **`HouseFact`** (`HouseFactStore.kt`, Firestore collection `houseFacts`)
   is a deliberately narrow slice of the spec's full `Fact` model:
   what/type/component/status/importance/sourceQuote/sourceLocation/

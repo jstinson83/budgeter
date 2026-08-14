@@ -102,6 +102,14 @@
       </#list>
     </div>
     </#if>
+
+    <#if document.debugNotes??>
+    <details class="debug-notes">
+      <summary>Extraction debug info</summary>
+      <p class="fact-context">What pass 1 (candidate extraction) actually saw and produced, and how many candidates pass 2 (normalization) turned into the facts above - see CLAUDE.md's House Knowledge gotchas. From the most recent successful extraction; may be stale if a later retry failed.</p>
+      <pre>${document.debugNotes}</pre>
+    </details>
+    </#if>
   </div>
 
   <#if document.status == "EXTRACTING">

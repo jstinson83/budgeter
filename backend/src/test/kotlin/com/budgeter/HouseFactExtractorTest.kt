@@ -67,7 +67,20 @@ class HouseFactExtractorTest {
         assertEquals("kitchen renovation", candidateExtractor.lastDocumentContext)
         assertEquals(listOf(candidate), normalizer.lastCandidates)
         assertEquals("kitchen renovation", normalizer.lastDocumentContext)
-        assertEquals(listOf(fact), result)
+        assertEquals(listOf(fact), result.facts)
+    }
+
+    @Test
+    fun testDebugNotesCarryTheWalkthroughAndBothPassCounts() = runBlocking {
+        val candidateExtractor = FakeCandidateExtractor(listOf(candidate))
+        val normalizer = FakeNormalizer(listOf(fact))
+
+        val result = TwoPassHouseFactExtractor(candidateExtractor, normalizer).extract("inspection.pdf", "%PDF-1.4".toByteArray(), null)
+
+        val debugNotes = assertNotNull(result.debugNotes)
+        assertTrue(debugNotes.contains("walkthrough"), "expected the document walkthrough in debugNotes: $debugNotes")
+        assertTrue(debugNotes.contains(candidate.candidate), "expected the candidate's text in debugNotes: $debugNotes")
+        assertTrue(debugNotes.contains("1 fact(s) from 1 candidate(s)"), "expected the pass 1/pass 2 counts in debugNotes: $debugNotes")
     }
 
     @Test
@@ -78,6 +91,6 @@ class HouseFactExtractorTest {
         val result = TwoPassHouseFactExtractor(candidateExtractor, normalizer).extract("inspection.pdf", "%PDF-1.4".toByteArray(), null)
 
         assertEquals(emptyList(), normalizer.lastCandidates)
-        assertEquals(emptyList(), result)
+        assertEquals(emptyList(), result.facts)
     }
 }

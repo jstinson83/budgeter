@@ -225,6 +225,11 @@ class FakeHouseDocumentRepository : HouseDocumentRepository {
         if (index != -1) documents[index] = documents[index].copy(status = status, error = error)
     }
 
+    override suspend fun updateDebugNotes(ownerId: String, id: String, debugNotes: String?) {
+        val index = documents.indexOfFirst { it.ownerId == ownerId && it.id == id }
+        if (index != -1) documents[index] = documents[index].copy(debugNotes = debugNotes)
+    }
+
     override suspend fun delete(ownerId: String, id: String) {
         documents.removeAll { it.ownerId == ownerId && it.id == id }
     }
@@ -322,17 +327,18 @@ class FakeHouseFactExtractor(
             needsReview = true,
             reviewQuestion = "What's your understanding of this?"
         )
-    )
+    ),
+    private val debugNotes: String? = "fake pass 1/pass 2 debug notes"
 ) : HouseFactExtractor {
     var callCount: Int = 0
         private set
     var lastDocumentContext: String? = null
         private set
 
-    override suspend fun extract(filename: String, pdfBytes: ByteArray, documentContext: String?): List<ExtractedFact> {
+    override suspend fun extract(filename: String, pdfBytes: ByteArray, documentContext: String?): ExtractionResult {
         callCount++
         lastDocumentContext = documentContext
-        return facts
+        return ExtractionResult(facts = facts, debugNotes = debugNotes)
     }
 }
 

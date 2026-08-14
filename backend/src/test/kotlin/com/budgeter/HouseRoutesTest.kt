@@ -16,7 +16,7 @@ private fun pdfFormData(filename: String = "inspection.pdf", bytes: ByteArray = 
 }
 
 private class ThrowingHouseFactExtractor : HouseFactExtractor {
-    override suspend fun extract(filename: String, pdfBytes: ByteArray, documentContext: String?): List<ExtractedFact> =
+    override suspend fun extract(filename: String, pdfBytes: ByteArray, documentContext: String?): ExtractionResult =
         error("Gemini API request failed (503): upstream unavailable")
 }
 
@@ -27,22 +27,25 @@ private class FailOnceThenSucceedHouseFactExtractor : HouseFactExtractor {
     var callCount: Int = 0
         private set
 
-    override suspend fun extract(filename: String, pdfBytes: ByteArray, documentContext: String?): List<ExtractedFact> {
+    override suspend fun extract(filename: String, pdfBytes: ByteArray, documentContext: String?): ExtractionResult {
         callCount++
         if (callCount == 1) error("Gemini API request failed (503): upstream unavailable")
-        return listOf(
-            ExtractedFact(
-                what = "Roof replaced in 2019",
-                type = FactType.EVENT,
-                component = Component.ROOF,
-                status = FactStatus.NEW,
-                importance = Importance.MEDIUM,
-                sourceQuote = "roof replaced 2019",
-                sourceLocation = null,
-                evidenceType = EvidenceType.DOCUMENTED,
-                needsReview = false,
-                reviewQuestion = null
-            )
+        return ExtractionResult(
+            facts = listOf(
+                ExtractedFact(
+                    what = "Roof replaced in 2019",
+                    type = FactType.EVENT,
+                    component = Component.ROOF,
+                    status = FactStatus.NEW,
+                    importance = Importance.MEDIUM,
+                    sourceQuote = "roof replaced 2019",
+                    sourceLocation = null,
+                    evidenceType = EvidenceType.DOCUMENTED,
+                    needsReview = false,
+                    reviewQuestion = null
+                )
+            ),
+            debugNotes = "fake debug notes after retry"
         )
     }
 }
@@ -123,6 +126,22 @@ class HouseRoutesTest {
         assertTrue(documentPage.contains("Found 2 thing(s) worth remembering about your house"))
         assertTrue(documentPage.contains("The house contains steel structural columns"))
         assertTrue(documentPage.contains("Central floor bulge cause not determined"))
+    }
+
+    @Test
+    fun testDocumentPageShowsExtractionDebugNotes() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.submitFormWithBinaryData(url = "/house/documents/upload", formData = pdfFormData())
+        val redirect = response.headers[HttpHeaders.Location]
+        assertNotNull(redirect)
+        client.waitForExtractionToFinish(redirect.substringAfterLast("/"))
+
+        val documentPage = client.get(redirect).bodyAsText()
+        // FakeHouseFactExtractor's default debugNotes - see TestFixtures.kt.
+        assertTrue(documentPage.contains("Extraction debug info"))
+        assertTrue(documentPage.contains("fake pass 1/pass 2 debug notes"))
     }
 
     @Test
