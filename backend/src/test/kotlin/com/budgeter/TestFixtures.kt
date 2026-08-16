@@ -463,6 +463,9 @@ class FakeRecommendationRepository : RecommendationRepository {
     override suspend fun all(ownerId: String): List<Recommendation> =
         recommendations.filter { it.ownerId == ownerId }.sortedByDescending { it.createdAt }
 
+    override suspend fun get(ownerId: String, id: String): Recommendation? =
+        recommendations.find { it.ownerId == ownerId && it.id == id }
+
     override suspend fun addAll(ownerId: String, component: Component, recommendations: List<GeneratedRecommendation>): List<Recommendation> {
         val stored = recommendations.map { generated ->
             Recommendation(
@@ -479,6 +482,14 @@ class FakeRecommendationRepository : RecommendationRepository {
         }
         this.recommendations += stored
         return stored
+    }
+
+    override suspend fun updateStatus(ownerId: String, id: String, status: RecommendationStatus): Recommendation? {
+        val index = recommendations.indexOfFirst { it.ownerId == ownerId && it.id == id }
+        if (index == -1) return null
+        val updated = recommendations[index].copy(status = status)
+        recommendations[index] = updated
+        return updated
     }
 }
 

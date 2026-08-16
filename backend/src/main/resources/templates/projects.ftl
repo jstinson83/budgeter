@@ -30,6 +30,37 @@
     </form>
     </#if>
 
+    <#if (recommendations?size gt 0)>
+    <h2>Recommendations</h2>
+    <div class="transaction-list">
+      <#list recommendations as rec>
+      <div class="transaction-item">
+        <div class="transaction-row">
+          <span class="transaction-description">${rec.name}</span>
+          <span class="transaction-account">${rec.component?lower_case?cap_first}</span>
+          <span class="priority-badge priority-badge-${rec.priority?lower_case}">${rec.priority?lower_case?cap_first}</span>
+        </div>
+        <p class="fact-context">${rec.rationale}</p>
+        <#if (rec.supportingFacts?size gt 0)>
+        <ul class="fact-context">
+          <#list rec.supportingFacts as fact>
+          <li>${fact}</li>
+          </#list>
+        </ul>
+        </#if>
+        <div class="document-actions">
+          <form method="post" action="/projects/recommendations/${rec.id}/accept">
+            <button type="submit" class="button button-small">Create project</button>
+          </form>
+          <form method="post" action="/projects/recommendations/${rec.id}/reject">
+            <button type="submit" class="button button-small button-secondary">Reject</button>
+          </form>
+        </div>
+      </div>
+      </#list>
+    </div>
+    </#if>
+
     <form method="get" action="/projects" class="form-row filter-row">
       <div class="form-field">
         <span class="form-field-label">Component</span>

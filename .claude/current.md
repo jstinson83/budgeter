@@ -48,11 +48,17 @@ smallest first:
       PENDING rows and reports a summary banner ("Generated N
       recommendation(s) across M component(s)"); chunk 5 builds the actual
       list/actions. See `context.md`.
-- [ ] **5. Recommendation review UI** - screen listing pending
-      recommendations (name/rationale/supporting facts/priority) with
-      actions Create project (pre-fills from the rec, including linked
-      facts and seeded priority) and Reject (persisted, browsable), plus a
-      way to browse past accepted/rejected recommendations.
+- [x] **5. Recommendation review UI** - pending recommendations
+      (name/rationale/supporting facts/priority) render inline on
+      `/projects` itself, not a dedicated page - maintainer's call, see
+      `context.md`. Actions: Create project (pre-fills name/component/
+      suggestedPriority, status PLANNED, and attaches the supporting facts)
+      and Reject (persisted as `RecommendationStatus.REJECTED`, drops off
+      the pending list). No browse-past-accepted/rejected view - nothing
+      needs it yet.
+
+**All five chunks of House Projects & Recommendations are done.** Core
+loop (Facts -> Recommendations -> Projects -> Work) is live end to end.
 
 **Deferred, noted for later, not part of this chunk sequence:** a "merge
 project" action for combining multiple single-component projects into one

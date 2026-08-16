@@ -13,6 +13,8 @@ fun projectsPageModel(
     projects: List<Project>,
     componentFilter: Component?,
     isGenerating: Boolean,
+    pendingRecommendations: List<Recommendation>,
+    facts: List<HouseFact>,
     message: String?,
     error: String?
 ): Map<String, Any?> {
@@ -26,15 +28,26 @@ fun projectsPageModel(
             "projects" to statusProjects.map { projectSummaryModel(it) }
         )
     }
+    val factsById = facts.associateBy { it.id }
     return mapOf(
         "groups" to groups,
         "componentOptions" to Component.entries.map { it.name },
         "selectedComponent" to componentFilter?.name,
         "isGenerating" to isGenerating,
+        "recommendations" to pendingRecommendations.map { recommendationSummaryModel(it, factsById) },
         "message" to message,
         "error" to error
     )
 }
+
+private fun recommendationSummaryModel(recommendation: Recommendation, factsById: Map<String, HouseFact>): Map<String, Any?> = mapOf(
+    "id" to recommendation.id,
+    "name" to recommendation.name,
+    "component" to recommendation.component.name,
+    "rationale" to recommendation.rationale,
+    "priority" to recommendation.suggestedPriority.name,
+    "supportingFacts" to recommendation.supportingFactIds.mapNotNull { factsById[it]?.what }
+)
 
 private fun projectSummaryModel(project: Project): Map<String, Any?> = mapOf(
     "id" to project.id,

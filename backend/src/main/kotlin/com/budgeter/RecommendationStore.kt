@@ -34,9 +34,11 @@ data class Recommendation(
 
 interface RecommendationRepository {
     suspend fun all(ownerId: String): List<Recommendation>
+    suspend fun get(ownerId: String, id: String): Recommendation?
     // One batched write per component's generation pass, mirroring
     // HouseFactRepository.addAll's per-document batching.
     suspend fun addAll(ownerId: String, component: Component, recommendations: List<GeneratedRecommendation>): List<Recommendation>
+    suspend fun updateStatus(ownerId: String, id: String, status: RecommendationStatus): Recommendation?
 }
 
 class FirestoreRecommendationStore(private val firestore: Firestore) : RecommendationRepository {
@@ -71,6 +73,20 @@ class FirestoreRecommendationStore(private val firestore: Firestore) : Recommend
     override suspend fun all(ownerId: String): List<Recommendation> {
         val snapshot = collection.whereEqualTo("ownerId", ownerId).get().get()
         return snapshot.documents.map { toRecommendation(it.id, it.data) }.sortedByDescending { it.createdAt }
+    }
+
+    override suspend fun get(ownerId: String, id: String): Recommendation? {
+        val snapshot = collection.document(id).get().get()
+        if (!snapshot.exists()) return null
+        val data = snapshot.data ?: return null
+        if (data["ownerId"] as? String != ownerId) return null
+        return toRecommendation(snapshot.id, data)
+    }
+
+    override suspend fun updateStatus(ownerId: String, id: String, status: RecommendationStatus): Recommendation? {
+        val existing = get(ownerId, id) ?: return null
+        collection.document(id).update("status", status.name).get()
+        return existing.copy(status = status)
     }
 
     private fun recommendationMap(ownerId: String, component: Component, generated: GeneratedRecommendation, createdAt: Instant): Map<String, Any?> = mapOf(

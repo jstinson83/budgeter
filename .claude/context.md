@@ -799,14 +799,56 @@ yet, added when chunk 5 (Create project / Reject actions) needs it.
   `GET /projects` calls `consumeTerminal` to fold a just-finished job's
   message/error into the page as a one-shot banner, same as
   `HouseFactExtractionJobManager`.
-- **No recommendation list/review UI yet** - deliberately deferred to
-  chunk 5. This chunk's only user-visible surface is the "Generate
-  recommendations" button and the summary banner ("Generated N
+- **No recommendation list/review UI in this chunk** - that's chunk 5,
+  landed right after. This chunk's own visible surface was just the
+  "Generate recommendations" button and the summary banner ("Generated N
   recommendation(s) across M component(s)", or "Nothing new to recommend").
   Verified end to end by hand (pre-seeded facts, clicked the button,
   watched the RUNNING→reload→banner flow in a real browser) as well as by
   the automated suite, which also asserts directly against the injected
   fake `RecommendationRepository` to confirm what actually got persisted.
+
+### Chunk 5 - recommendation review, inline on `/projects`
+
+Pending recommendations render as their own "Recommendations" section on
+`/projects` itself, between the "Generate recommendations" button and the
+component filter - **not a dedicated page**. The original chunk-5 plan
+called for "a screen"; the maintainer questioned that once chunk 4 landed
+(a `PENDING` recommendation isn't a `Project`, so it can't sit inside one
+of the existing status groups, but that didn't require a whole separate
+page - just its own section on the page that already had the Generate
+button and banner). No browse-past-accepted/rejected view either -
+dropped from the original plan since nothing needs it yet; easy to add
+later if it turns out to matter.
+
+- **`RecommendationRepository` gained `get`/`updateStatus`** - unused
+  until this chunk, since chunk 4 only ever created `PENDING` rows.
+- **`POST /projects/recommendations/{id}/accept`** (`ProjectRoutes.kt`)
+  creates a `Project` from the recommendation - `name`/`component`/
+  `suggestedPriority` copied over, `status` defaults to `PLANNED` (same
+  default the manual "Add project" form uses), and every one of the
+  recommendation's `supportingFactIds` gets attached to the new project via
+  `projectStore.attachFact` in a loop - so the "why was this recommended"
+  provenance isn't lost the moment it becomes a project. The
+  `Recommendation` row itself just flips to `ACCEPTED`; there's no
+  back-reference from the recommendation to the project it created, since
+  nothing needs to read one - a future generation run already sees the new
+  project through `activeAndPlannedProjects` regardless of any link.
+- **`POST /projects/recommendations/{id}/reject`** just flips `status` to
+  `REJECTED` and redirects to `/projects` - already excluded from future
+  generation prompts by chunk 4's `pastRecommendations` filtering (any
+  status, not just accepted).
+- **`GET /projects`** now also fetches `recommendationStore.all(ownerId)`
+  (filtered to `PENDING`) and the owner's whole fact list, to resolve each
+  recommendation's `supportingFactIds` into short fact-text snippets for
+  display (`ProjectPage.kt`'s `recommendationSummaryModel`) - no per-fact
+  Firestore lookups, same "fetch everything once, join in memory" approach
+  the rest of this app's page models use.
+- Verified end to end in a real browser (fake generator, pre-seeded facts):
+  generated a recommendation, saw it render with its name/component/
+  priority badges/rationale/supporting fact, clicked Create project, and
+  confirmed the resulting project page already had the fact attached and
+  the recommendation gone from the pending list.
 
 ### Chunk 2 - linking facts & documents to a project
 

@@ -454,4 +454,96 @@ class ProjectRoutesTest {
         val finalStatus = client.waitForRecommendationGenerationToFinish()
         assertEquals(RecommendationJobStatus.DONE.name, finalStatus.status)
     }
+
+    @Test
+    fun testPendingRecommendationRendersOnTheProjectsPageWithItsSupportingFact() = testApplication {
+        val houseFactStore = FakeHouseFactRepository()
+        testModule(houseFactStore = houseFactStore, recommendationGenerator = FakeRecommendationGenerator())
+        val client = signInFakeUser()
+        seedHouseFact(houseFactStore, "test-sub", Component.ROOF, "Roof shingles are original and worn")
+
+        client.post("/projects/recommendations/generate")
+        client.waitForRecommendationGenerationToFinish()
+
+        val page = client.get("/projects") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("Recommended project for ROOF"))
+        assertTrue(page.contains("Roof shingles are original and worn"))
+        assertTrue(page.contains("/projects/recommendations/") && page.contains("/accept"))
+        assertTrue(page.contains("/projects/recommendations/") && page.contains("/reject"))
+    }
+
+    @Test
+    fun testAcceptingARecommendationCreatesAPlannedProjectWithSeededFieldsAndAttachedFact() = testApplication {
+        val houseFactStore = FakeHouseFactRepository()
+        val recommendationStore = FakeRecommendationRepository()
+        testModule(houseFactStore = houseFactStore, recommendationStore = recommendationStore, recommendationGenerator = FakeRecommendationGenerator())
+        val client = signInFakeUser()
+        seedHouseFact(houseFactStore, "test-sub", Component.ROOF)
+
+        client.post("/projects/recommendations/generate")
+        client.waitForRecommendationGenerationToFinish()
+        val recommendationId = recommendationStore.all("test-sub").single().id
+
+        val acceptResponse = client.post("/projects/recommendations/$recommendationId/accept")
+        val redirect = acceptResponse.headers[HttpHeaders.Location]!!
+        assertTrue(redirect.startsWith("/projects/"))
+        assertEquals("Created Recommended project for ROOF", Url(redirect).parameters["message"])
+
+        val projectPage = client.get(redirect) { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(projectPage.contains("Recommended project for ROOF"))
+        assertTrue(projectPage.contains(">Planned<"))
+        assertTrue(projectPage.contains(">Roof<"))
+        // The recommendation's supporting fact was attached automatically.
+        assertFalse(projectPage.contains("No facts linked yet"))
+
+        val recommendation = recommendationStore.all("test-sub").single()
+        assertEquals(RecommendationStatus.ACCEPTED, recommendation.status)
+
+        // Accepted recommendations drop off the pending list.
+        val projectsPage = client.get("/projects") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertFalse(projectsPage.contains("<h2>Recommendations</h2>"))
+    }
+
+    @Test
+    fun testRejectingARecommendationRemovesItFromThePendingListWithoutCreatingAProject() = testApplication {
+        val houseFactStore = FakeHouseFactRepository()
+        val recommendationStore = FakeRecommendationRepository()
+        val projectStore = FakeProjectRepository()
+        testModule(houseFactStore = houseFactStore, recommendationStore = recommendationStore, projectStore = projectStore, recommendationGenerator = FakeRecommendationGenerator())
+        val client = signInFakeUser()
+        seedHouseFact(houseFactStore, "test-sub", Component.ROOF)
+
+        client.post("/projects/recommendations/generate")
+        client.waitForRecommendationGenerationToFinish()
+        val recommendationId = recommendationStore.all("test-sub").single().id
+
+        val rejectResponse = client.post("/projects/recommendations/$recommendationId/reject")
+        assertEquals(
+            "Dismissed Recommended project for ROOF",
+            Url(rejectResponse.headers[HttpHeaders.Location]!!).parameters["message"]
+        )
+
+        assertEquals(RecommendationStatus.REJECTED, recommendationStore.all("test-sub").single().status)
+        assertEquals(emptyList(), projectStore.all("test-sub"))
+
+        val projectsPage = client.get("/projects") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertFalse(projectsPage.contains("<h2>Recommendations</h2>"))
+    }
+
+    @Test
+    fun testAcceptingAnUnknownRecommendationRedirectsWithAnError() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.post("/projects/recommendations/not-real/accept")
+        assertEquals("Recommendation not found", Url(response.headers[HttpHeaders.Location]!!).parameters["error"])
+    }
+
+    @Test
+    fun testRejectingAnUnknownRecommendationIs404() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        assertEquals(HttpStatusCode.NotFound, client.post("/projects/recommendations/not-real/reject").status)
+    }
 }
