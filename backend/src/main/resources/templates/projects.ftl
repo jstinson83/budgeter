@@ -22,14 +22,17 @@
 
     <h1>Projects</h1>
 
-    <form method="get" action="/projects" class="upload-form">
-      <select name="component">
-        <option value="">All components</option>
-        <#list componentOptions as option>
-        <option value="${option}" <#if selectedComponent?? && option == selectedComponent>selected</#if>>${option?lower_case?cap_first}</option>
-        </#list>
-      </select>
-      <button type="submit" class="button button-small button-secondary">Filter</button>
+    <form method="get" action="/projects" class="form-row filter-row">
+      <div class="form-field">
+        <span class="form-field-label">Component</span>
+        <select name="component">
+          <option value="">All components</option>
+          <#list componentOptions as option>
+          <option value="${option}" <#if selectedComponent?? && option == selectedComponent>selected</#if>>${option?lower_case?cap_first}</option>
+          </#list>
+        </select>
+      </div>
+      <button type="submit" class="button button-secondary">Filter</button>
     </form>
 
     <#if (groups?size == 0)>
@@ -42,7 +45,8 @@
         <#list group.projects as project>
         <a href="/projects/${project.id}" class="transaction-row transaction-row-link">
           <span class="transaction-description">${project.name}</span>
-          <span class="transaction-account">${project.component?lower_case?cap_first} &middot; ${project.priority?lower_case?cap_first}</span>
+          <span class="transaction-account">${project.component?lower_case?cap_first}</span>
+          <span class="priority-badge priority-badge-${project.priority?lower_case}">${project.priority?lower_case?cap_first}</span>
         </a>
         </#list>
       </div>
@@ -50,27 +54,41 @@
     </#list>
     </#if>
 
-    <h2>Add project</h2>
-    <form method="post" action="/projects" class="upload-form">
-      <input type="text" name="name" placeholder="Project name" required>
-      <select name="status">
-        <option value="PLANNED" selected>Planned</option>
-        <option value="ACTIVE">Active</option>
-        <option value="DEPRIORITIZED">Deprioritized</option>
-        <option value="COMPLETED">Completed</option>
-      </select>
-      <select name="component">
-        <#list componentOptions as option>
-        <option value="${option}">${option?lower_case?cap_first}</option>
-        </#list>
-      </select>
-      <select name="priority">
-        <option value="MEDIUM" selected>Medium</option>
-        <option value="HIGH">High</option>
-        <option value="LOW">Low</option>
-      </select>
-      <button type="submit" class="button">Add project</button>
-    </form>
+    <div class="form-card">
+      <h2>Add project</h2>
+      <form method="post" action="/projects" class="form-row">
+        <div class="form-field form-field-wide">
+          <span class="form-field-label">Name</span>
+          <input type="text" name="name" placeholder="Project name" required>
+        </div>
+        <div class="form-field">
+          <span class="form-field-label">Status</span>
+          <select name="status">
+            <option value="PLANNED" selected>Planned</option>
+            <option value="ACTIVE">Active</option>
+            <option value="DEPRIORITIZED">Deprioritized</option>
+            <option value="COMPLETED">Completed</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <span class="form-field-label">Component</span>
+          <select name="component">
+            <#list componentOptions as option>
+            <option value="${option}">${option?lower_case?cap_first}</option>
+            </#list>
+          </select>
+        </div>
+        <div class="form-field">
+          <span class="form-field-label">Priority</span>
+          <select name="priority">
+            <option value="MEDIUM" selected>Medium</option>
+            <option value="HIGH">High</option>
+            <option value="LOW">Low</option>
+          </select>
+        </div>
+        <button type="submit" class="button">Add project</button>
+      </form>
+    </div>
   </div>
 </body>
 </html>
