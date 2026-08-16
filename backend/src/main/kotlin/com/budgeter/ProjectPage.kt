@@ -1,5 +1,10 @@
 package com.budgeter
 
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
+private val entryDateFormatter = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneId.systemDefault())
+
 // Pre-formats what projects.ftl needs: an optional component filter, plus
 // projects grouped by status (Active/Planned/Deprioritized/Completed, in
 // that display order) - same "skip empty groups" pattern
@@ -39,6 +44,7 @@ fun projectPageModel(
     project: Project,
     allFacts: List<HouseFact>,
     allDocuments: List<HouseDocument>,
+    entries: List<ProjectEntry>,
     message: String?,
     error: String?
 ): Map<String, Any?> {
@@ -60,10 +66,21 @@ fun projectPageModel(
         "availableFacts" to availableFacts.map { factSummaryModel(it, filenameById) },
         "linkedDocuments" to linkedDocuments.map { documentSummaryModel(it) },
         "availableDocuments" to availableDocuments.map { documentSummaryModel(it) },
+        "entries" to entries.map { entrySummaryModel(it) },
+        "entryTypeOptions" to ProjectEntryType.entries.map { it.name },
         "message" to message,
         "error" to error
     )
 }
+
+private fun entrySummaryModel(entry: ProjectEntry): Map<String, Any?> = mapOf(
+    "id" to entry.id,
+    "type" to entry.type.name,
+    "text" to entry.text,
+    "url" to entry.url,
+    "filename" to entry.filename,
+    "createdAt" to entryDateFormatter.format(entry.createdAt)
+)
 
 private fun factSummaryModel(fact: HouseFact, filenameById: Map<String, String>): Map<String, Any?> = mapOf(
     "id" to fact.id,

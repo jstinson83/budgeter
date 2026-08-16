@@ -23,10 +23,13 @@ smallest first:
 - [x] **2. Link facts & documents to a project** - project detail page
       gains attach/detach pickers for existing `HouseFact`/`HouseDocument`
       rows (`factIds`/`documentIds` on `Project`).
-- [ ] **3. Project entry feed** - `ProjectEntry` (Note/Decision/Quote/
+- [x] **3. Project entry feed** - `ProjectEntry` (Note/Decision/Quote/
       Photo/Link types) as one chronological feed on the project detail
-      page; Link carries a URL, Quote/Photo can attach a `HouseDocument`
-      via the existing upload path.
+      page; Link carries a URL, Quote/Photo can attach a file. Built as a
+      direct upload to the same GCS bucket `HouseDocument` uses, *not* as a
+      `HouseDocument` row - a quote/photo isn't house-knowledge source
+      material to extract facts from, and isn't PDF-only. See
+      `context.md`.
 - [ ] **4. Recommendation generation** - `Recommendation` entity/store
       (`component`, `name`, rationale, `supportingFactIds`,
       `suggestedPriority`, `status`: Pending/Accepted/Rejected - Rejected

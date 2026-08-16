@@ -104,6 +104,45 @@
       <button type="submit" class="button button-small">Link document</button>
     </form>
     </#if>
+
+    <h2>Notes, decisions, quotes &amp; links</h2>
+    <#if (entries?size == 0)>
+    <p class="empty-state">Nothing added yet.</p>
+    <#else>
+    <div class="transaction-list">
+      <#list entries as entry>
+      <div class="transaction-item">
+        <div class="transaction-row">
+          <span class="fact-type-badge">${entry.type?lower_case?cap_first}</span>
+          <span class="transaction-date">${entry.createdAt}</span>
+        </div>
+        <#if entry.type == "LINK">
+        <p><a href="${entry.url}" target="_blank" rel="noopener noreferrer">${entry.url}</a></p>
+        <#elseif entry.filename??>
+        <p class="fact-context">Attached: ${entry.filename}</p>
+        </#if>
+        <#if entry.text??>
+        <p>${entry.text}</p>
+        </#if>
+        <form method="post" action="/projects/${project.id}/entries/${entry.id}/delete">
+          <button type="submit" class="button button-small button-secondary">Remove</button>
+        </form>
+      </div>
+      </#list>
+    </div>
+    </#if>
+
+    <form method="post" action="/projects/${project.id}/entries" enctype="multipart/form-data" class="upload-form">
+      <select name="type">
+        <#list entryTypeOptions as option>
+        <option value="${option}">${option?lower_case?cap_first}</option>
+        </#list>
+      </select>
+      <input type="text" name="text" placeholder="Note, decision, or caption">
+      <input type="url" name="url" placeholder="URL (for Link)">
+      <input type="file" name="file">
+      <button type="submit" class="button button-small">Add</button>
+    </form>
   </div>
 </body>
 </html>

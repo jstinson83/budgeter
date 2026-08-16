@@ -780,8 +780,52 @@ Attach handlers re-resolve the client-supplied `factId`/`documentId` against
 writing - same "never trust a client-supplied id directly" posture as
 `/analysis/recategorize`'s `transactionId` handling.
 
-Still not built: the notes/decisions/quotes/photos/links feed (chunk 3),
-project deletion, and anything recommendation-related.
+Still not built at this point: the notes/decisions/quotes/photos/links feed
+(chunk 3), project deletion, and anything recommendation-related.
+
+### Chunk 3 - the project entry feed
+
+`ProjectEntry` (`ProjectEntryStore.kt`, Firestore collection
+`projectEntries`) is a project's accumulating feed - one type with a
+`ProjectEntryType` discriminator (`NOTE`/`DECISION`/`QUOTE`/`PHOTO`/`LINK`)
+rather than five parallel collections, since they all render as a single
+chronological list on `/projects/{id}`. `text` is required content for
+Note/Decision, an optional caption for Quote/Photo/Link; `url` only applies
+to Link; `storagePath`/`filename` only apply to Quote/Photo.
+
+**Quote/Photo attachments deliberately do *not* create a `HouseDocument`
+row.** The chunk-3 plan in `current.md` originally said "reusing the
+existing GCS upload path," which turned out to be ambiguous between two
+readings once actually built: link an already-extracted `HouseDocument`
+(chunk 2 already covers that case), or reuse the *upload mechanism*
+(`DocumentBlobStore`) for a fresh file that never goes through extraction.
+Went with the latter - `ProjectRoutes.kt`'s `POST /projects/{id}/entries`
+uploads straight to the same `DocumentBlobStore`/GCS bucket
+`HouseDocument` uses (`{ownerId}/{random-uuid}/{filename}`, same pattern
+`HouseRoutes.kt`'s upload handler uses), but never creates a `HouseDocument`
+row and never touches `HouseFactExtractionJobManager`. Two reasons: a quote
+or photo attached to a project isn't house-knowledge source material to run
+fact extraction against, and `HouseRoutes.kt`'s upload handler is
+hard-restricted to PDF - a Photo entry is typically a JPEG/PNG, which that
+path rejects outright. `ProjectEntryRepository.delete` doesn't touch the
+blob itself; `POST /projects/{id}/entries/{entryId}/delete` deletes the GCS
+blob (when `storagePath` is set) before deleting the Firestore row, mirroring
+`HouseRoutes.kt`'s document-delete handler.
+
+One multipart form on `project.ftl` covers all five entry types (a `type`
+select, a `text` input, a `url` input, a `file` input) rather than five
+separate forms or JS-driven conditional fields - matches this app's
+no-framework posture. `POST /projects/{id}/entries` validates the
+type-appropriate field server-side (Note/Decision need `text`, Link needs
+`url`, Quote/Photo need a file) and ignores whatever else was submitted.
+
+No download link is offered for an attached Quote/Photo file yet - the app
+doesn't have a signed-URL/download-proxy route for GCS blobs anywhere
+(`HouseDocument`'s own uploaded PDFs aren't downloadable from the UI
+either), so this stays consistent with that rather than being a new gap.
+
+Still not built: project deletion and anything recommendation-related -
+see `current.md`.
 
 ## Configuration reference
 
