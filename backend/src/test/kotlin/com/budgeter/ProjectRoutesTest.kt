@@ -1,10 +1,27 @@
 package com.budgeter
 
+import io.ktor.client.*
 import io.ktor.client.request.*
+import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.server.testing.*
 import kotlin.test.*
+
+private fun pdfFormData(filename: String = "inspection.pdf") = formData {
+    append("file", "%PDF-1.4 fake".toByteArray(), Headers.build {
+        append(HttpHeaders.ContentType, "application/pdf")
+        append(HttpHeaders.ContentDisposition, "filename=\"$filename\"")
+    })
+}
+
+private suspend fun HttpClient.createProject(name: String, component: String = "ROOF"): String {
+    val response = post("/projects") {
+        contentType(ContentType.Application.FormUrlEncoded)
+        setBody("name=$name&status=PLANNED&component=$component&priority=MEDIUM")
+    }
+    return response.headers[HttpHeaders.Location]!!.substringAfter("/projects/").substringBefore("?")
+}
 
 class ProjectRoutesTest {
     @Test
@@ -115,5 +132,79 @@ class ProjectRoutesTest {
         val body = filtered.bodyAsText()
         assertTrue(body.contains("Replace roof"))
         assertFalse(body.contains("Rewire panel"))
+    }
+
+    @Test
+    fun testLinkingAFactMovesItFromAvailableToLinkedAndDetachMovesItBack() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val projectId = client.createProject("Replace roof")
+
+        val uploadResponse = client.submitFormWithBinaryData(url = "/house/documents/upload", formData = pdfFormData())
+        val documentId = uploadResponse.headers[HttpHeaders.Location]!!.substringAfterLast("/")
+        client.waitForExtractionToFinish(documentId)
+
+        val beforePage = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(beforePage.contains("No facts linked yet"))
+        val factId = Regex("""<option value="(house-fact-\d+)">""").find(beforePage)!!.groupValues[1]
+
+        val attachResponse = client.post("/projects/$projectId/facts") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("factId=$factId")
+        }
+        assertEquals("Linked fact", Url(attachResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val afterAttach = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertFalse(afterAttach.contains("No facts linked yet"))
+        assertTrue(afterAttach.contains("steel structural columns"))
+
+        val detachResponse = client.post("/projects/$projectId/facts/$factId/detach")
+        assertEquals("Removed fact", Url(detachResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val afterDetach = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(afterDetach.contains("No facts linked yet"))
+    }
+
+    @Test
+    fun testAttachingAFactThatDoesNotBelongToTheOwnerIsRejected() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val projectId = client.createProject("Replace roof")
+
+        val response = client.post("/projects/$projectId/facts") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("factId=not-real")
+        }
+        assertEquals("Fact not found", Url(response.headers[HttpHeaders.Location]!!).parameters["error"])
+    }
+
+    @Test
+    fun testLinkingADocumentMovesItFromAvailableToLinkedAndDetachMovesItBack() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val projectId = client.createProject("Replace roof")
+
+        val uploadResponse = client.submitFormWithBinaryData(url = "/house/documents/upload", formData = pdfFormData("inspection.pdf"))
+        val documentId = uploadResponse.headers[HttpHeaders.Location]!!.substringAfterLast("/")
+        client.waitForExtractionToFinish(documentId)
+
+        val beforePage = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(beforePage.contains("No documents linked yet"))
+
+        val attachResponse = client.post("/projects/$projectId/documents") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("documentId=$documentId")
+        }
+        assertEquals("Linked document", Url(attachResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val afterAttach = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertFalse(afterAttach.contains("No documents linked yet"))
+        assertTrue(afterAttach.contains("inspection.pdf"))
+
+        val detachResponse = client.post("/projects/$projectId/documents/$documentId/detach")
+        assertEquals("Removed document", Url(detachResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val afterDetach = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(afterDetach.contains("No documents linked yet"))
     }
 }

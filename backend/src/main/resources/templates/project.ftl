@@ -43,6 +43,67 @@
       </select>
       <button type="submit" class="button">Save</button>
     </form>
+
+    <h2>Facts</h2>
+    <#if (linkedFacts?size == 0)>
+    <p class="empty-state">No facts linked yet.</p>
+    <#else>
+    <div class="transaction-list">
+      <#list linkedFacts as fact>
+      <div class="transaction-item">
+        <div class="transaction-row">
+          <span class="transaction-description">${fact.what}</span>
+          <span class="fact-type-badge">${fact.component?lower_case?cap_first}</span>
+        </div>
+        <#if fact.sourceQuote??>
+        <p class="fact-quote">&ldquo;${fact.sourceQuote}&rdquo;</p>
+        </#if>
+        <p class="fact-context">From ${fact.filename}</p>
+        <form method="post" action="/projects/${project.id}/facts/${fact.id}/detach">
+          <button type="submit" class="button button-small button-secondary">Remove</button>
+        </form>
+      </div>
+      </#list>
+    </div>
+    </#if>
+
+    <#if (availableFacts?size gt 0)>
+    <form method="post" action="/projects/${project.id}/facts" class="upload-form">
+      <select name="factId">
+        <#list availableFacts as fact>
+        <option value="${fact.id}">[${fact.component?lower_case?cap_first}] ${fact.what}</option>
+        </#list>
+      </select>
+      <button type="submit" class="button button-small">Link fact</button>
+    </form>
+    </#if>
+
+    <h2>Documents</h2>
+    <#if (linkedDocuments?size == 0)>
+    <p class="empty-state">No documents linked yet.</p>
+    <#else>
+    <div class="transaction-list">
+      <#list linkedDocuments as doc>
+      <div class="transaction-row">
+        <a href="/house/documents/${doc.id}" class="transaction-description">${doc.filename}</a>
+        <form method="post" action="/projects/${project.id}/documents/${doc.id}/detach">
+          <button type="submit" class="button button-small button-secondary">Remove</button>
+        </form>
+      </div>
+      </#list>
+    </div>
+    </#if>
+
+    <#if (availableDocuments?size gt 0)>
+    <form method="post" action="/projects/${project.id}/documents" class="upload-form">
+      <select name="documentId">
+        <#list availableDocuments as doc>
+        <option value="${doc.id}">${doc.filename}</option>
+        </#list>
+      </select>
+      <button type="submit" class="button button-small">Link document</button>
+    </form>
+    </#if>
   </div>
 </body>
 </html>
