@@ -376,8 +376,8 @@ class FakeProjectRepository : ProjectRepository {
     override suspend fun get(ownerId: String, id: String): Project? =
         projects.find { it.ownerId == ownerId && it.id == id }
 
-    override suspend fun add(ownerId: String, name: String, status: ProjectStatus, component: Component, priority: Priority): Project {
-        val project = Project("project-${nextId++}", ownerId, name, status, component, priority, java.time.Instant.now())
+    override suspend fun add(ownerId: String, name: String, status: ProjectStatus, component: Component, priority: Priority, parentId: String?): Project {
+        val project = Project("project-${nextId++}", ownerId, name, status, component, priority, java.time.Instant.now(), parentId = parentId)
         projects += project
         return project
     }
@@ -420,6 +420,14 @@ class FakeProjectRepository : ProjectRepository {
         val index = projects.indexOfFirst { it.ownerId == ownerId && it.id == id }
         if (index == -1) return null
         val updated = projects[index].copy(documentIds = projects[index].documentIds - documentId)
+        projects[index] = updated
+        return updated
+    }
+
+    override suspend fun setParent(ownerId: String, id: String, parentId: String?): Project? {
+        val index = projects.indexOfFirst { it.ownerId == ownerId && it.id == id }
+        if (index == -1) return null
+        val updated = projects[index].copy(parentId = parentId)
         projects[index] = updated
         return updated
     }

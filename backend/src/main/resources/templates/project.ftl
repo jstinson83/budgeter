@@ -24,6 +24,15 @@
 
     <h1>${project.name}</h1>
 
+    <#if project.parent??>
+    <p class="fact-context">
+      Subproject of <a href="/projects/${project.parent.id}">${project.parent.name}</a>
+    </p>
+    <form method="post" action="/projects/${project.parent.id}/subprojects/${project.id}/detach">
+      <button type="submit" class="button button-small button-secondary">Remove from ${project.parent.name}</button>
+    </form>
+    </#if>
+
     <div class="form-card">
       <form method="post" action="/projects/${project.id}" class="form-row">
         <div class="form-field form-field-wide">
@@ -57,6 +66,81 @@
         <button type="submit" class="button">Save</button>
       </form>
     </div>
+
+    <#if !project.hasParent>
+    <h2>Subprojects</h2>
+    <#if (subprojects?size == 0)>
+    <p class="empty-state">No subprojects yet.</p>
+    <#else>
+    <div class="transaction-list">
+      <#list subprojects as sub>
+      <a href="/projects/${sub.id}" class="transaction-row transaction-row-link">
+        <span class="transaction-description">${sub.name}</span>
+        <span class="transaction-account">${sub.status?lower_case?cap_first}</span>
+        <span class="priority-badge priority-badge-${sub.priority?lower_case}">${sub.priority?lower_case?cap_first}</span>
+      </a>
+      </#list>
+    </div>
+    <div class="document-actions">
+      <#list subprojects as sub>
+      <form method="post" action="/projects/${project.id}/subprojects/${sub.id}/detach">
+        <button type="submit" class="button button-small button-secondary">Remove ${sub.name}</button>
+      </form>
+      </#list>
+    </div>
+    </#if>
+
+    <#if (availableAsSubproject?size gt 0)>
+    <form method="post" action="/projects/${project.id}/subprojects" class="form-row">
+      <div class="form-field form-field-wide">
+        <span class="form-field-label">Add an existing project as a subproject</span>
+        <select name="childId">
+          <#list availableAsSubproject as candidate>
+          <option value="${candidate.id}">${candidate.name}</option>
+          </#list>
+        </select>
+      </div>
+      <button type="submit" class="button button-secondary">Add subproject</button>
+    </form>
+    </#if>
+
+    <div class="form-card">
+      <h3>Or create a new subproject</h3>
+      <form method="post" action="/projects" class="form-row">
+        <input type="hidden" name="parentId" value="${project.id}">
+        <div class="form-field form-field-wide">
+          <span class="form-field-label">Name</span>
+          <input type="text" name="name" placeholder="Subproject name" required>
+        </div>
+        <div class="form-field">
+          <span class="form-field-label">Status</span>
+          <select name="status">
+            <option value="PLANNED" selected>Planned</option>
+            <option value="ACTIVE">Active</option>
+            <option value="DEPRIORITIZED">Deprioritized</option>
+            <option value="COMPLETED">Completed</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <span class="form-field-label">Component</span>
+          <select name="component">
+            <#list componentOptions as option>
+            <option value="${option}">${option?lower_case?cap_first}</option>
+            </#list>
+          </select>
+        </div>
+        <div class="form-field">
+          <span class="form-field-label">Priority</span>
+          <select name="priority">
+            <option value="MEDIUM" selected>Medium</option>
+            <option value="HIGH">High</option>
+            <option value="LOW">Low</option>
+          </select>
+        </div>
+        <button type="submit" class="button">Add subproject</button>
+      </form>
+    </div>
+    </#if>
 
     <h2>Notes, quotes &amp; links</h2>
     <#if (entries?size == 0)>

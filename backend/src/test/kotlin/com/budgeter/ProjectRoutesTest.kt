@@ -360,6 +360,96 @@ class ProjectRoutesTest {
     }
 
     @Test
+    fun testCreatingAProjectWithAParentIdMakesItASubproject() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val parentId = client.createProject("Kitchen renovation")
+
+        val response = client.post("/projects") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Electrical rough-in&status=PLANNED&component=ELECTRICAL&priority=MEDIUM&parentId=$parentId")
+        }
+        val redirect = response.headers[HttpHeaders.Location]!!
+        val childId = redirect.substringAfter("/projects/").substringBefore("?")
+
+        val childPage = client.get("/projects/$childId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(childPage.contains("Subproject of"))
+        assertTrue(childPage.contains("Kitchen renovation"))
+
+        val parentPage = client.get("/projects/$parentId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(parentPage.contains("Electrical rough-in"))
+
+        val listPage = client.get("/projects") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(listPage.contains("Kitchen renovation"))
+    }
+
+    @Test
+    fun testAttachingAnExistingProjectAsASubprojectAndDetachingItAgain() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val parentId = client.createProject("Kitchen renovation")
+        val childId = client.createProject("Cabinets")
+
+        val attachResponse = client.post("/projects/$parentId/subprojects") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("childId=$childId")
+        }
+        assertEquals("Added Cabinets as a subproject", Url(attachResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val parentPage = client.get("/projects/$parentId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(parentPage.contains("Cabinets"))
+
+        val detachResponse = client.post("/projects/$parentId/subprojects/$childId/detach")
+        assertEquals("Removed Cabinets from this project", Url(detachResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val childPage = client.get("/projects/$childId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertFalse(childPage.contains("Subproject of"))
+    }
+
+    @Test
+    fun testASubprojectCannotItselfBeGivenSubprojects() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val parentId = client.createProject("Kitchen renovation")
+        val childId = client.createProject("Cabinets")
+        val grandchildId = client.createProject("Cabinet hardware")
+
+        client.post("/projects/$parentId/subprojects") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("childId=$childId")
+        }
+
+        val response = client.post("/projects/$childId/subprojects") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("childId=$grandchildId")
+        }
+        val redirect = response.headers[HttpHeaders.Location]!!
+        assertEquals("/projects/$childId", Url(redirect).encodedPath)
+        assertEquals("A subproject can't itself have subprojects", Url(redirect).parameters["error"])
+    }
+
+    @Test
+    fun testAProjectAlreadyHavingSubprojectsCannotBecomeASubprojectItself() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val parentId = client.createProject("Kitchen renovation")
+        val childId = client.createProject("Cabinets")
+        val otherParentId = client.createProject("Bathroom renovation")
+
+        client.post("/projects/$parentId/subprojects") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("childId=$childId")
+        }
+
+        val response = client.post("/projects/$otherParentId/subprojects") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("childId=$parentId")
+        }
+        val redirect = response.headers[HttpHeaders.Location]!!
+        assertEquals("Kitchen renovation already has subprojects of its own", Url(redirect).parameters["error"])
+    }
+
+    @Test
     fun testGeneratingRecommendationsRequiresSignIn() = testApplication {
         testModule()
 
