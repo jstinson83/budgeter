@@ -22,6 +22,14 @@
 
     <h1>Projects</h1>
 
+    <#if isGenerating>
+    <p class="empty-state">Generating recommendations&hellip;</p>
+    <#else>
+    <form method="post" action="/projects/recommendations/generate">
+      <button type="submit" class="button button-secondary">Generate recommendations</button>
+    </form>
+    </#if>
+
     <form method="get" action="/projects" class="form-row filter-row">
       <div class="form-field">
         <span class="form-field-label">Component</span>
@@ -90,5 +98,26 @@
       </form>
     </div>
   </div>
+
+  <#if isGenerating>
+  <script>
+    // No framework in this app - same polling pattern as
+    // house-document.ftl. Keeps RecommendationJobManager's background
+    // coroutine's CPU allocated on Cloud Run between the request that
+    // started it and the one that observes it finished, in addition to
+    // driving the UI.
+    (function poll() {
+      fetch('/projects/recommendations/status')
+        .then((response) => response.json())
+        .then((status) => {
+          if (status.status === 'RUNNING') {
+            setTimeout(poll, 2000);
+          } else {
+            window.location.reload();
+          }
+        });
+    })();
+  </script>
+  </#if>
 </body>
 </html>

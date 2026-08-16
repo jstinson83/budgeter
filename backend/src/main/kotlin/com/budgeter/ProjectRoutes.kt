@@ -7,12 +7,17 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.utils.io.toByteArray
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.util.UUID
 
-// Chunks 1-3 of House Projects & Recommendations (see .claude/current.md):
+// Chunks 1-4 of House Projects & Recommendations (see .claude/current.md):
 // manual project creation/editing, linking existing HouseFact/HouseDocument
-// rows to a project, and a notes/quotes/photos/links feed. No
-// recommendations yet.
+// rows to a project, a notes/quotes/photos/links feed, and Gemini
+// recommendation generation. No recommendation review UI yet (chunk 5) -
+// generation just persists PENDING Recommendation rows and reports a
+// summary message, same "eyeball it via the job's own status message
+// first, build the real UI next" posture chunk 4 was scoped for.
 
 private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "svg")
 
@@ -39,16 +44,44 @@ fun Route.projectRoutes(
     // same GCS bucket HouseDocument uploads use, but these uploads never
     // become a HouseDocument row and never go through
     // HouseFactExtractionJobManager. See ProjectEntryStore.kt.
-    entryBlobStore: DocumentBlobStore
+    entryBlobStore: DocumentBlobStore,
+    recommendationJobManager: RecommendationJobManager
 ) {
     get("/projects") {
         val ownerId = call.requireUserId()
         val componentFilter = call.request.queryParameters["component"]?.let { runCatching { Component.valueOf(it) }.getOrNull() }
         val projects = projectStore.all(ownerId)
+        // consumeTerminal rather than status: this is the one page render
+        // that ever shows a just-finished generation job's outcome, same
+        // "show once, then forget" posture as
+        // HouseFactExtractionJobManager.consumeTerminal.
+        val jobState = recommendationJobManager.consumeTerminal(ownerId)
         val message = call.request.queryParameters["message"]
+            ?: jobState?.takeIf { it.status == RecommendationJobStatus.DONE }?.message
         val error = call.request.queryParameters["error"]
-        val model = projectsPageModel(projects, componentFilter, message, error) + call.currentUserModel()
+            ?: jobState?.takeIf { it.status == RecommendationJobStatus.FAILED }?.error
+        val isGenerating = recommendationJobManager.status(ownerId)?.status == RecommendationJobStatus.RUNNING
+        val model = projectsPageModel(projects, componentFilter, isGenerating, message, error) + call.currentUserModel()
         call.respond(FreeMarkerContent("projects.ftl", model))
+    }
+
+    post("/projects/recommendations/generate") {
+        val ownerId = call.requireUserId()
+        recommendationJobManager.start(ownerId)
+        call.respondRedirect("/projects")
+    }
+
+    // Polled by projects.ftl's inline script while generation is RUNNING -
+    // same pattern as GET /house/documents/{id}/status.
+    get("/projects/recommendations/status") {
+        val ownerId = call.requireUserId()
+        val state = recommendationJobManager.status(ownerId)
+        val response = RecommendationJobStatusResponse(
+            status = state?.status?.name ?: "IDLE",
+            message = state?.message,
+            error = state?.error
+        )
+        call.respondText(Json.encodeToString(response), ContentType.Application.Json)
     }
 
     post("/projects") {

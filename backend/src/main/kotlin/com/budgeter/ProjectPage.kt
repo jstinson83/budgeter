@@ -9,7 +9,13 @@ private val entryDateFormatter = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneI
 // projects grouped by status (Active/Planned/Deprioritized/Completed, in
 // that display order) - same "skip empty groups" pattern
 // houseFactsPageModel uses for its component groups.
-fun projectsPageModel(projects: List<Project>, componentFilter: Component?, message: String?, error: String?): Map<String, Any?> {
+fun projectsPageModel(
+    projects: List<Project>,
+    componentFilter: Component?,
+    isGenerating: Boolean,
+    message: String?,
+    error: String?
+): Map<String, Any?> {
     val filtered = if (componentFilter != null) projects.filter { it.component == componentFilter } else projects
     val byStatus = filtered.groupBy { it.status }
     val groups = ProjectStatus.entries.mapNotNull { status ->
@@ -24,6 +30,7 @@ fun projectsPageModel(projects: List<Project>, componentFilter: Component?, mess
         "groups" to groups,
         "componentOptions" to Component.entries.map { it.name },
         "selectedComponent" to componentFilter?.name,
+        "isGenerating" to isGenerating,
         "message" to message,
         "error" to error
     )

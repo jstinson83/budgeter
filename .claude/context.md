@@ -752,6 +752,62 @@ and Gemini-generated recommendations are later chunks, not built yet).
   deletion, and anything recommendation-related. See `current.md` for the
   remaining chunk sequence.
 
+### Chunk 4 - recommendation generation
+
+`Recommendation` (`RecommendationStore.kt`, Firestore collection
+`recommendations`) - one per `Component` per generation run, grounded in
+that component's current `HouseFact`s. `status`
+(`PENDING`/`ACCEPTED`/`REJECTED`) starts at `PENDING` on creation; nothing
+in this chunk ever moves it off `PENDING` - `updateStatus` doesn't exist
+yet, added when chunk 5 (Create project / Reject actions) needs it.
+
+- **Staleness tracking** (`RecommendationGenerationMarkerStore.kt`,
+  Firestore collection `recommendationGenerationMarkers`) - one doc per
+  `(ownerId, component)`, keyed deterministically like
+  `HouseComponentSummaryStore`, storing the fact count seen at last
+  generation. `RecommendationJobManager` skips a component outright when
+  its current fact count still matches the marker - the same "stale if the
+  count changed" idea `ComponentSummary.factCount`/`summaryStale` already
+  uses, reused here so re-clicking "Generate recommendations" doesn't
+  re-bill Gemini for facts it's already reasoned about.
+- **`GeminiRecommendationGenerator`** (`RecommendationGenerator.kt`) -
+  text-only Gemini call (no PDF), one per stale component. Facts are passed
+  with a 0-based index in the prompt and Gemini returns
+  `supportingFactIndices` rather than real fact ids - same index-not-id
+  reasoning as `GeminiTransactionCategorizer` (shorter output, no risk of a
+  near-miss id silently vanishing). A recommendation whose indices don't
+  resolve to any real fact (out of range, or Gemini returned none) is
+  dropped rather than persisted with no provenance - `supportingFactIds` is
+  never empty for a stored `Recommendation`. The prompt also gets the
+  household's active+planned projects, deprioritized projects (both lists
+  span *every* component, not just the one being generated for - a
+  project's component tag is a browsing convenience, not a hard partition,
+  per chunk 1's `Project.component` design), and every past recommendation
+  for *this* component regardless of status (so something already pending
+  review, already accepted, or already rejected isn't suggested again).
+- **`RecommendationJobManager`** (`RecommendationJob.kt`) - same
+  async-job-plus-poll shape as `HouseFactExtractionJobManager`, one job per
+  owner. Persists each stale component's recommendations and marker as
+  soon as that component finishes, not batched until the whole loop
+  completes - so a Gemini failure partway through the component loop
+  doesn't lose already-persisted earlier components, and a retry only
+  redoes whichever components still need it. `POST
+  /projects/recommendations/generate` (`ProjectRoutes.kt`) starts the job
+  and redirects to `/projects`; `GET
+  /projects/recommendations/status` is polled by `projects.ftl`'s inline
+  script (same pattern as `house-document.ftl`) while `isGenerating`, and
+  `GET /projects` calls `consumeTerminal` to fold a just-finished job's
+  message/error into the page as a one-shot banner, same as
+  `HouseFactExtractionJobManager`.
+- **No recommendation list/review UI yet** - deliberately deferred to
+  chunk 5. This chunk's only user-visible surface is the "Generate
+  recommendations" button and the summary banner ("Generated N
+  recommendation(s) across M component(s)", or "Nothing new to recommend").
+  Verified end to end by hand (pre-seeded facts, clicked the button,
+  watched the RUNNING→reload→banner flow in a real browser) as well as by
+  the automated suite, which also asserts directly against the injected
+  fake `RecommendationRepository` to confirm what actually got persisted.
+
 ### Chunk 2 - linking facts & documents to a project
 
 `Project` gained `factIds`/`documentIds: List<String>` (`ProjectStore.kt`) -

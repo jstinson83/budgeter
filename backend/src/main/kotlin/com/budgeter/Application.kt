@@ -100,6 +100,10 @@ private val geminiComponentSummarizer: ComponentSummarizer by lazy {
     GeminiComponentSummarizer(geminiHttpClient, System.getenv("GEMINI_API_KEY") ?: "")
 }
 
+private val geminiRecommendationGenerator: RecommendationGenerator by lazy {
+    GeminiRecommendationGenerator(geminiHttpClient, System.getenv("GEMINI_API_KEY") ?: "")
+}
+
 // The bucket is provisioned manually in the GCP console, same as the
 // Firestore database and Cloud Run env vars - see CLAUDE.md's deploy
 // pipeline section. Falls back to "" like GEMINI_API_KEY does above; the
@@ -136,7 +140,18 @@ fun Application.module(
     houseComponentSummaryStore: HouseComponentSummaryRepository = FirestoreHouseComponentSummaryStore(firestoreClient),
     componentSummarizer: ComponentSummarizer = geminiComponentSummarizer,
     projectStore: ProjectRepository = FirestoreProjectStore(firestoreClient),
-    projectEntryStore: ProjectEntryRepository = FirestoreProjectEntryStore(firestoreClient)
+    projectEntryStore: ProjectEntryRepository = FirestoreProjectEntryStore(firestoreClient),
+    recommendationStore: RecommendationRepository = FirestoreRecommendationStore(firestoreClient),
+    recommendationGenerationMarkerStore: RecommendationGenerationMarkerRepository = FirestoreRecommendationGenerationMarkerStore(firestoreClient),
+    recommendationGenerator: RecommendationGenerator = geminiRecommendationGenerator,
+    recommendationJobManager: RecommendationJobManager = RecommendationJobManager(
+        CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        houseFactStore,
+        projectStore,
+        recommendationStore,
+        recommendationGenerationMarkerStore,
+        recommendationGenerator
+    )
 ) {
     install(FreeMarker) {
         templateLoader = ClassTemplateLoader(this::class.java.classLoader, "templates")
@@ -152,6 +167,7 @@ fun Application.module(
     monitor.subscribe(ApplicationStopping) {
         categorizationJobManager.cancel()
         houseFactExtractionJobManager.cancel()
+        recommendationJobManager.cancel()
     }
 
     routing {
@@ -173,7 +189,7 @@ fun Application.module(
                 houseComponentSummaryStore,
                 componentSummarizer
             )
-            projectRoutes(projectStore, houseFactStore, houseDocumentStore, projectEntryStore, documentBlobStore)
+            projectRoutes(projectStore, houseFactStore, houseDocumentStore, projectEntryStore, documentBlobStore, recommendationJobManager)
         }
     }
 }

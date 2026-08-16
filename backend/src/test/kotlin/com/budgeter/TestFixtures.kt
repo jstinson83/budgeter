@@ -64,7 +64,10 @@ fun ApplicationTestBuilder.testModule(
     houseComponentSummaryStore: HouseComponentSummaryRepository = FakeHouseComponentSummaryRepository(),
     componentSummarizer: ComponentSummarizer = FakeComponentSummarizer(),
     projectStore: ProjectRepository = FakeProjectRepository(),
-    projectEntryStore: ProjectEntryRepository = FakeProjectEntryRepository()
+    projectEntryStore: ProjectEntryRepository = FakeProjectEntryRepository(),
+    recommendationStore: RecommendationRepository = FakeRecommendationRepository(),
+    recommendationGenerationMarkerStore: RecommendationGenerationMarkerRepository = FakeRecommendationGenerationMarkerRepository(),
+    recommendationGenerator: RecommendationGenerator = FakeRecommendationGenerator()
 ) {
     application {
         module(
@@ -82,7 +85,10 @@ fun ApplicationTestBuilder.testModule(
             houseComponentSummaryStore = houseComponentSummaryStore,
             componentSummarizer = componentSummarizer,
             projectStore = projectStore,
-            projectEntryStore = projectEntryStore
+            projectEntryStore = projectEntryStore,
+            recommendationStore = recommendationStore,
+            recommendationGenerationMarkerStore = recommendationGenerationMarkerStore,
+            recommendationGenerator = recommendationGenerator
         )
     }
 }
@@ -447,6 +453,112 @@ class FakeProjectEntryRepository : ProjectEntryRepository {
     override suspend fun delete(ownerId: String, id: String) {
         entries.removeAll { it.ownerId == ownerId && it.id == id }
     }
+}
+
+// In-memory stand-in for FirestoreRecommendationStore.
+class FakeRecommendationRepository : RecommendationRepository {
+    private val recommendations = mutableListOf<Recommendation>()
+    private var nextId = 0
+
+    override suspend fun all(ownerId: String): List<Recommendation> =
+        recommendations.filter { it.ownerId == ownerId }.sortedByDescending { it.createdAt }
+
+    override suspend fun addAll(ownerId: String, component: Component, recommendations: List<GeneratedRecommendation>): List<Recommendation> {
+        val stored = recommendations.map { generated ->
+            Recommendation(
+                id = "recommendation-${nextId++}",
+                ownerId = ownerId,
+                component = component,
+                name = generated.name,
+                rationale = generated.rationale,
+                supportingFactIds = generated.supportingFactIds,
+                suggestedPriority = generated.suggestedPriority,
+                status = RecommendationStatus.PENDING,
+                createdAt = java.time.Instant.now()
+            )
+        }
+        this.recommendations += stored
+        return stored
+    }
+}
+
+// In-memory stand-in for FirestoreRecommendationGenerationMarkerStore.
+class FakeRecommendationGenerationMarkerRepository : RecommendationGenerationMarkerRepository {
+    private val markers = mutableMapOf<Pair<String, Component>, RecommendationGenerationMarker>()
+
+    override suspend fun get(ownerId: String, component: Component): RecommendationGenerationMarker? = markers[ownerId to component]
+
+    override suspend fun save(ownerId: String, component: Component, factCount: Int): RecommendationGenerationMarker {
+        val marker = RecommendationGenerationMarker(ownerId, component, factCount, java.time.Instant.now())
+        markers[ownerId to component] = marker
+        return marker
+    }
+}
+
+// Stands in for GeminiRecommendationGenerator - returns one fixed
+// recommendation grounded in the first supplied fact, so route tests can
+// exercise the generate-job flow without ever calling Gemini for real.
+class FakeRecommendationGenerator(
+    private val namePrefix: String = "Recommended project for"
+) : RecommendationGenerator {
+    var callCount: Int = 0
+        private set
+
+    override suspend fun generate(
+        component: Component,
+        facts: List<HouseFact>,
+        activeAndPlannedProjects: List<Project>,
+        deprioritizedProjects: List<Project>,
+        pastRecommendations: List<Recommendation>
+    ): List<GeneratedRecommendation> {
+        callCount++
+        if (facts.isEmpty()) return emptyList()
+        return listOf(
+            GeneratedRecommendation(
+                name = "$namePrefix $component",
+                rationale = "Based on ${facts.size} known fact(s) about $component.",
+                supportingFactIds = listOf(facts.first().id),
+                suggestedPriority = Priority.MEDIUM
+            )
+        )
+    }
+}
+
+// Like FakeRecommendationGenerator, but suspends first - lets a test
+// observe the generation job while it's still RUNNING, same reasoning as
+// SlowTransactionCategorizer.
+class SlowRecommendationGenerator(private val delayMs: Long = 200) : RecommendationGenerator {
+    override suspend fun generate(
+        component: Component,
+        facts: List<HouseFact>,
+        activeAndPlannedProjects: List<Project>,
+        deprioritizedProjects: List<Project>,
+        pastRecommendations: List<Recommendation>
+    ): List<GeneratedRecommendation> {
+        delay(delayMs)
+        if (facts.isEmpty()) return emptyList()
+        return listOf(
+            GeneratedRecommendation(
+                name = "Slow recommendation for $component",
+                rationale = "Generated after a delay.",
+                supportingFactIds = listOf(facts.first().id),
+                suggestedPriority = Priority.LOW
+            )
+        )
+    }
+}
+
+// Polls GET /projects/recommendations/status until the background
+// generation job started by POST /projects/recommendations/generate
+// leaves RUNNING - same reasoning as waitForExtractionToFinish.
+suspend fun HttpClient.waitForRecommendationGenerationToFinish(): RecommendationJobStatusResponse {
+    repeat(200) {
+        val text = get("/projects/recommendations/status").bodyAsText()
+        val status = statusJson.decodeFromString<RecommendationJobStatusResponse>(text)
+        if (status.status != "RUNNING") return status
+        delay(10)
+    }
+    error("Recommendation generation job did not finish in time")
 }
 
 // Stands in for GeminiComponentSummarizer - returns a fixed summary string
