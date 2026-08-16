@@ -9,7 +9,15 @@ private val entryDateFormatter = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneI
 // projects grouped by status (Active/Planned/Deprioritized/Completed, in
 // that display order) - same "skip empty groups" pattern
 // houseFactsPageModel uses for its component groups.
-fun projectsPageModel(projects: List<Project>, componentFilter: Component?, message: String?, error: String?): Map<String, Any?> {
+fun projectsPageModel(
+    projects: List<Project>,
+    componentFilter: Component?,
+    isGenerating: Boolean,
+    pendingRecommendations: List<Recommendation>,
+    facts: List<HouseFact>,
+    message: String?,
+    error: String?
+): Map<String, Any?> {
     val filtered = if (componentFilter != null) projects.filter { it.component == componentFilter } else projects
     val byStatus = filtered.groupBy { it.status }
     val groups = ProjectStatus.entries.mapNotNull { status ->
@@ -20,14 +28,26 @@ fun projectsPageModel(projects: List<Project>, componentFilter: Component?, mess
             "projects" to statusProjects.map { projectSummaryModel(it) }
         )
     }
+    val factsById = facts.associateBy { it.id }
     return mapOf(
         "groups" to groups,
         "componentOptions" to Component.entries.map { it.name },
         "selectedComponent" to componentFilter?.name,
+        "isGenerating" to isGenerating,
+        "recommendations" to pendingRecommendations.map { recommendationSummaryModel(it, factsById) },
         "message" to message,
         "error" to error
     )
 }
+
+private fun recommendationSummaryModel(recommendation: Recommendation, factsById: Map<String, HouseFact>): Map<String, Any?> = mapOf(
+    "id" to recommendation.id,
+    "name" to recommendation.name,
+    "component" to recommendation.component.name,
+    "rationale" to recommendation.rationale,
+    "priority" to recommendation.suggestedPriority.name,
+    "supportingFacts" to recommendation.supportingFactIds.mapNotNull { factsById[it]?.what }
+)
 
 private fun projectSummaryModel(project: Project): Map<String, Any?> = mapOf(
     "id" to project.id,

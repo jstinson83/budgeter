@@ -7,12 +7,19 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.utils.io.toByteArray
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.util.UUID
 
-// Chunks 1-3 of House Projects & Recommendations (see .claude/current.md):
+// Chunks 1-5 of House Projects & Recommendations (see .claude/current.md):
 // manual project creation/editing, linking existing HouseFact/HouseDocument
-// rows to a project, and a notes/quotes/photos/links feed. No
-// recommendations yet.
+// rows to a project, a notes/quotes/photos/links feed, Gemini
+// recommendation generation, and reviewing those recommendations. Pending
+// recommendations render inline on /projects itself rather than a
+// dedicated page - maintainer's call: a PENDING recommendation isn't a
+// Project (no status to sit under one of the status groups with), but that
+// didn't need a whole separate screen, just its own section on the same
+// page. No browse-past-accepted/rejected view - nothing needs it yet.
 
 private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "svg")
 
@@ -39,16 +46,77 @@ fun Route.projectRoutes(
     // same GCS bucket HouseDocument uploads use, but these uploads never
     // become a HouseDocument row and never go through
     // HouseFactExtractionJobManager. See ProjectEntryStore.kt.
-    entryBlobStore: DocumentBlobStore
+    entryBlobStore: DocumentBlobStore,
+    recommendationJobManager: RecommendationJobManager,
+    recommendationStore: RecommendationRepository
 ) {
     get("/projects") {
         val ownerId = call.requireUserId()
         val componentFilter = call.request.queryParameters["component"]?.let { runCatching { Component.valueOf(it) }.getOrNull() }
         val projects = projectStore.all(ownerId)
+        val pendingRecommendations = recommendationStore.all(ownerId).filter { it.status == RecommendationStatus.PENDING }
+        val facts = houseFactStore.all(ownerId)
+        // consumeTerminal rather than status: this is the one page render
+        // that ever shows a just-finished generation job's outcome, same
+        // "show once, then forget" posture as
+        // HouseFactExtractionJobManager.consumeTerminal.
+        val jobState = recommendationJobManager.consumeTerminal(ownerId)
         val message = call.request.queryParameters["message"]
+            ?: jobState?.takeIf { it.status == RecommendationJobStatus.DONE }?.message
         val error = call.request.queryParameters["error"]
-        val model = projectsPageModel(projects, componentFilter, message, error) + call.currentUserModel()
+            ?: jobState?.takeIf { it.status == RecommendationJobStatus.FAILED }?.error
+        val isGenerating = recommendationJobManager.status(ownerId)?.status == RecommendationJobStatus.RUNNING
+        val model = projectsPageModel(projects, componentFilter, isGenerating, pendingRecommendations, facts, message, error) + call.currentUserModel()
         call.respond(FreeMarkerContent("projects.ftl", model))
+    }
+
+    post("/projects/recommendations/generate") {
+        val ownerId = call.requireUserId()
+        recommendationJobManager.start(ownerId)
+        call.respondRedirect("/projects")
+    }
+
+    // Polled by projects.ftl's inline script while generation is RUNNING -
+    // same pattern as GET /house/documents/{id}/status.
+    get("/projects/recommendations/status") {
+        val ownerId = call.requireUserId()
+        val state = recommendationJobManager.status(ownerId)
+        val response = RecommendationJobStatusResponse(
+            status = state?.status?.name ?: "IDLE",
+            message = state?.message,
+            error = state?.error
+        )
+        call.respondText(Json.encodeToString(response), ContentType.Application.Json)
+    }
+
+    // Turns a recommendation straight into a project - pre-filled with its
+    // name/component/suggestedPriority, status PLANNED (same default the
+    // "Add project" form uses), and its supporting facts already attached
+    // (Project.factIds), so the traceability from "why was this
+    // recommended" isn't lost the moment it becomes a project. The
+    // Recommendation row itself just flips to ACCEPTED - no back-reference
+    // to the project it created, since nothing reads one: a future
+    // generation run already sees the new project via
+    // activeAndPlannedProjects regardless.
+    post("/projects/recommendations/{id}/accept") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val recommendation = recommendationStore.get(ownerId, id)
+            ?: return@post call.respondRedirect("/projects?error=${"Recommendation not found".encodeURLQueryComponent()}")
+
+        val project = projectStore.add(ownerId, recommendation.name, ProjectStatus.PLANNED, recommendation.component, recommendation.suggestedPriority)
+        recommendation.supportingFactIds.forEach { factId -> projectStore.attachFact(ownerId, project.id, factId) }
+        recommendationStore.updateStatus(ownerId, id, RecommendationStatus.ACCEPTED)
+
+        call.respondRedirect("/projects/${project.id}?message=${"Created ${project.name}".encodeURLQueryComponent()}")
+    }
+
+    post("/projects/recommendations/{id}/reject") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val updated = recommendationStore.updateStatus(ownerId, id, RecommendationStatus.REJECTED)
+            ?: return@post call.respond(HttpStatusCode.NotFound)
+        call.respondRedirect("/projects?message=${"Dismissed ${updated.name}".encodeURLQueryComponent()}")
     }
 
     post("/projects") {

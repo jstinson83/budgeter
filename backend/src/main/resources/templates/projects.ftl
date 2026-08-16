@@ -22,6 +22,45 @@
 
     <h1>Projects</h1>
 
+    <#if isGenerating>
+    <p class="empty-state">Generating recommendations&hellip;</p>
+    <#else>
+    <form method="post" action="/projects/recommendations/generate">
+      <button type="submit" class="button button-secondary">Generate recommendations</button>
+    </form>
+    </#if>
+
+    <#if (recommendations?size gt 0)>
+    <h2>Recommendations</h2>
+    <div class="transaction-list">
+      <#list recommendations as rec>
+      <div class="transaction-item">
+        <div class="transaction-row">
+          <span class="transaction-description">${rec.name}</span>
+          <span class="transaction-account">${rec.component?lower_case?cap_first}</span>
+          <span class="priority-badge priority-badge-${rec.priority?lower_case}">${rec.priority?lower_case?cap_first}</span>
+        </div>
+        <p class="fact-context">${rec.rationale}</p>
+        <#if (rec.supportingFacts?size gt 0)>
+        <ul class="fact-context">
+          <#list rec.supportingFacts as fact>
+          <li>${fact}</li>
+          </#list>
+        </ul>
+        </#if>
+        <div class="document-actions">
+          <form method="post" action="/projects/recommendations/${rec.id}/accept">
+            <button type="submit" class="button button-small">Create project</button>
+          </form>
+          <form method="post" action="/projects/recommendations/${rec.id}/reject">
+            <button type="submit" class="button button-small button-secondary">Reject</button>
+          </form>
+        </div>
+      </div>
+      </#list>
+    </div>
+    </#if>
+
     <form method="get" action="/projects" class="form-row filter-row">
       <div class="form-field">
         <span class="form-field-label">Component</span>
@@ -90,5 +129,26 @@
       </form>
     </div>
   </div>
+
+  <#if isGenerating>
+  <script>
+    // No framework in this app - same polling pattern as
+    // house-document.ftl. Keeps RecommendationJobManager's background
+    // coroutine's CPU allocated on Cloud Run between the request that
+    // started it and the one that observes it finished, in addition to
+    // driving the UI.
+    (function poll() {
+      fetch('/projects/recommendations/status')
+        .then((response) => response.json())
+        .then((status) => {
+          if (status.status === 'RUNNING') {
+            setTimeout(poll, 2000);
+          } else {
+            window.location.reload();
+          }
+        });
+    })();
+  </script>
+  </#if>
 </body>
 </html>

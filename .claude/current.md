@@ -35,7 +35,7 @@ smallest first:
       uses, *not* as a `HouseDocument` row - a quote/photo isn't
       house-knowledge source material to extract facts from, and isn't
       PDF-only. See `context.md`.
-- [ ] **4. Recommendation generation** - `Recommendation` entity/store
+- [x] **4. Recommendation generation** - `Recommendation` entity/store
       (`component`, `name`, rationale, `supportingFactIds`,
       `suggestedPriority`, `status`: Pending/Accepted/Rejected - Rejected
       is one merged state covering both "deprioritize" and "dismiss", no
@@ -43,13 +43,22 @@ smallest first:
       component with no new facts since its own last generation (a stored
       per-`(ownerId, component)` staleness marker), one Gemini call per
       stale component - same async-job-plus-poll shape as document
-      extraction. One "Generate recommendations" button drives the whole
-      loop, not a per-component button.
-- [ ] **5. Recommendation review UI** - screen listing pending
-      recommendations (name/rationale/supporting facts/priority) with
-      actions Create project (pre-fills from the rec, including linked
-      facts and seeded priority) and Reject (persisted, browsable), plus a
-      way to browse past accepted/rejected recommendations.
+      extraction. One "Generate recommendations" button on `/projects`
+      drives the whole loop. No review UI yet - generation just persists
+      PENDING rows and reports a summary banner ("Generated N
+      recommendation(s) across M component(s)"); chunk 5 builds the actual
+      list/actions. See `context.md`.
+- [x] **5. Recommendation review UI** - pending recommendations
+      (name/rationale/supporting facts/priority) render inline on
+      `/projects` itself, not a dedicated page - maintainer's call, see
+      `context.md`. Actions: Create project (pre-fills name/component/
+      suggestedPriority, status PLANNED, and attaches the supporting facts)
+      and Reject (persisted as `RecommendationStatus.REJECTED`, drops off
+      the pending list). No browse-past-accepted/rejected view - nothing
+      needs it yet.
+
+**All five chunks of House Projects & Recommendations are done.** Core
+loop (Facts -> Recommendations -> Projects -> Work) is live end to end.
 
 **Deferred, noted for later, not part of this chunk sequence:** a "merge
 project" action for combining multiple single-component projects into one
