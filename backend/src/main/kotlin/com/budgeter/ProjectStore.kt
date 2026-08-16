@@ -4,9 +4,9 @@ import com.google.cloud.firestore.Firestore
 import java.time.Instant
 
 // A project the household is running against the house - created manually
-// here (chunk 1 of House Projects & Recommendations, see
-// .claude/current.md) or, later, accepted from a Recommendation. This slice
-// is deliberately narrow: no linked facts/documents (chunk 2) and no
+// (chunk 1 of House Projects & Recommendations, see .claude/current.md) or,
+// later, accepted from a Recommendation. Can now link to existing
+// HouseFact/HouseDocument rows (chunk 2). Still no
 // notes/decisions/quotes/photos/links feed (chunk 3) yet.
 enum class ProjectStatus { ACTIVE, PLANNED, DEPRIORITIZED, COMPLETED }
 
@@ -30,7 +30,14 @@ data class Project(
     // "merge projects" action, see current.md.
     val component: Component,
     val priority: Priority,
-    val createdAt: Instant
+    val createdAt: Instant,
+    // HouseFact/HouseDocument ids this project draws on - many-to-many, no
+    // ownership implied: the same fact/document can back more than one
+    // project. Order isn't meaningful; attach appends, detach removes.
+    // Trail the constructor (with defaults) so every existing positional
+    // Project(...) call site keeps compiling unchanged.
+    val factIds: List<String> = emptyList(),
+    val documentIds: List<String> = emptyList()
 )
 
 interface ProjectRepository {
@@ -38,6 +45,10 @@ interface ProjectRepository {
     suspend fun get(ownerId: String, id: String): Project?
     suspend fun add(ownerId: String, name: String, status: ProjectStatus, component: Component, priority: Priority): Project
     suspend fun update(ownerId: String, id: String, name: String, status: ProjectStatus, component: Component, priority: Priority): Project?
+    suspend fun attachFact(ownerId: String, id: String, factId: String): Project?
+    suspend fun detachFact(ownerId: String, id: String, factId: String): Project?
+    suspend fun attachDocument(ownerId: String, id: String, documentId: String): Project?
+    suspend fun detachDocument(ownerId: String, id: String, documentId: String): Project?
 }
 
 class FirestoreProjectStore(private val firestore: Firestore) : ProjectRepository {
@@ -79,13 +90,45 @@ class FirestoreProjectStore(private val firestore: Firestore) : ProjectRepositor
         return existing.copy(name = name, status = status, component = component, priority = priority)
     }
 
+    override suspend fun attachFact(ownerId: String, id: String, factId: String): Project? {
+        val existing = get(ownerId, id) ?: return null
+        if (factId in existing.factIds) return existing
+        val factIds = existing.factIds + factId
+        collection.document(id).update("factIds", factIds).get()
+        return existing.copy(factIds = factIds)
+    }
+
+    override suspend fun detachFact(ownerId: String, id: String, factId: String): Project? {
+        val existing = get(ownerId, id) ?: return null
+        val factIds = existing.factIds - factId
+        collection.document(id).update("factIds", factIds).get()
+        return existing.copy(factIds = factIds)
+    }
+
+    override suspend fun attachDocument(ownerId: String, id: String, documentId: String): Project? {
+        val existing = get(ownerId, id) ?: return null
+        if (documentId in existing.documentIds) return existing
+        val documentIds = existing.documentIds + documentId
+        collection.document(id).update("documentIds", documentIds).get()
+        return existing.copy(documentIds = documentIds)
+    }
+
+    override suspend fun detachDocument(ownerId: String, id: String, documentId: String): Project? {
+        val existing = get(ownerId, id) ?: return null
+        val documentIds = existing.documentIds - documentId
+        collection.document(id).update("documentIds", documentIds).get()
+        return existing.copy(documentIds = documentIds)
+    }
+
     private fun projectMap(ownerId: String, name: String, status: ProjectStatus, component: Component, priority: Priority, createdAt: Instant): Map<String, Any?> = mapOf(
         "ownerId" to ownerId,
         "name" to name,
         "status" to status.name,
         "component" to component.name,
         "priority" to priority.name,
-        "createdAt" to createdAt.toString()
+        "createdAt" to createdAt.toString(),
+        "factIds" to emptyList<String>(),
+        "documentIds" to emptyList<String>()
     )
 
     private fun toProject(id: String, data: Map<String, Any?>): Project = Project(
@@ -95,6 +138,8 @@ class FirestoreProjectStore(private val firestore: Firestore) : ProjectRepositor
         status = (data["status"] as? String)?.let { runCatching { ProjectStatus.valueOf(it) }.getOrNull() } ?: ProjectStatus.PLANNED,
         component = (data["component"] as? String)?.let { runCatching { Component.valueOf(it) }.getOrNull() } ?: Component.OTHER,
         priority = (data["priority"] as? String)?.let { runCatching { Priority.valueOf(it) }.getOrNull() } ?: Priority.MEDIUM,
-        createdAt = (data["createdAt"] as? String)?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: Instant.EPOCH
+        createdAt = (data["createdAt"] as? String)?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: Instant.EPOCH,
+        factIds = (data["factIds"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+        documentIds = (data["documentIds"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
     )
 }

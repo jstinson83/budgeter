@@ -747,10 +747,41 @@ and Gemini-generated recommendations are later chunks, not built yet).
   edit form for name/status/component/priority - unlike `/categories`,
   which splits label-editing from a separate toggle-active action, a
   project's four fields are small enough to edit together in one `POST`.
-- **Not built in this chunk**: linking existing `HouseFact`/`HouseDocument`
+- **Not built in chunk 1**: linking existing `HouseFact`/`HouseDocument`
   rows to a project, the notes/decisions/quotes/photos/links feed, project
   deletion, and anything recommendation-related. See `current.md` for the
   remaining chunk sequence.
+
+### Chunk 2 - linking facts & documents to a project
+
+`Project` gained `factIds`/`documentIds: List<String>` (`ProjectStore.kt`) -
+many-to-many, no ownership implied: the same `HouseFact`/`HouseDocument` can
+back more than one project. `ProjectRepository` gained
+`attachFact`/`detachFact`/`attachDocument`/`detachDocument`, each a
+read-modify-write against the existing project (add/remove from the list,
+write the whole array back) rather than Firestore's `arrayUnion`/
+`arrayRemove` - kept consistent with the read-then-`update()` style the rest
+of this store (and `HouseFactStore.resolve`) already uses, not for a
+specific correctness reason.
+
+`/projects/{id}` (`project.ftl`) now shows two sections, each split into
+"linked" (with a Remove button posting to `/projects/{id}/facts/{factId}/
+detach` or `/projects/{id}/documents/{documentId}/detach`) and an "available
+to attach" `<select>` picker (posting to `/projects/{id}/facts` or
+`/projects/{id}/documents`) - `projectPageModel` (`ProjectPage.kt`) takes
+the owner's *entire* fact/document collections and partitions them by
+`project.factIds`/`documentIds` membership, same "fetch everything, split in
+memory" approach `houseFactsPageModel` uses for review/accepted facts. A
+fact/document can be picked from more than one project's picker at once -
+attaching to project B never removes it from project A.
+
+Attach handlers re-resolve the client-supplied `factId`/`documentId` against
+`houseFactStore.all(ownerId)` / `houseDocumentStore.get(ownerId, id)` before
+writing - same "never trust a client-supplied id directly" posture as
+`/analysis/recategorize`'s `transactionId` handling.
+
+Still not built: the notes/decisions/quotes/photos/links feed (chunk 3),
+project deletion, and anything recommendation-related.
 
 ## Configuration reference
 

@@ -20,7 +20,7 @@ smallest first:
       `priority`: High/Medium/Low, mutable), `/projects` page (list by
       status, filter by component), create/edit form, change status. No
       recommendations, no linked facts yet.
-- [ ] **2. Link facts & documents to a project** - project detail page
+- [x] **2. Link facts & documents to a project** - project detail page
       gains attach/detach pickers for existing `HouseFact`/`HouseDocument`
       rows (`factIds`/`documentIds` on `Project`).
 - [ ] **3. Project entry feed** - `ProjectEntry` (Note/Decision/Quote/

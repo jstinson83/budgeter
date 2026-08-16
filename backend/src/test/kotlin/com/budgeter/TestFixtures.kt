@@ -381,6 +381,40 @@ class FakeProjectRepository : ProjectRepository {
         projects[index] = updated
         return updated
     }
+
+    override suspend fun attachFact(ownerId: String, id: String, factId: String): Project? {
+        val index = projects.indexOfFirst { it.ownerId == ownerId && it.id == id }
+        if (index == -1) return null
+        if (factId in projects[index].factIds) return projects[index]
+        val updated = projects[index].copy(factIds = projects[index].factIds + factId)
+        projects[index] = updated
+        return updated
+    }
+
+    override suspend fun detachFact(ownerId: String, id: String, factId: String): Project? {
+        val index = projects.indexOfFirst { it.ownerId == ownerId && it.id == id }
+        if (index == -1) return null
+        val updated = projects[index].copy(factIds = projects[index].factIds - factId)
+        projects[index] = updated
+        return updated
+    }
+
+    override suspend fun attachDocument(ownerId: String, id: String, documentId: String): Project? {
+        val index = projects.indexOfFirst { it.ownerId == ownerId && it.id == id }
+        if (index == -1) return null
+        if (documentId in projects[index].documentIds) return projects[index]
+        val updated = projects[index].copy(documentIds = projects[index].documentIds + documentId)
+        projects[index] = updated
+        return updated
+    }
+
+    override suspend fun detachDocument(ownerId: String, id: String, documentId: String): Project? {
+        val index = projects.indexOfFirst { it.ownerId == ownerId && it.id == id }
+        if (index == -1) return null
+        val updated = projects[index].copy(documentIds = projects[index].documentIds - documentId)
+        projects[index] = updated
+        return updated
+    }
 }
 
 // Stands in for GeminiComponentSummarizer - returns a fixed summary string

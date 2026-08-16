@@ -6,10 +6,15 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 
-// Chunk 1 of House Projects & Recommendations (see .claude/current.md):
-// manual project creation/editing only - no recommendations, no linked
-// facts/documents/entries yet.
-fun Route.projectRoutes(projectStore: ProjectRepository) {
+// Chunks 1-2 of House Projects & Recommendations (see .claude/current.md):
+// manual project creation/editing, plus linking existing HouseFact/
+// HouseDocument rows to a project. No recommendations and no
+// notes/decisions/quotes/photos/links feed yet.
+fun Route.projectRoutes(
+    projectStore: ProjectRepository,
+    houseFactStore: HouseFactRepository,
+    houseDocumentStore: HouseDocumentRepository
+) {
     get("/projects") {
         val ownerId = call.requireUserId()
         val componentFilter = call.request.queryParameters["component"]?.let { runCatching { Component.valueOf(it) }.getOrNull() }
@@ -39,9 +44,11 @@ fun Route.projectRoutes(projectStore: ProjectRepository) {
         val ownerId = call.requireUserId()
         val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.NotFound)
         val project = projectStore.get(ownerId, id) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val facts = houseFactStore.all(ownerId)
+        val documents = houseDocumentStore.all(ownerId)
         val message = call.request.queryParameters["message"]
         val error = call.request.queryParameters["error"]
-        val model = projectPageModel(project, message, error) + call.currentUserModel()
+        val model = projectPageModel(project, facts, documents, message, error) + call.currentUserModel()
         call.respond(FreeMarkerContent("project.ftl", model))
     }
 
@@ -63,5 +70,47 @@ fun Route.projectRoutes(projectStore: ProjectRepository) {
         } else {
             call.respondRedirect("/projects?error=${"Project not found".encodeURLQueryComponent()}")
         }
+    }
+
+    // factId/documentId are client-supplied (the picker's <select> value) -
+    // re-resolved against this owner's own facts/documents rather than
+    // trusted directly, same "confirm ownership before touching it" posture
+    // as /analysis/recategorize's transactionId handling.
+    post("/projects/{id}/facts") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val formParams = call.receiveParameters()
+        val fact = formParams["factId"]?.let { factId -> houseFactStore.all(ownerId).find { it.id == factId } }
+            ?: return@post call.respondRedirect("/projects/$id?error=${"Fact not found".encodeURLQueryComponent()}")
+        val updated = projectStore.attachFact(ownerId, id, fact.id)
+            ?: return@post call.respondRedirect("/projects?error=${"Project not found".encodeURLQueryComponent()}")
+        call.respondRedirect("/projects/${updated.id}?message=${"Linked fact".encodeURLQueryComponent()}")
+    }
+
+    post("/projects/{id}/facts/{factId}/detach") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val factId = call.parameters["factId"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val updated = projectStore.detachFact(ownerId, id, factId) ?: return@post call.respond(HttpStatusCode.NotFound)
+        call.respondRedirect("/projects/${updated.id}?message=${"Removed fact".encodeURLQueryComponent()}")
+    }
+
+    post("/projects/{id}/documents") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val formParams = call.receiveParameters()
+        val document = formParams["documentId"]?.let { houseDocumentStore.get(ownerId, it) }
+            ?: return@post call.respondRedirect("/projects/$id?error=${"Document not found".encodeURLQueryComponent()}")
+        val updated = projectStore.attachDocument(ownerId, id, document.id)
+            ?: return@post call.respondRedirect("/projects?error=${"Project not found".encodeURLQueryComponent()}")
+        call.respondRedirect("/projects/${updated.id}?message=${"Linked document".encodeURLQueryComponent()}")
+    }
+
+    post("/projects/{id}/documents/{documentId}/detach") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val documentId = call.parameters["documentId"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val updated = projectStore.detachDocument(ownerId, id, documentId) ?: return@post call.respond(HttpStatusCode.NotFound)
+        call.respondRedirect("/projects/${updated.id}?message=${"Removed document".encodeURLQueryComponent()}")
     }
 }

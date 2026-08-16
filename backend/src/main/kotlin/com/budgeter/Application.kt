@@ -172,7 +172,7 @@ fun Application.module(
                 houseComponentSummaryStore,
                 componentSummarizer
             )
-            projectRoutes(projectStore)
+            projectRoutes(projectStore, houseFactStore, houseDocumentStore)
         }
     }
 }
