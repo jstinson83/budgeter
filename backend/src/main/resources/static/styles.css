@@ -18,6 +18,7 @@
   --green-soft-bg: #e7efe2;
   --brick: #9c4a34;
   --brick-soft-bg: #f5e6e0;
+  --brass-soft-bg: #f3ead2;
   --danger-fill: #a6452e;
   --danger-fill-text: #f7f1e8;
   --shadow: 0 4px 24px rgba(38, 36, 31, 0.08);
@@ -49,6 +50,7 @@
     --green-soft-bg: #263323;
     --brick: #d08668;
     --brick-soft-bg: #3a241d;
+    --brass-soft-bg: #3a2f18;
     --danger-fill: #a6452e;
     --danger-fill-text: #f7f1e8;
     --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
@@ -165,6 +167,62 @@ h1, h2 {
   color: var(--brick);
   font-weight: 600;
   cursor: pointer;
+}
+
+/* Form controls (shared across the app) - bare, unclassed inputs/selects
+   previously fell back to browser-default styling everywhere except inside
+   .recategorize-dialog; this brings every page in line with that same
+   look instead of duplicating it per-page. */
+
+input[type="text"],
+input[type="url"],
+input[type="number"],
+select,
+textarea {
+  padding: 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: var(--bg);
+  color: var(--text);
+  /* 16px min on iOS Safari - anything smaller triggers an auto-zoom on
+     focus, which is disorienting on a phone. */
+  min-height: 2.5rem;
+}
+
+textarea {
+  resize: vertical;
+}
+
+/* The native "Choose File" control can't be restyled directly - only its
+   ::file-selector-button pseudo-element can. Styling that alone (rather
+   than hiding the input and faking a button with a <label>) keeps native
+   keyboard/screen-reader behavior intact for free. */
+input[type="file"] {
+  padding: 0.3rem;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  max-width: 100%;
+}
+
+input[type="file"]::file-selector-button {
+  padding: 0.55rem 1rem;
+  margin-right: 0.75rem;
+  border: none;
+  border-radius: 4px;
+  background: var(--brass-fill);
+  color: var(--brass-fill-text);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+input[type="file"]::file-selector-button:hover {
+  background: var(--brass);
 }
 
 /* App shell */
@@ -983,5 +1041,86 @@ h1, h2 {
 }
 
 .component-summary-stale {
+  color: var(--text-dim);
+}
+
+/* Projects */
+
+.form-card {
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.form-card h2 {
+  margin-top: 0;
+}
+
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.filter-row {
+  margin-bottom: 1.5rem;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1 1 8rem;
+  min-width: 8rem;
+}
+
+.form-field-wide {
+  flex-basis: 100%;
+}
+
+.form-field-label {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.form-field input,
+.form-field select,
+.form-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-row .button {
+  margin-bottom: 0;
+  /* Matches .form-field's 2.5rem input min-height so the submit button
+     lines up with the fields beside it instead of sitting shorter. */
+  min-height: 2.5rem;
+}
+
+.priority-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.priority-badge-high {
+  background: var(--brick-soft-bg);
+  color: var(--brick);
+}
+
+.priority-badge-medium {
+  background: var(--brass-soft-bg);
+  color: var(--brass);
+}
+
+.priority-badge-low {
+  background: var(--border);
   color: var(--text-dim);
 }

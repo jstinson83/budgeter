@@ -24,86 +24,39 @@
 
     <h1>${project.name}</h1>
 
-    <form method="post" action="/projects/${project.id}" class="upload-form">
-      <input type="text" name="name" value="${project.name}" required>
-      <select name="status">
-        <#list statusOptions as option>
-        <option value="${option}" <#if option == project.status>selected</#if>>${option?lower_case?cap_first}</option>
-        </#list>
-      </select>
-      <select name="component">
-        <#list componentOptions as option>
-        <option value="${option}" <#if option == project.component>selected</#if>>${option?lower_case?cap_first}</option>
-        </#list>
-      </select>
-      <select name="priority">
-        <#list priorityOptions as option>
-        <option value="${option}" <#if option == project.priority>selected</#if>>${option?lower_case?cap_first}</option>
-        </#list>
-      </select>
-      <button type="submit" class="button">Save</button>
-    </form>
-
-    <h2>Facts</h2>
-    <#if (linkedFacts?size == 0)>
-    <p class="empty-state">No facts linked yet.</p>
-    <#else>
-    <div class="transaction-list">
-      <#list linkedFacts as fact>
-      <div class="transaction-item">
-        <div class="transaction-row">
-          <span class="transaction-description">${fact.what}</span>
-          <span class="fact-type-badge">${fact.component?lower_case?cap_first}</span>
+    <div class="form-card">
+      <form method="post" action="/projects/${project.id}" class="form-row">
+        <div class="form-field form-field-wide">
+          <span class="form-field-label">Name</span>
+          <input type="text" name="name" value="${project.name}" required>
         </div>
-        <#if fact.sourceQuote??>
-        <p class="fact-quote">&ldquo;${fact.sourceQuote}&rdquo;</p>
-        </#if>
-        <p class="fact-context">From ${fact.filename}</p>
-        <form method="post" action="/projects/${project.id}/facts/${fact.id}/detach">
-          <button type="submit" class="button button-small button-secondary">Remove</button>
-        </form>
-      </div>
-      </#list>
+        <div class="form-field">
+          <span class="form-field-label">Status</span>
+          <select name="status">
+            <#list statusOptions as option>
+            <option value="${option}" <#if option == project.status>selected</#if>>${option?lower_case?cap_first}</option>
+            </#list>
+          </select>
+        </div>
+        <div class="form-field">
+          <span class="form-field-label">Component</span>
+          <select name="component">
+            <#list componentOptions as option>
+            <option value="${option}" <#if option == project.component>selected</#if>>${option?lower_case?cap_first}</option>
+            </#list>
+          </select>
+        </div>
+        <div class="form-field">
+          <span class="form-field-label">Priority</span>
+          <select name="priority">
+            <#list priorityOptions as option>
+            <option value="${option}" <#if option == project.priority>selected</#if>>${option?lower_case?cap_first}</option>
+            </#list>
+          </select>
+        </div>
+        <button type="submit" class="button">Save</button>
+      </form>
     </div>
-    </#if>
-
-    <#if (availableFacts?size gt 0)>
-    <form method="post" action="/projects/${project.id}/facts" class="upload-form">
-      <select name="factId">
-        <#list availableFacts as fact>
-        <option value="${fact.id}">[${fact.component?lower_case?cap_first}] ${fact.what}</option>
-        </#list>
-      </select>
-      <button type="submit" class="button button-small">Link fact</button>
-    </form>
-    </#if>
-
-    <h2>Documents</h2>
-    <#if (linkedDocuments?size == 0)>
-    <p class="empty-state">No documents linked yet.</p>
-    <#else>
-    <div class="transaction-list">
-      <#list linkedDocuments as doc>
-      <div class="transaction-row">
-        <a href="/house/documents/${doc.id}" class="transaction-description">${doc.filename}</a>
-        <form method="post" action="/projects/${project.id}/documents/${doc.id}/detach">
-          <button type="submit" class="button button-small button-secondary">Remove</button>
-        </form>
-      </div>
-      </#list>
-    </div>
-    </#if>
-
-    <#if (availableDocuments?size gt 0)>
-    <form method="post" action="/projects/${project.id}/documents" class="upload-form">
-      <select name="documentId">
-        <#list availableDocuments as doc>
-        <option value="${doc.id}">${doc.filename}</option>
-        </#list>
-      </select>
-      <button type="submit" class="button button-small">Link document</button>
-    </form>
-    </#if>
 
     <h2>Notes, quotes &amp; links</h2>
     <#if (entries?size == 0)>
@@ -134,11 +87,86 @@
     </div>
     </#if>
 
-    <form method="post" action="/projects/${project.id}/entries" enctype="multipart/form-data" class="upload-form">
-      <textarea name="text" placeholder="Add a note, decision, or paste a link&hellip;" rows="2"></textarea>
-      <input type="file" name="file">
-      <button type="submit" class="button button-small">Add</button>
+    <div class="form-card">
+      <form method="post" action="/projects/${project.id}/entries" enctype="multipart/form-data" class="form-row">
+        <div class="form-field form-field-wide">
+          <span class="form-field-label">Add a note, quote, or link</span>
+          <textarea name="text" placeholder="Type a note, or paste a link&hellip;" rows="2"></textarea>
+        </div>
+        <div class="form-field form-field-wide">
+          <span class="form-field-label">Attach a file (optional)</span>
+          <input type="file" name="file">
+        </div>
+        <button type="submit" class="button">Add</button>
+      </form>
+    </div>
+
+    <h2>Facts</h2>
+    <#if (linkedFacts?size == 0)>
+    <p class="empty-state">No facts linked yet.</p>
+    <#else>
+    <div class="transaction-list">
+      <#list linkedFacts as fact>
+      <div class="transaction-item">
+        <div class="transaction-row">
+          <span class="transaction-description">${fact.what}</span>
+          <span class="fact-type-badge">${fact.component?lower_case?cap_first}</span>
+        </div>
+        <#if fact.sourceQuote??>
+        <p class="fact-quote">&ldquo;${fact.sourceQuote}&rdquo;</p>
+        </#if>
+        <p class="fact-context">From ${fact.filename}</p>
+        <form method="post" action="/projects/${project.id}/facts/${fact.id}/detach">
+          <button type="submit" class="button button-small button-secondary">Remove</button>
+        </form>
+      </div>
+      </#list>
+    </div>
+    </#if>
+
+    <#if (availableFacts?size gt 0)>
+    <form method="post" action="/projects/${project.id}/facts" class="form-row">
+      <div class="form-field form-field-wide">
+        <span class="form-field-label">Link an existing fact</span>
+        <select name="factId">
+          <#list availableFacts as fact>
+          <option value="${fact.id}">[${fact.component?lower_case?cap_first}] ${fact.what}</option>
+          </#list>
+        </select>
+      </div>
+      <button type="submit" class="button button-secondary">Link fact</button>
     </form>
+    </#if>
+
+    <h2>Documents</h2>
+    <#if (linkedDocuments?size == 0)>
+    <p class="empty-state">No documents linked yet.</p>
+    <#else>
+    <div class="transaction-list">
+      <#list linkedDocuments as doc>
+      <div class="transaction-row">
+        <a href="/house/documents/${doc.id}" class="transaction-description">${doc.filename}</a>
+        <form method="post" action="/projects/${project.id}/documents/${doc.id}/detach">
+          <button type="submit" class="button button-small button-secondary">Remove</button>
+        </form>
+      </div>
+      </#list>
+    </div>
+    </#if>
+
+    <#if (availableDocuments?size gt 0)>
+    <form method="post" action="/projects/${project.id}/documents" class="form-row">
+      <div class="form-field form-field-wide">
+        <span class="form-field-label">Link an existing document</span>
+        <select name="documentId">
+          <#list availableDocuments as doc>
+          <option value="${doc.id}">${doc.filename}</option>
+          </#list>
+        </select>
+      </div>
+      <button type="submit" class="button button-secondary">Link document</button>
+    </form>
+    </#if>
   </div>
 </body>
 </html>

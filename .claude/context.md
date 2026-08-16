@@ -881,6 +881,52 @@ either), so this stays consistent with that rather than being a new gap.
 Still not built: project deletion and anything recommendation-related -
 see `current.md`.
 
+### UI cleanup pass
+
+The bare, unlabeled `<select>`/`<input>` rows on `/projects` and
+`/projects/{id}` (chunk 1/2's original layout) looked out of place next to
+the rest of the app's more polished pages - fixed as its own pass, not a
+new chunk:
+
+- **New shared classes** in `styles.css`: `.form-card` (a bordered/
+  background box, same visual language as `.dashboard-card`/
+  `.component-summary`) wraps the "Add project," project edit, and
+  "Add a note/quote/link" forms; `.form-row`/`.form-field`/
+  `.form-field-label` give every input a visible caption instead of a bare
+  unlabeled control; `.priority-badge` (`-high`/`-medium`/`-low`, using
+  `--brick`/a new `--brass-soft-bg` token/`--border` respectively) replaces
+  the plain dim text a project's priority used to render as on `/projects`.
+- **Generic form-control styling promoted app-wide**, not scoped to
+  Projects: bare `input[type=text|url|number]`, `select`, and `textarea`
+  previously only looked good inside `.recategorize-dialog` or
+  `.upload-form`; now styled globally so every page's plain form controls
+  match (categories/house pages included) rather than duplicating the same
+  rule per-page. `textarea` needed adding to this rule after the first pass
+  of the cleanup - project.ftl's entry-text field stopped using
+  `.upload-form` (moved to `.form-row`/`.form-field` instead) and briefly
+  lost its styling entirely, rendering in the browser's default monospace
+  textarea font until caught by screenshot verification.
+- **The native file input's "Choose File" button is now styled** via
+  `input[type="file"]::file-selector-button` - the only part of a file
+  input actually stylable - rather than hiding the real input and faking a
+  button with a `<label>`, which keeps native keyboard/screen-reader
+  behavior intact for free. Applies everywhere a file input already
+  existed (`house.ftl`'s document upload included), not just Projects.
+- **Facts/Documents sections moved below the entry feed** on
+  `/projects/{id}` - maintainer's call, the entry feed (what you're
+  actively adding to) is a more common action than attaching an existing
+  fact/document, so it now sits right under the edit form instead of below
+  two attach-picker sections.
+- **Mobile-first check, not a redesign**: the app's existing
+  `.container{max-width:640px}` + `flex-wrap` pattern already degrades
+  reasonably to phone widths, confirmed via a 390px-wide screenshot rather
+  than assumed - `.form-row`'s fields wrap to two-per-line at that width
+  with no horizontal overflow. No FAB or other mobile-specific navigation
+  pattern was added - discussed as a possible next step for primary
+  "add" actions specifically, but deliberately not built without pinning
+  down scope first (which actions, mobile-only vs. always, and how to
+  implement given this app's no-framework/minimal-JS posture).
+
 ## Configuration reference
 
 Concrete IDs and config values — the single source of truth for these
