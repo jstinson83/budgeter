@@ -711,6 +711,47 @@ and above the category list).
   normal-vision separation; the light-mode contrast WARN on a few slots is
   covered by the always-present text legend (the skill's "relief" rule).
 
+## Ninth feature: House Projects & Recommendations (chunk 1 - project core)
+
+First slice of a new top-level `/projects` area, turning house facts into a
+manageable set of projects - see `.claude/current.md` for the full chunked
+plan (facts/documents linking, a notes/decisions/quotes/photos/links feed,
+and Gemini-generated recommendations are later chunks, not built yet).
+
+- **`Project`** (`ProjectStore.kt`, Firestore collection `projects`,
+  single-field `ownerId` equality query, same no-composite-index shape as
+  `categories`/`houseFacts`) - `id`, `ownerId`, `name`, `status`
+  (`ACTIVE`/`PLANNED`/`DEPRIORITIZED`/`COMPLETED`), `component` (a single
+  `Component` tag, the same enum `HouseFact` uses), `priority`
+  (`HIGH`/`MEDIUM`/`LOW`), `createdAt`. `get(ownerId, id)` looks up by
+  document id directly (like `HouseDocumentRepository.get`) rather than
+  scanning `all(ownerId)`.
+- **`Priority` is a separate enum from `HouseFact`'s `Importance`**, even
+  though both are High/Medium/Low - `Importance` is Gemini-assigned once at
+  extraction time and never edited, while `Project.priority` is meant to
+  stay freely user-editable (and, once recommendation generation exists,
+  only *seeded* from Gemini's suggested priority, not permanently owned by
+  it). Keeping them separate avoids coupling a mutable project field to a
+  fact concept that isn't actually the same thing.
+- **A project holds a single `Component` tag**, not a set - a project that
+  genuinely spans multiple components (e.g. a kitchen reno touching
+  structure/electrical/plumbing) just picks one dominant tag for now. A
+  "merge projects" action to combine multiple single-component projects
+  into one was discussed and deliberately deferred rather than making
+  `Project` multi-tagged from the start - see `current.md`.
+- **`/projects`** (`ProjectRoutes.kt`, `projects.ftl`) lists projects
+  grouped by status (in `ACTIVE`/`PLANNED`/`DEPRIORITIZED`/`COMPLETED`
+  order, empty groups skipped - same pattern `houseFactsPageModel` uses for
+  component groups), with an optional `?component=` filter, plus an "Add
+  project" form. **`/projects/{id}`** (`project.ftl`) is a single combined
+  edit form for name/status/component/priority - unlike `/categories`,
+  which splits label-editing from a separate toggle-active action, a
+  project's four fields are small enough to edit together in one `POST`.
+- **Not built in this chunk**: linking existing `HouseFact`/`HouseDocument`
+  rows to a project, the notes/decisions/quotes/photos/links feed, project
+  deletion, and anything recommendation-related. See `current.md` for the
+  remaining chunk sequence.
+
 ## Configuration reference
 
 Concrete IDs and config values — the single source of truth for these

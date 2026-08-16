@@ -134,7 +134,8 @@ fun Application.module(
         houseFactExtractor
     ),
     houseComponentSummaryStore: HouseComponentSummaryRepository = FirestoreHouseComponentSummaryStore(firestoreClient),
-    componentSummarizer: ComponentSummarizer = geminiComponentSummarizer
+    componentSummarizer: ComponentSummarizer = geminiComponentSummarizer,
+    projectStore: ProjectRepository = FirestoreProjectStore(firestoreClient)
 ) {
     install(FreeMarker) {
         templateLoader = ClassTemplateLoader(this::class.java.classLoader, "templates")
@@ -171,6 +172,7 @@ fun Application.module(
                 houseComponentSummaryStore,
                 componentSummarizer
             )
+            projectRoutes(projectStore)
         }
     }
 }
