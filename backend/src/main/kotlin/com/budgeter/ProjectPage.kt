@@ -67,7 +67,6 @@ fun projectPageModel(
         "linkedDocuments" to linkedDocuments.map { documentSummaryModel(it) },
         "availableDocuments" to availableDocuments.map { documentSummaryModel(it) },
         "entries" to entries.map { entrySummaryModel(it) },
-        "entryTypeOptions" to ProjectEntryType.entries.map { it.name },
         "message" to message,
         "error" to error
     )

@@ -3,30 +3,41 @@ package com.budgeter
 import com.google.cloud.firestore.Firestore
 import java.time.Instant
 
-// A single item in a project's accumulating feed - notes, decisions,
-// quotes/invoices, photos, and links to things being considered (chunk 3 of
-// House Projects & Recommendations, see .claude/current.md). Kept as one
-// type with a discriminator rather than five parallel collections, since
-// they all render as one chronological feed on the project detail page.
-enum class ProjectEntryType { NOTE, DECISION, QUOTE, PHOTO, LINK }
+// A single item in a project's accumulating feed - notes, quotes/invoices,
+// photos, and links to things being considered (chunk 3 of House Projects &
+// Recommendations, see .claude/current.md). Kept as one type with a
+// discriminator rather than four parallel collections, since they all
+// render as one chronological feed on the project detail page.
+//
+// The entry form itself is a single free-form text field plus an optional
+// file attachment - type is inferred server-side (ProjectRoutes.kt), not
+// picked by the user: a URL found in the text makes it LINK, an attached
+// image makes it PHOTO, any other attached file makes it QUOTE, otherwise
+// it's NOTE. There's no separate DECISION type - a decision has no
+// reliable textual signal to detect it from (unlike a URL or a file), and
+// once you strip that down a "decision" is just a NOTE whose text happens
+// to record one. Revisit only if that turns out to lose something real.
+enum class ProjectEntryType { NOTE, QUOTE, PHOTO, LINK }
 
 data class ProjectEntry(
     val id: String,
     val ownerId: String,
     val projectId: String,
     val type: ProjectEntryType,
-    // The entry's own text - required content for NOTE/DECISION, an
-    // optional caption for QUOTE/PHOTO/LINK.
+    // The raw free-form text the homeowner typed - present for every entry
+    // that had any text (including LINK, where it's the full typed text,
+    // not just the extracted URL below).
     val text: String?,
-    // Only meaningful for LINK - the URL being referenced (e.g. a product
-    // page for something being considered).
+    // Only set for LINK - the URL extracted from text (ProjectRoutes.kt),
+    // kept separately so project.ftl can render it as a real link without
+    // re-parsing text itself.
     val url: String? = null,
-    // Only meaningful for QUOTE/PHOTO - an attached file, uploaded straight
-    // to ProjectEntryBlobStore (below), *not* routed through
-    // HouseDocument/HouseFactExtractor. A quote or photo attached here
-    // isn't house-knowledge source material to extract facts from, and
-    // unlike HouseDocument's upload path it isn't PDF-only - a photo is
-    // typically a JPEG/PNG, which HouseRoutes.kt's upload handler
+    // Only set for QUOTE/PHOTO - an attached file, uploaded straight to
+    // DocumentBlobStore (via ProjectRoutes.kt's entryBlobStore), *not*
+    // routed through HouseDocument/HouseFactExtractor. A quote or photo
+    // attached here isn't house-knowledge source material to extract facts
+    // from, and unlike HouseDocument's upload path it isn't PDF-only - a
+    // photo is typically a JPEG/PNG, which HouseRoutes.kt's upload handler
     // explicitly rejects.
     val storagePath: String? = null,
     val filename: String? = null,

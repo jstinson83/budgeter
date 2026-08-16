@@ -812,12 +812,44 @@ blob itself; `POST /projects/{id}/entries/{entryId}/delete` deletes the GCS
 blob (when `storagePath` is set) before deleting the Firestore row, mirroring
 `HouseRoutes.kt`'s document-delete handler.
 
-One multipart form on `project.ftl` covers all five entry types (a `type`
-select, a `text` input, a `url` input, a `file` input) rather than five
-separate forms or JS-driven conditional fields - matches this app's
-no-framework posture. `POST /projects/{id}/entries` validates the
-type-appropriate field server-side (Note/Decision need `text`, Link needs
-`url`, Quote/Photo need a file) and ignores whatever else was submitted.
+**Revised after the first pass to a single free-form field**: the maintainer
+pushed back on the initial type-picker design ("might be better to just have
+a single text field... we can figure out what is a link and what isn't").
+`project.ftl`'s entry form is now just a `text` textarea plus an optional
+`file` input - no type select, no separate `url` field for the homeowner to
+fill in. `ProjectEntryType` dropped from five values to four
+(`NOTE`/`QUOTE`/`PHOTO`/`LINK` - `DECISION` removed) and is now inferred
+server-side by `detectEntryType()` (`ProjectRoutes.kt`): an attached file
+wins first (checked by extension against a fixed image-extension set, since
+a multipart part's declared Content-Type is client-supplied and not always
+accurate - an image extension makes it `PHOTO`, anything else `QUOTE`);
+otherwise a URL found anywhere in the text (via a simple `https?://\S+`
+regex) makes it `LINK`, with the *matched URL* stored separately in
+`ProjectEntry.url` for a clean `<a href>` while `ProjectEntry.text` keeps
+the homeowner's full typed text (so "Found this one: `<url>` looks good"
+still shows its own caption, not just the bare link); anything left over is
+`NOTE`. `POST /projects/{id}/entries` requires at least one of text/file
+non-empty - that's the only server-side validation now, there's no
+per-type-required-field branching to maintain.
+
+**No separate `DECISION` type** - dropped rather than kept as a fifth
+value, since (unlike a URL or a file) there's no reliable signal in free
+text that says "this is a decision, not a note." A decision the homeowner
+wants remembered is just a `NOTE` whose text happens to record one; nothing
+distinguishes it structurally. Discussed three options with the maintainer
+(fold into Note, a manual checkbox, keyword-sniffing) - the maintainer
+didn't respond before the change was needed, so this went with the
+recommended default (fold into Note) as the simplest option consistent with
+"figure out what is a link and what isn't" - flagged clearly in case the
+maintainer wants a distinct Decision type back.
+
+`project.ftl` also has to guard against showing an entry's raw `text` twice
+for `LINK` when the homeowner typed nothing but a bare URL (`text == url`
+in that case) - compares `entry.text != (entry.url!"")` rather than a bare
+`!=`, since FreeMarker throws `InvalidReferenceException` comparing against
+a key whose value is null. Same gotcha as `projects.ftl`'s `selectedComponent`
+check from chunk 1 - see `CLAUDE.md`'s new FreeMarker gotchas section, added
+now that it's bitten twice.
 
 No download link is offered for an attached Quote/Photo file yet - the app
 doesn't have a signed-URL/download-proxy route for GCS blobs anywhere

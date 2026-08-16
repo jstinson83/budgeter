@@ -11,8 +11,26 @@ import java.util.UUID
 
 // Chunks 1-3 of House Projects & Recommendations (see .claude/current.md):
 // manual project creation/editing, linking existing HouseFact/HouseDocument
-// rows to a project, and a notes/decisions/quotes/photos/links feed. No
+// rows to a project, and a notes/quotes/photos/links feed. No
 // recommendations yet.
+
+private val urlRegex = Regex("""https?://\S+""")
+private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "svg")
+
+// Infers a ProjectEntry's type from what was actually submitted, rather
+// than asking the homeowner to pick one - see ProjectEntryStore.kt for the
+// reasoning. An attached file wins over a URL-in-text (a captioned photo
+// with a link in the caption is still a photo); checked by extension since
+// a multipart part's declared Content-Type is client-supplied and not
+// always set/accurate for images.
+private fun detectEntryType(text: String?, filename: String?): ProjectEntryType {
+    if (filename != null) {
+        val extension = filename.substringAfterLast('.', "").lowercase()
+        return if (extension in imageExtensions) ProjectEntryType.PHOTO else ProjectEntryType.QUOTE
+    }
+    if (text != null && urlRegex.containsMatchIn(text)) return ProjectEntryType.LINK
+    return ProjectEntryType.NOTE
+}
 fun Route.projectRoutes(
     projectStore: ProjectRepository,
     houseFactStore: HouseFactRepository,
@@ -124,27 +142,21 @@ fun Route.projectRoutes(
         call.respondRedirect("/projects/${updated.id}?message=${"Removed document".encodeURLQueryComponent()}")
     }
 
-    // One multipart form on project.ftl covers all five entry types - type
-    // picks which fields actually matter (text for Note/Decision, url for
-    // Link, an uploaded file for Quote/Photo); the rest are ignored rather
-    // than the template conditionally hiding fields with JS, matching this
-    // app's no-framework posture elsewhere.
+    // One free-form multipart form on project.ftl covers every entry type -
+    // a single text field plus an optional file attachment. Type is
+    // inferred from what was actually submitted (detectEntryType above),
+    // not picked by the homeowner.
     post("/projects/{id}/entries") {
         val ownerId = call.requireUserId()
         val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
         projectStore.get(ownerId, id) ?: return@post call.respond(HttpStatusCode.NotFound)
 
-        var type: ProjectEntryType? = null
         var text: String? = null
-        var url: String? = null
         var filename: String? = null
         var bytes: ByteArray? = null
         call.receiveMultipart().forEachPart { part ->
             when {
-                part is PartData.FormItem && part.name == "type" ->
-                    type = runCatching { ProjectEntryType.valueOf(part.value) }.getOrNull()
                 part is PartData.FormItem && part.name == "text" -> text = part.value.trim().ifEmpty { null }
-                part is PartData.FormItem && part.name == "url" -> url = part.value.trim().ifEmpty { null }
                 part is PartData.FileItem && bytes == null && !part.originalFileName.isNullOrBlank() -> {
                     filename = part.originalFileName
                     bytes = part.provider().toByteArray()
@@ -153,32 +165,16 @@ fun Route.projectRoutes(
             part.dispose()
         }
 
-        val entryType = type ?: return@post call.respondRedirect("/projects/$id?error=${"Choose an entry type".encodeURLQueryComponent()}")
-        when (entryType) {
-            ProjectEntryType.NOTE, ProjectEntryType.DECISION -> {
-                if (text.isNullOrEmpty()) {
-                    return@post call.respondRedirect("/projects/$id?error=${"Please add some text".encodeURLQueryComponent()}")
-                }
-            }
-            ProjectEntryType.LINK -> {
-                if (url.isNullOrEmpty()) {
-                    return@post call.respondRedirect("/projects/$id?error=${"Please add a URL".encodeURLQueryComponent()}")
-                }
-            }
-            ProjectEntryType.QUOTE, ProjectEntryType.PHOTO -> {
-                if (bytes == null || bytes!!.isEmpty() || filename.isNullOrEmpty()) {
-                    return@post call.respondRedirect("/projects/$id?error=${"Please choose a file to attach".encodeURLQueryComponent()}")
-                }
-            }
+        val hasFile = bytes != null && bytes!!.isNotEmpty() && !filename.isNullOrEmpty()
+        if (text.isNullOrEmpty() && !hasFile) {
+            return@post call.respondRedirect("/projects/$id?error=${"Please add some text or a file".encodeURLQueryComponent()}")
         }
 
-        val storagePath = if (entryType == ProjectEntryType.QUOTE || entryType == ProjectEntryType.PHOTO) {
-            entryBlobStore.upload(ownerId, UUID.randomUUID().toString(), filename!!, bytes!!)
-        } else null
-        val entryFilename = if (storagePath != null) filename else null
-        val entryUrl = if (entryType == ProjectEntryType.LINK) url else null
+        val entryType = detectEntryType(text, filename.takeIf { hasFile })
+        val storagePath = if (hasFile) entryBlobStore.upload(ownerId, UUID.randomUUID().toString(), filename!!, bytes!!) else null
+        val url = if (entryType == ProjectEntryType.LINK) urlRegex.find(text!!)?.value else null
 
-        projectEntryStore.add(ownerId, id, entryType, text, entryUrl, storagePath, entryFilename)
+        projectEntryStore.add(ownerId, id, entryType, text, url, storagePath, filename.takeIf { hasFile })
         call.respondRedirect("/projects/$id?message=${"Added".encodeURLQueryComponent()}")
     }
 

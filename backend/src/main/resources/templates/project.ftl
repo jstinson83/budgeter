@@ -105,7 +105,7 @@
     </form>
     </#if>
 
-    <h2>Notes, decisions, quotes &amp; links</h2>
+    <h2>Notes, quotes &amp; links</h2>
     <#if (entries?size == 0)>
     <p class="empty-state">Nothing added yet.</p>
     <#else>
@@ -116,12 +116,13 @@
           <span class="fact-type-badge">${entry.type?lower_case?cap_first}</span>
           <span class="transaction-date">${entry.createdAt}</span>
         </div>
-        <#if entry.type == "LINK">
+        <#if entry.type == "LINK" && entry.url??>
         <p><a href="${entry.url}" target="_blank" rel="noopener noreferrer">${entry.url}</a></p>
-        <#elseif entry.filename??>
+        </#if>
+        <#if entry.filename??>
         <p class="fact-context">Attached: ${entry.filename}</p>
         </#if>
-        <#if entry.text??>
+        <#if entry.text?? && entry.text != (entry.url!"")>
         <p>${entry.text}</p>
         </#if>
         <form method="post" action="/projects/${project.id}/entries/${entry.id}/delete">
@@ -133,13 +134,7 @@
     </#if>
 
     <form method="post" action="/projects/${project.id}/entries" enctype="multipart/form-data" class="upload-form">
-      <select name="type">
-        <#list entryTypeOptions as option>
-        <option value="${option}">${option?lower_case?cap_first}</option>
-        </#list>
-      </select>
-      <input type="text" name="text" placeholder="Note, decision, or caption">
-      <input type="url" name="url" placeholder="URL (for Link)">
+      <textarea name="text" placeholder="Add a note, decision, or paste a link&hellip;" rows="2"></textarea>
       <input type="file" name="file">
       <button type="submit" class="button button-small">Add</button>
     </form>

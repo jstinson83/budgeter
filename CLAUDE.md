@@ -72,6 +72,25 @@ reference — don't restate them here.
   errors, etc. — check there if something in this pipeline looks
   unfamiliar).
 
+## FreeMarker gotchas
+
+- **Comparing a nullable model value directly (`<#if x == y>` or `x != y`)
+  throws `InvalidReferenceException` the moment either side is null** -
+  FreeMarker doesn't treat a null map value as falsy/absent for comparison
+  purposes the way you'd expect from most templating languages; it's
+  treated the same as a genuinely missing key, and evaluating it in a
+  non-`??` context is a hard error, not a silent `false`. Hit twice: once in
+  `projects.ftl` (`option == selectedComponent`, where `selectedComponent`
+  is null when no `?component=` filter is active - fixed by guarding with
+  `selectedComponent?? && option == selectedComponent`), and again in
+  `project.ftl` (`entry.text != entry.url`, where `url` is null for every
+  non-Link entry - fixed with `entry.text != (entry.url!"")`, using `!` to
+  supply a default instead of comparing directly). The general fix is
+  always one of: guard with `??` first, or give the nullable side a
+  same-type default via `!` before comparing. If a page 500s with this
+  exception, the fix is almost always in the `.ftl` file at the reported
+  line/column, not the Kotlin model code that produced the null.
+
 ## Persistence (Firestore) gotchas
 
 Firestore database id and the repository/store class names live in
