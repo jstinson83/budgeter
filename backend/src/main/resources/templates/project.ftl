@@ -104,6 +104,41 @@
       <button type="submit" class="button button-small">Link document</button>
     </form>
     </#if>
+
+    <h2>Notes, quotes &amp; links</h2>
+    <#if (entries?size == 0)>
+    <p class="empty-state">Nothing added yet.</p>
+    <#else>
+    <div class="transaction-list">
+      <#list entries as entry>
+      <div class="transaction-item">
+        <div class="transaction-row">
+          <span class="fact-type-badge">${entry.type?lower_case?cap_first}</span>
+          <span class="transaction-date">${entry.createdAt}</span>
+        </div>
+        <#if entry.filename??>
+        <p class="fact-context">Attached: ${entry.filename}</p>
+        </#if>
+        <#if (entry.textSegments?size gt 0)>
+        <p>
+          <#list entry.textSegments as segment>
+          <#if segment.isUrl><a href="${segment.value}" target="_blank" rel="noopener noreferrer">${segment.value}</a><#else>${segment.value}</#if>
+          </#list>
+        </p>
+        </#if>
+        <form method="post" action="/projects/${project.id}/entries/${entry.id}/delete">
+          <button type="submit" class="button button-small button-secondary">Remove</button>
+        </form>
+      </div>
+      </#list>
+    </div>
+    </#if>
+
+    <form method="post" action="/projects/${project.id}/entries" enctype="multipart/form-data" class="upload-form">
+      <textarea name="text" placeholder="Add a note, decision, or paste a link&hellip;" rows="2"></textarea>
+      <input type="file" name="file">
+      <button type="submit" class="button button-small">Add</button>
+    </form>
   </div>
 </body>
 </html>

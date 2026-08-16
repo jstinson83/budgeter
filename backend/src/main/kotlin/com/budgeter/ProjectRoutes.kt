@@ -1,19 +1,45 @@
 package com.budgeter
 
 import io.ktor.http.*
+import io.ktor.http.content.*
 import io.ktor.server.freemarker.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.utils.io.toByteArray
+import java.util.UUID
 
-// Chunks 1-2 of House Projects & Recommendations (see .claude/current.md):
-// manual project creation/editing, plus linking existing HouseFact/
-// HouseDocument rows to a project. No recommendations and no
-// notes/decisions/quotes/photos/links feed yet.
+// Chunks 1-3 of House Projects & Recommendations (see .claude/current.md):
+// manual project creation/editing, linking existing HouseFact/HouseDocument
+// rows to a project, and a notes/quotes/photos/links feed. No
+// recommendations yet.
+
+private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "svg")
+
+// Infers a ProjectEntry's type from what was actually submitted, rather
+// than asking the homeowner to pick one - see ProjectEntryStore.kt for the
+// reasoning. An attached file wins over a URL-in-text (a captioned photo
+// with a link in the caption is still a photo); checked by extension since
+// a multipart part's declared Content-Type is client-supplied and not
+// always set/accurate for images.
+private fun detectEntryType(text: String?, filename: String?): ProjectEntryType {
+    if (filename != null) {
+        val extension = filename.substringAfterLast('.', "").lowercase()
+        return if (extension in imageExtensions) ProjectEntryType.PHOTO else ProjectEntryType.QUOTE
+    }
+    if (text != null && projectEntryUrlRegex.containsMatchIn(text)) return ProjectEntryType.LINK
+    return ProjectEntryType.NOTE
+}
 fun Route.projectRoutes(
     projectStore: ProjectRepository,
     houseFactStore: HouseFactRepository,
-    houseDocumentStore: HouseDocumentRepository
+    houseDocumentStore: HouseDocumentRepository,
+    projectEntryStore: ProjectEntryRepository,
+    // Reused for QUOTE/PHOTO attachments rather than a dedicated bucket -
+    // same GCS bucket HouseDocument uploads use, but these uploads never
+    // become a HouseDocument row and never go through
+    // HouseFactExtractionJobManager. See ProjectEntryStore.kt.
+    entryBlobStore: DocumentBlobStore
 ) {
     get("/projects") {
         val ownerId = call.requireUserId()
@@ -46,9 +72,10 @@ fun Route.projectRoutes(
         val project = projectStore.get(ownerId, id) ?: return@get call.respond(HttpStatusCode.NotFound)
         val facts = houseFactStore.all(ownerId)
         val documents = houseDocumentStore.all(ownerId)
+        val entries = projectEntryStore.forProject(ownerId, id)
         val message = call.request.queryParameters["message"]
         val error = call.request.queryParameters["error"]
-        val model = projectPageModel(project, facts, documents, message, error) + call.currentUserModel()
+        val model = projectPageModel(project, facts, documents, entries, message, error) + call.currentUserModel()
         call.respond(FreeMarkerContent("project.ftl", model))
     }
 
@@ -112,5 +139,59 @@ fun Route.projectRoutes(
         val documentId = call.parameters["documentId"] ?: return@post call.respond(HttpStatusCode.NotFound)
         val updated = projectStore.detachDocument(ownerId, id, documentId) ?: return@post call.respond(HttpStatusCode.NotFound)
         call.respondRedirect("/projects/${updated.id}?message=${"Removed document".encodeURLQueryComponent()}")
+    }
+
+    // One free-form multipart form on project.ftl covers every entry type -
+    // a single text field plus an optional file attachment. Type is
+    // inferred from what was actually submitted (detectEntryType above),
+    // not picked by the homeowner.
+    post("/projects/{id}/entries") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        projectStore.get(ownerId, id) ?: return@post call.respond(HttpStatusCode.NotFound)
+
+        var text: String? = null
+        var filename: String? = null
+        var bytes: ByteArray? = null
+        call.receiveMultipart().forEachPart { part ->
+            when {
+                part is PartData.FormItem && part.name == "text" -> text = part.value.trim().ifEmpty { null }
+                part is PartData.FileItem && bytes == null && !part.originalFileName.isNullOrBlank() -> {
+                    filename = part.originalFileName
+                    bytes = part.provider().toByteArray()
+                }
+            }
+            part.dispose()
+        }
+
+        val hasFile = bytes != null && bytes!!.isNotEmpty() && !filename.isNullOrEmpty()
+        if (text.isNullOrEmpty() && !hasFile) {
+            return@post call.respondRedirect("/projects/$id?error=${"Please add some text or a file".encodeURLQueryComponent()}")
+        }
+
+        val entryType = detectEntryType(text, filename.takeIf { hasFile })
+        val storagePath = if (hasFile) entryBlobStore.upload(ownerId, UUID.randomUUID().toString(), filename!!, bytes!!) else null
+        // Stored for potential future use (e.g. "every link across this
+        // project") even though rendering no longer reads it directly -
+        // project.ftl now linkifies every URL found in `text` in place
+        // (ProjectPage.kt's linkifySegments), not just this first one.
+        val url = if (entryType == ProjectEntryType.LINK) {
+            projectEntryUrlRegex.find(text!!)?.value?.let { trimTrailingUrlPunctuation(it) }
+        } else null
+
+        projectEntryStore.add(ownerId, id, entryType, text, url, storagePath, filename.takeIf { hasFile })
+        call.respondRedirect("/projects/$id?message=${"Added".encodeURLQueryComponent()}")
+    }
+
+    post("/projects/{id}/entries/{entryId}/delete") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val entryId = call.parameters["entryId"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val entry = projectEntryStore.get(ownerId, entryId)?.takeIf { it.projectId == id }
+            ?: return@post call.respond(HttpStatusCode.NotFound)
+
+        entry.storagePath?.let { entryBlobStore.delete(it) }
+        projectEntryStore.delete(ownerId, entryId)
+        call.respondRedirect("/projects/$id?message=${"Removed".encodeURLQueryComponent()}")
     }
 }

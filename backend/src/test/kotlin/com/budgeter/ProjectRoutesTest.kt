@@ -207,4 +207,135 @@ class ProjectRoutesTest {
         val afterDetach = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
         assertTrue(afterDetach.contains("No documents linked yet"))
     }
+
+    @Test
+    fun testAddingPlainTextIsDetectedAsANoteAndCanBeRemoved() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val projectId = client.createProject("Replace roof")
+
+        val addResponse = client.submitFormWithBinaryData(
+            url = "/projects/$projectId/entries",
+            formData = formData { append("text", "Contractor recommended architectural shingles") }
+        )
+        assertEquals("Added", Url(addResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val page = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertFalse(page.contains("Nothing added yet"))
+        assertTrue(page.contains("Contractor recommended architectural shingles"))
+        assertTrue(page.contains(">Note<"))
+        val entryId = Regex("""/projects/$projectId/entries/([^"/]+)/delete""").find(page)!!.groupValues[1]
+
+        val deleteResponse = client.post("/projects/$projectId/entries/$entryId/delete")
+        assertEquals("Removed", Url(deleteResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val afterDelete = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(afterDelete.contains("Nothing added yet"))
+    }
+
+    @Test
+    fun testAddingAnEmptyEntryIsRejected() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val projectId = client.createProject("Replace roof")
+
+        val response = client.submitFormWithBinaryData(url = "/projects/$projectId/entries", formData = formData {})
+        assertEquals("Please add some text or a file", Url(response.headers[HttpHeaders.Location]!!).parameters["error"])
+    }
+
+    @Test
+    fun testTextContainingAUrlIsDetectedAsALinkAndRendersItClickably() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val projectId = client.createProject("Replace roof")
+
+        val addResponse = client.submitFormWithBinaryData(
+            url = "/projects/$projectId/entries",
+            formData = formData { append("text", "Found this one: https://example.com/roofing-quote looks good") }
+        )
+        assertEquals("Added", Url(addResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val page = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains(">Link<"))
+        assertTrue(page.contains("""href="https://example.com/roofing-quote""""))
+        // The full typed text (not just the bare URL) is preserved too.
+        assertTrue(page.contains("Found this one:"))
+    }
+
+    @Test
+    fun testEveryUrlInTheTextGetsLinkifiedNotJustTheFirst() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val projectId = client.createProject("Replace roof")
+
+        client.submitFormWithBinaryData(
+            url = "/projects/$projectId/entries",
+            formData = formData {
+                append("text", "Comparing https://example.com/quote-a and https://example.com/quote-b")
+            }
+        )
+
+        val page = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("""href="https://example.com/quote-a""""))
+        assertTrue(page.contains("""href="https://example.com/quote-b""""))
+        assertTrue(page.contains("Comparing"))
+        assertTrue(page.contains(" and "))
+    }
+
+    @Test
+    fun testTrailingSentencePunctuationIsNotSweptIntoTheLinkHref() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val projectId = client.createProject("Replace roof")
+
+        client.submitFormWithBinaryData(
+            url = "/projects/$projectId/entries",
+            formData = formData {
+                append("text", "Comparing https://example.com/quote-a, https://example.com/quote-b, and https://example.com/quote-c.")
+            }
+        )
+
+        val page = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        // Exact hrefs, no trailing comma/period swept in - a broken link
+        // would 404 on a URL that doesn't actually exist.
+        assertTrue(page.contains("""href="https://example.com/quote-a""""))
+        assertTrue(page.contains("""href="https://example.com/quote-b""""))
+        assertTrue(page.contains("""href="https://example.com/quote-c""""))
+        assertFalse(page.contains("""href="https://example.com/quote-a,""""))
+        assertFalse(page.contains("""href="https://example.com/quote-c.""""))
+    }
+
+    @Test
+    fun testAttachingAnImageIsDetectedAsAPhotoAndAttachingOtherFilesIsDetectedAsAQuote() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val projectId = client.createProject("Replace roof")
+
+        client.submitFormWithBinaryData(
+            url = "/projects/$projectId/entries",
+            formData = formData {
+                append("text", "Before/after shot")
+                append("file", "fake image bytes".toByteArray(), Headers.build {
+                    append(HttpHeaders.ContentType, "image/jpeg")
+                    append(HttpHeaders.ContentDisposition, "filename=\"roof.jpg\"")
+                })
+            }
+        )
+        client.submitFormWithBinaryData(
+            url = "/projects/$projectId/entries",
+            formData = formData {
+                append("text", "Roofing Co. estimate")
+                append("file", "fake quote bytes".toByteArray(), Headers.build {
+                    append(HttpHeaders.ContentType, "application/pdf")
+                    append(HttpHeaders.ContentDisposition, "filename=\"quote.pdf\"")
+                })
+            }
+        )
+
+        val page = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains(">Photo<"))
+        assertTrue(page.contains("Attached: roof.jpg"))
+        assertTrue(page.contains(">Quote<"))
+        assertTrue(page.contains("Attached: quote.pdf"))
+    }
 }

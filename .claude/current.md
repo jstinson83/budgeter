@@ -23,10 +23,18 @@ smallest first:
 - [x] **2. Link facts & documents to a project** - project detail page
       gains attach/detach pickers for existing `HouseFact`/`HouseDocument`
       rows (`factIds`/`documentIds` on `Project`).
-- [ ] **3. Project entry feed** - `ProjectEntry` (Note/Decision/Quote/
-      Photo/Link types) as one chronological feed on the project detail
-      page; Link carries a URL, Quote/Photo can attach a `HouseDocument`
-      via the existing upload path.
+- [x] **3. Project entry feed** - `ProjectEntry` (Note/Quote/Photo/Link
+      types) as one chronological feed on the project detail page. Revised
+      after the first pass to a single free-form text field + optional file
+      attachment, with type inferred server-side (a URL in the text ->
+      Link, an attached image -> Photo, any other attached file -> Quote,
+      otherwise -> Note) rather than a type picker - the maintainer's call.
+      No separate Decision type: dropped since there's no reliable textual
+      signal to detect one, so an undetected "decision" is just a Note.
+      Quote/Photo upload straight to the same GCS bucket `HouseDocument`
+      uses, *not* as a `HouseDocument` row - a quote/photo isn't
+      house-knowledge source material to extract facts from, and isn't
+      PDF-only. See `context.md`.
 - [ ] **4. Recommendation generation** - `Recommendation` entity/store
       (`component`, `name`, rationale, `supportingFactIds`,
       `suggestedPriority`, `status`: Pending/Accepted/Rejected - Rejected

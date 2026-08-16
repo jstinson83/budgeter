@@ -63,7 +63,8 @@ fun ApplicationTestBuilder.testModule(
     houseFactExtractor: HouseFactExtractor = FakeHouseFactExtractor(),
     houseComponentSummaryStore: HouseComponentSummaryRepository = FakeHouseComponentSummaryRepository(),
     componentSummarizer: ComponentSummarizer = FakeComponentSummarizer(),
-    projectStore: ProjectRepository = FakeProjectRepository()
+    projectStore: ProjectRepository = FakeProjectRepository(),
+    projectEntryStore: ProjectEntryRepository = FakeProjectEntryRepository()
 ) {
     application {
         module(
@@ -80,7 +81,8 @@ fun ApplicationTestBuilder.testModule(
             houseFactExtractor = houseFactExtractor,
             houseComponentSummaryStore = houseComponentSummaryStore,
             componentSummarizer = componentSummarizer,
-            projectStore = projectStore
+            projectStore = projectStore,
+            projectEntryStore = projectEntryStore
         )
     }
 }
@@ -414,6 +416,36 @@ class FakeProjectRepository : ProjectRepository {
         val updated = projects[index].copy(documentIds = projects[index].documentIds - documentId)
         projects[index] = updated
         return updated
+    }
+}
+
+// In-memory stand-in for FirestoreProjectEntryStore.
+class FakeProjectEntryRepository : ProjectEntryRepository {
+    private val entries = mutableListOf<ProjectEntry>()
+    private var nextId = 0
+
+    override suspend fun forProject(ownerId: String, projectId: String): List<ProjectEntry> =
+        entries.filter { it.ownerId == ownerId && it.projectId == projectId }.sortedByDescending { it.createdAt }
+
+    override suspend fun get(ownerId: String, id: String): ProjectEntry? =
+        entries.find { it.ownerId == ownerId && it.id == id }
+
+    override suspend fun add(
+        ownerId: String,
+        projectId: String,
+        type: ProjectEntryType,
+        text: String?,
+        url: String?,
+        storagePath: String?,
+        filename: String?
+    ): ProjectEntry {
+        val entry = ProjectEntry("project-entry-${nextId++}", ownerId, projectId, type, text, url, storagePath, filename, java.time.Instant.now())
+        entries += entry
+        return entry
+    }
+
+    override suspend fun delete(ownerId: String, id: String) {
+        entries.removeAll { it.ownerId == ownerId && it.id == id }
     }
 }
 
