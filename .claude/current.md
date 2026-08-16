@@ -14,7 +14,7 @@ project recommendations. Design discussed and agreed 2026-08-16 - see
 `HouseDocument`/`Component` model this builds on. Working in chunks,
 smallest first:
 
-- [ ] **1. Project core (manual only)** - `Project` entity + Firestore
+- [x] **1. Project core (manual only)** - `Project` entity + Firestore
       store (`id`, `ownerId`, `name`, `status`: Active/Planned/
       Deprioritized/Completed, `component`: single `Component` tag,
       `priority`: High/Medium/Low, mutable), `/projects` page (list by

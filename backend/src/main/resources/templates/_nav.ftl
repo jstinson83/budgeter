@@ -7,6 +7,7 @@
       <a href="/transactions" class="nav-link">Transactions</a>
       <a href="/categories" class="nav-link">Categories</a>
       <a href="/house" class="nav-link">House</a>
+      <a href="/projects" class="nav-link">Projects</a>
     </div>
     <details class="nav-menu">
       <summary class="nav-menu-toggle" aria-label="Menu">&#9776;</summary>
@@ -15,6 +16,7 @@
         <a href="/transactions" class="nav-link">Transactions</a>
         <a href="/categories" class="nav-link">Categories</a>
         <a href="/house" class="nav-link">House</a>
+        <a href="/projects" class="nav-link">Projects</a>
       </div>
     </details>
     <details class="account-menu">

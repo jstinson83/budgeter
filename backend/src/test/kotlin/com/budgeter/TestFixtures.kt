@@ -62,7 +62,8 @@ fun ApplicationTestBuilder.testModule(
     documentBlobStore: DocumentBlobStore = FakeDocumentBlobStore(),
     houseFactExtractor: HouseFactExtractor = FakeHouseFactExtractor(),
     houseComponentSummaryStore: HouseComponentSummaryRepository = FakeHouseComponentSummaryRepository(),
-    componentSummarizer: ComponentSummarizer = FakeComponentSummarizer()
+    componentSummarizer: ComponentSummarizer = FakeComponentSummarizer(),
+    projectStore: ProjectRepository = FakeProjectRepository()
 ) {
     application {
         module(
@@ -78,7 +79,8 @@ fun ApplicationTestBuilder.testModule(
             documentBlobStore = documentBlobStore,
             houseFactExtractor = houseFactExtractor,
             houseComponentSummaryStore = houseComponentSummaryStore,
-            componentSummarizer = componentSummarizer
+            componentSummarizer = componentSummarizer,
+            projectStore = projectStore
         )
     }
 }
@@ -352,6 +354,32 @@ class FakeHouseComponentSummaryRepository : HouseComponentSummaryRepository {
         val saved = ComponentSummary(ownerId, component, summary, factCount, java.time.Instant.now())
         summaries[ownerId to component] = saved
         return saved
+    }
+}
+
+// In-memory stand-in for FirestoreProjectStore.
+class FakeProjectRepository : ProjectRepository {
+    private val projects = mutableListOf<Project>()
+    private var nextId = 0
+
+    override suspend fun all(ownerId: String): List<Project> =
+        projects.filter { it.ownerId == ownerId }.sortedByDescending { it.createdAt }
+
+    override suspend fun get(ownerId: String, id: String): Project? =
+        projects.find { it.ownerId == ownerId && it.id == id }
+
+    override suspend fun add(ownerId: String, name: String, status: ProjectStatus, component: Component, priority: Priority): Project {
+        val project = Project("project-${nextId++}", ownerId, name, status, component, priority, java.time.Instant.now())
+        projects += project
+        return project
+    }
+
+    override suspend fun update(ownerId: String, id: String, name: String, status: ProjectStatus, component: Component, priority: Priority): Project? {
+        val index = projects.indexOfFirst { it.ownerId == ownerId && it.id == id }
+        if (index == -1) return null
+        val updated = projects[index].copy(name = name, status = status, component = component, priority = priority)
+        projects[index] = updated
+        return updated
     }
 }
 
