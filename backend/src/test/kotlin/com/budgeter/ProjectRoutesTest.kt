@@ -263,6 +263,49 @@ class ProjectRoutesTest {
     }
 
     @Test
+    fun testEveryUrlInTheTextGetsLinkifiedNotJustTheFirst() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val projectId = client.createProject("Replace roof")
+
+        client.submitFormWithBinaryData(
+            url = "/projects/$projectId/entries",
+            formData = formData {
+                append("text", "Comparing https://example.com/quote-a and https://example.com/quote-b")
+            }
+        )
+
+        val page = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("""href="https://example.com/quote-a""""))
+        assertTrue(page.contains("""href="https://example.com/quote-b""""))
+        assertTrue(page.contains("Comparing"))
+        assertTrue(page.contains(" and "))
+    }
+
+    @Test
+    fun testTrailingSentencePunctuationIsNotSweptIntoTheLinkHref() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val projectId = client.createProject("Replace roof")
+
+        client.submitFormWithBinaryData(
+            url = "/projects/$projectId/entries",
+            formData = formData {
+                append("text", "Comparing https://example.com/quote-a, https://example.com/quote-b, and https://example.com/quote-c.")
+            }
+        )
+
+        val page = client.get("/projects/$projectId") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        // Exact hrefs, no trailing comma/period swept in - a broken link
+        // would 404 on a URL that doesn't actually exist.
+        assertTrue(page.contains("""href="https://example.com/quote-a""""))
+        assertTrue(page.contains("""href="https://example.com/quote-b""""))
+        assertTrue(page.contains("""href="https://example.com/quote-c""""))
+        assertFalse(page.contains("""href="https://example.com/quote-a,""""))
+        assertFalse(page.contains("""href="https://example.com/quote-c.""""))
+    }
+
+    @Test
     fun testAttachingAnImageIsDetectedAsAPhotoAndAttachingOtherFilesIsDetectedAsAQuote() = testApplication {
         testModule()
         val client = signInFakeUser()

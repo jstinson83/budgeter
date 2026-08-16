@@ -843,13 +843,35 @@ recommended default (fold into Note) as the simplest option consistent with
 "figure out what is a link and what isn't" - flagged clearly in case the
 maintainer wants a distinct Decision type back.
 
-`project.ftl` also has to guard against showing an entry's raw `text` twice
-for `LINK` when the homeowner typed nothing but a bare URL (`text == url`
-in that case) - compares `entry.text != (entry.url!"")` rather than a bare
-`!=`, since FreeMarker throws `InvalidReferenceException` comparing against
-a key whose value is null. Same gotcha as `projects.ftl`'s `selectedComponent`
-check from chunk 1 - see `CLAUDE.md`'s new FreeMarker gotchas section, added
-now that it's bitten twice.
+**Links are linkified in place, not extracted-and-duplicated.** The first
+version showed the extracted URL as its own clickable line, then the full
+raw text again below it - redundant, and only ever linkified the *first*
+URL in a note even if it had several. Replaced with
+`ProjectPage.kt`'s `linkifySegments()`: splits an entry's raw `text` into
+alternating plain-text/URL segments (every URL the regex finds, not just
+one), and `project.ftl` loops the segments, rendering each URL segment as
+its own `<a>` and everything else through FreeMarker's normal `${...}`
+auto-escaping - never builds a raw HTML string and marks it trusted, so
+there's no injection risk to reason about beyond what `${...}` already
+handles. This also removed the `entry.text != (entry.url!"")` null-comparison
+guard the first version needed (see `CLAUDE.md`'s FreeMarker gotchas) - with
+segments there's no separate `url` field to compare against `text` at
+render time.
+
+**Trailing sentence punctuation has to be trimmed off a matched URL.** The
+regex (`\S+`) has no way to know a URL ends where the sentence does -
+`"...https://example.com/x, leaning toward..."` matched
+`https://example.com/x,` *with* the comma, producing a link that 404s on a
+URL that doesn't exist. Fixed by `trimTrailingUrlPunctuation()`
+(`ProjectEntryStore.kt`): strips generic trailing punctuation
+(`.,;:!?'"`) unconditionally, and a trailing `)` only when it's unbalanced
+within the match, so a URL that legitimately ends in a balanced
+parenthetical (a Wikipedia `(disambiguation)`-style link) is left alone.
+Applied both where `linkifySegments()` builds a URL segment and where
+`ProjectRoutes.kt` stores `ProjectEntry.url`. Caught by browser
+verification, not the unit test suite - the mocked-request tests never
+exercised text with a URL followed directly by punctuation until this was
+added as a regression test afterward.
 
 No download link is offered for an attached Quote/Photo file yet - the app
 doesn't have a signed-URL/download-proxy route for GCS blobs anywhere

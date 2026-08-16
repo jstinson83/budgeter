@@ -116,14 +116,15 @@
           <span class="fact-type-badge">${entry.type?lower_case?cap_first}</span>
           <span class="transaction-date">${entry.createdAt}</span>
         </div>
-        <#if entry.type == "LINK" && entry.url??>
-        <p><a href="${entry.url}" target="_blank" rel="noopener noreferrer">${entry.url}</a></p>
-        </#if>
         <#if entry.filename??>
         <p class="fact-context">Attached: ${entry.filename}</p>
         </#if>
-        <#if entry.text?? && entry.text != (entry.url!"")>
-        <p>${entry.text}</p>
+        <#if (entry.textSegments?size gt 0)>
+        <p>
+          <#list entry.textSegments as segment>
+          <#if segment.isUrl><a href="${segment.value}" target="_blank" rel="noopener noreferrer">${segment.value}</a><#else>${segment.value}</#if>
+          </#list>
+        </p>
         </#if>
         <form method="post" action="/projects/${project.id}/entries/${entry.id}/delete">
           <button type="submit" class="button button-small button-secondary">Remove</button>

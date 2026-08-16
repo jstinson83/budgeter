@@ -75,11 +75,37 @@ fun projectPageModel(
 private fun entrySummaryModel(entry: ProjectEntry): Map<String, Any?> = mapOf(
     "id" to entry.id,
     "type" to entry.type.name,
-    "text" to entry.text,
-    "url" to entry.url,
+    "textSegments" to entry.text?.let { linkifySegments(it) }.orEmpty(),
     "filename" to entry.filename,
     "createdAt" to entryDateFormatter.format(entry.createdAt)
 )
+
+// Splits an entry's raw text into alternating plain-text/URL segments so
+// project.ftl can render every embedded link in place - not just a
+// whole-field bare URL, and not just the first one, which is what a
+// separate "show the extracted url, then the full text again below it"
+// paragraph could do. Each segment still goes through FreeMarker's normal
+// `${...}` auto-escaping in the template; this only decides *where* the
+// anchor tag goes, it never builds raw HTML itself.
+private fun linkifySegments(text: String): List<Map<String, Any?>> {
+    val segments = mutableListOf<Map<String, Any?>>()
+    var lastIndex = 0
+    for (match in projectEntryUrlRegex.findAll(text)) {
+        if (match.range.first > lastIndex) {
+            segments += mapOf("isUrl" to false, "value" to text.substring(lastIndex, match.range.first))
+        }
+        // Trimmed punctuation (e.g. a trailing comma or period) falls back
+        // into the next plain-text segment via lastIndex, rather than
+        // being dropped.
+        val url = trimTrailingUrlPunctuation(match.value)
+        segments += mapOf("isUrl" to true, "value" to url)
+        lastIndex = match.range.first + url.length
+    }
+    if (lastIndex < text.length) {
+        segments += mapOf("isUrl" to false, "value" to text.substring(lastIndex))
+    }
+    return segments
+}
 
 private fun factSummaryModel(fact: HouseFact, filenameById: Map<String, String>): Map<String, Any?> = mapOf(
     "id" to fact.id,

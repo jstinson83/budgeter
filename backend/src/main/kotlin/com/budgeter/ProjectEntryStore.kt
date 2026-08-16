@@ -19,6 +19,34 @@ import java.time.Instant
 // to record one. Revisit only if that turns out to lose something real.
 enum class ProjectEntryType { NOTE, QUOTE, PHOTO, LINK }
 
+// Shared between ProjectRoutes.kt (deciding an entry's type, and what
+// substring becomes ProjectEntry.url) and ProjectPage.kt (splitting text
+// into segments so project.ftl can linkify any URL in place, not just a
+// whole-field bare one) - a URL is "http(s):// followed by a run of
+// non-whitespace characters." Every match should be passed through
+// trimTrailingUrlPunctuation below before being treated as a real URL.
+internal val projectEntryUrlRegex = Regex("""https?://\S+""")
+
+private val trailingUrlPunctuation = ".,;:!?'\"".toSet()
+
+// \S+ happily sweeps up sentence punctuation directly after a URL with no
+// space ("check the quote: https://example.com/x." -> the trailing '.'
+// isn't part of the URL) - left uncorrected, that punctuation ends up
+// inside the href and the link 404s. Strips generic trailing punctuation
+// unconditionally, and a trailing ')' only when it's unbalanced within the
+// match (so a URL that legitimately ends in a balanced parenthetical, e.g.
+// a Wikipedia "(disambiguation)" link, is left alone).
+internal fun trimTrailingUrlPunctuation(url: String): String {
+    var end = url.length
+    while (end > 0) {
+        val c = url[end - 1]
+        val isUnbalancedCloseParen = c == ')' &&
+            url.substring(0, end).count { it == '(' } < url.substring(0, end).count { it == ')' }
+        if (c in trailingUrlPunctuation || isUnbalancedCloseParen) end-- else break
+    }
+    return url.substring(0, end)
+}
+
 data class ProjectEntry(
     val id: String,
     val ownerId: String,

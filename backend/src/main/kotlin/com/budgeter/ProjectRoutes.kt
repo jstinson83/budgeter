@@ -14,7 +14,6 @@ import java.util.UUID
 // rows to a project, and a notes/quotes/photos/links feed. No
 // recommendations yet.
 
-private val urlRegex = Regex("""https?://\S+""")
 private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "svg")
 
 // Infers a ProjectEntry's type from what was actually submitted, rather
@@ -28,7 +27,7 @@ private fun detectEntryType(text: String?, filename: String?): ProjectEntryType 
         val extension = filename.substringAfterLast('.', "").lowercase()
         return if (extension in imageExtensions) ProjectEntryType.PHOTO else ProjectEntryType.QUOTE
     }
-    if (text != null && urlRegex.containsMatchIn(text)) return ProjectEntryType.LINK
+    if (text != null && projectEntryUrlRegex.containsMatchIn(text)) return ProjectEntryType.LINK
     return ProjectEntryType.NOTE
 }
 fun Route.projectRoutes(
@@ -172,7 +171,13 @@ fun Route.projectRoutes(
 
         val entryType = detectEntryType(text, filename.takeIf { hasFile })
         val storagePath = if (hasFile) entryBlobStore.upload(ownerId, UUID.randomUUID().toString(), filename!!, bytes!!) else null
-        val url = if (entryType == ProjectEntryType.LINK) urlRegex.find(text!!)?.value else null
+        // Stored for potential future use (e.g. "every link across this
+        // project") even though rendering no longer reads it directly -
+        // project.ftl now linkifies every URL found in `text` in place
+        // (ProjectPage.kt's linkifySegments), not just this first one.
+        val url = if (entryType == ProjectEntryType.LINK) {
+            projectEntryUrlRegex.find(text!!)?.value?.let { trimTrailingUrlPunctuation(it) }
+        } else null
 
         projectEntryStore.add(ownerId, id, entryType, text, url, storagePath, filename.takeIf { hasFile })
         call.respondRedirect("/projects/$id?message=${"Added".encodeURLQueryComponent()}")
