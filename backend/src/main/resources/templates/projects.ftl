@@ -82,11 +82,23 @@
       <h2>${group.status?lower_case?cap_first}</h2>
       <div class="transaction-list">
         <#list group.projects as project>
-        <a href="/projects/${project.id}" class="transaction-row transaction-row-link">
-          <span class="transaction-description">${project.name}<#if project.parentName??> <span class="fact-context">&#8618; ${project.parentName}</span></#if></span>
-          <span class="transaction-account">${project.component?lower_case?cap_first}</span>
-          <span class="priority-badge priority-badge-${project.priority?lower_case}">${project.priority?lower_case?cap_first}</span>
-        </a>
+        <div class="transaction-item">
+          <a href="/projects/${project.id}" class="transaction-row transaction-row-link">
+            <span class="transaction-description">${project.name}</span>
+            <span class="transaction-account">${project.component?lower_case?cap_first}</span>
+            <span class="priority-badge priority-badge-${project.priority?lower_case}">${project.priority?lower_case?cap_first}</span>
+          </a>
+          <#if (project.subprojects?size gt 0)>
+          <details class="subproject-disclosure">
+            <summary>${project.subprojects?size} subproject<#if (project.subprojects?size gt 1)>s</#if></summary>
+            <ul class="subproject-list">
+              <#list project.subprojects as sub>
+              <li><a href="/projects/${sub.id}">${sub.name}</a></li>
+              </#list>
+            </ul>
+          </details>
+          </#if>
+        </div>
         </#list>
       </div>
     </section>
