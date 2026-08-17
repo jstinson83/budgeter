@@ -1084,6 +1084,53 @@ still not built; this is a separate, additive mechanism.
   parsing the way intended, the existence check was done once in Kotlin
   and handed to the template as a plain boolean.
 
+## Tenth feature: Financial Goals & Project Feasibility (planned, 2026-08-17)
+
+Not built yet - design discussed 2026-08-17, see `current.md` for the
+chunked plan. Connects the two halves of the app that have so far been
+separate: transactions/analysis (financial) and `Project`/`Recommendation`
+(House Projects). The core idea: track a savings goal (e.g. "save 70k this
+year"), compute a rolling savings rate from actual transaction history, and
+judge project feasibility by projecting that rate forward to the goal's
+target date with the project's cost inserted at its planned timing - not
+just a static "this project costs X" comparison.
+
+Chosen over the simpler static-comparison version specifically because
+timing and recurring costs matter: a project's impact on hitting a
+year-end goal depends on *when* the money leaves and whether it changes
+the ongoing monthly rate, not just its total cost.
+
+Primitives identified:
+
+- **`SavingsGoal`**: target amount + target date + start date, the thing a
+  savings rate and a project's cost are ultimately measured against. Not
+  just a rate to hit - a moving projection compared against a deadline.
+- **Savings rate, rolling 3 months**: built from the same monthly
+  income/expense aggregation `DashboardPage.kt`'s `monthlyNetChange`
+  already does (trailing-N-month series, same TRANSFER/INVESTMENT
+  exclusions) - split into income vs. expense per month rather than just
+  net, so the rate itself is visible, not only the net change.
+- **Project cost estimate, itemized with mixed confidence**: a project can
+  have multiple cost line items, each sourced differently (a real quote, a
+  link to an item to be purchased, a manually-entered guess) - deliberately
+  not a single point estimate, since the automation levels the maintainer
+  described don't share one confidence level.
+- **One-time vs. recurring cost**: a project's cost estimate can include an
+  ongoing monthly delta (e.g. a new appliance's utility draw) separate from
+  its one-time spend - affects the projected *rate* going forward, not just
+  a single month's total.
+- **Project timing**: a planned spend month, so a project's cost can be
+  placed on the goal's projection timeline instead of assumed immediate -
+  the same total cost lands very differently on a year-end goal depending
+  on whether it's spent in month 1 or spread across the year.
+- **Feasibility as forward projection, not a static diff**: insert a
+  project's cost (+ any recurring delta) at its planned timing into the
+  goal's projected trajectory, and show the before/after effect on whether
+  the goal is still met - both per-project and, since projects compete for
+  the same savings, across all `ACTIVE`/selected projects combined (a
+  project that looks feasible alone can still bust the goal alongside
+  others).
+
 ## Configuration reference
 
 Concrete IDs and config values — the single source of truth for these
