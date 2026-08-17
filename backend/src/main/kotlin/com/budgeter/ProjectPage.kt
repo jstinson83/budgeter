@@ -18,6 +18,7 @@ fun projectsPageModel(
     message: String?,
     error: String?
 ): Map<String, Any?> {
+    val projectsById = projects.associateBy { it.id }
     val filtered = if (componentFilter != null) projects.filter { it.component == componentFilter } else projects
     val byStatus = filtered.groupBy { it.status }
     val groups = ProjectStatus.entries.mapNotNull { status ->
@@ -25,7 +26,7 @@ fun projectsPageModel(
         if (statusProjects.isEmpty()) return@mapNotNull null
         mapOf(
             "status" to status.name,
-            "projects" to statusProjects.map { projectSummaryModel(it) }
+            "projects" to statusProjects.map { projectSummaryModel(it, projectsById) }
         )
     }
     val factsById = facts.associateBy { it.id }
@@ -49,19 +50,28 @@ private fun recommendationSummaryModel(recommendation: Recommendation, factsById
     "supportingFacts" to recommendation.supportingFactIds.mapNotNull { factsById[it]?.what }
 )
 
-private fun projectSummaryModel(project: Project): Map<String, Any?> = mapOf(
+private fun projectSummaryModel(project: Project, projectsById: Map<String, Project>): Map<String, Any?> = mapOf(
     "id" to project.id,
     "name" to project.name,
     "component" to project.component.name,
-    "priority" to project.priority.name
+    "priority" to project.priority.name,
+    "parentName" to project.parentId?.let { projectsById[it]?.name }
 )
 
+// allProjects is the owner's whole collection (not pre-filtered) - used to
+// resolve this project's parent's name, list its current subprojects, and
+// offer a picker of other projects still eligible to become one. Capped at
+// one level (see ProjectRoutes' /subprojects validation): a project that
+// already has a parent shows that parent instead of a subprojects section,
+// since it can't have subprojects of its own.
+//
 // allFacts/allDocuments are the owner's whole collections (not pre-filtered
 // to this project) - split here into what's already linked vs. what's still
 // available to attach, so project.ftl's picker never offers something
 // that's already on the project.
 fun projectPageModel(
     project: Project,
+    allProjects: List<Project>,
     allFacts: List<HouseFact>,
     allDocuments: List<HouseDocument>,
     entries: List<ProjectEntry>,
@@ -71,13 +81,29 @@ fun projectPageModel(
     val filenameById = allDocuments.associate { it.id to it.filename }
     val (linkedFacts, availableFacts) = allFacts.partition { it.id in project.factIds }
     val (linkedDocuments, availableDocuments) = allDocuments.partition { it.id in project.documentIds }
+    val parent = project.parentId?.let { parentId -> allProjects.find { it.id == parentId } }
+    val subprojects = allProjects.filter { it.parentId == project.id }
+    // Only other top-level projects (no parent) with no subprojects of
+    // their own are eligible to become a subproject here - mirrors the
+    // /subprojects route's own validation so the picker never offers
+    // something the route would reject.
+    val projectsWithChildren = allProjects.mapNotNull { it.parentId }.toSet()
+    val availableAsSubproject = allProjects.filter {
+        it.id != project.id && it.parentId == null && it.id !in projectsWithChildren
+    }
     return mapOf(
         "project" to mapOf(
             "id" to project.id,
             "name" to project.name,
             "status" to project.status.name,
             "component" to project.component.name,
-            "priority" to project.priority.name
+            "priority" to project.priority.name,
+            "parent" to parent?.let { mapOf("id" to it.id, "name" to it.name) },
+            // Plain boolean rather than leaning on project.ftl doing
+            // `!project.parent??` - see CLAUDE.md's FreeMarker gotchas on
+            // nullable-value comparisons/existence tests being easy to get
+            // wrong in templates.
+            "hasParent" to (parent != null)
         ),
         "statusOptions" to ProjectStatus.entries.map { it.name },
         "componentOptions" to Component.entries.map { it.name },
@@ -87,10 +113,19 @@ fun projectPageModel(
         "linkedDocuments" to linkedDocuments.map { documentSummaryModel(it) },
         "availableDocuments" to availableDocuments.map { documentSummaryModel(it) },
         "entries" to entries.map { entrySummaryModel(it) },
+        "subprojects" to subprojects.map { subprojectSummaryModel(it) },
+        "availableAsSubproject" to availableAsSubproject.map { mapOf("id" to it.id, "name" to it.name) },
         "message" to message,
         "error" to error
     )
 }
+
+private fun subprojectSummaryModel(project: Project): Map<String, Any?> = mapOf(
+    "id" to project.id,
+    "name" to project.name,
+    "status" to project.status.name,
+    "priority" to project.priority.name
+)
 
 private fun entrySummaryModel(entry: ProjectEntry): Map<String, Any?> = mapOf(
     "id" to entry.id,

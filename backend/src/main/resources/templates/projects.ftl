@@ -83,7 +83,7 @@
       <div class="transaction-list">
         <#list group.projects as project>
         <a href="/projects/${project.id}" class="transaction-row transaction-row-link">
-          <span class="transaction-description">${project.name}</span>
+          <span class="transaction-description">${project.name}<#if project.parentName??> <span class="fact-context">&#8618; ${project.parentName}</span></#if></span>
           <span class="transaction-account">${project.component?lower_case?cap_first}</span>
           <span class="priority-badge priority-badge-${project.priority?lower_case}">${project.priority?lower_case?cap_first}</span>
         </a>

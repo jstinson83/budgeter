@@ -1025,6 +1025,52 @@ new chunk:
   down scope first (which actions, mobile-only vs. always, and how to
   implement given this app's no-framework/minimal-JS posture).
 
+### Subprojects (parent/child grouping)
+
+Discussed with the maintainer as an alternative to the deferred "merge
+projects" idea above (line ~739): rather than combining multiple
+single-component projects' content into one multi-component project
+(which raises "what component does the merged project get?"), a project
+can now have a parent project instead. `Project.parentId: String?`
+(`ProjectStore.kt`) - null for a top-level project. `merge` itself is
+still not built; this is a separate, additive mechanism.
+
+- **Capped at exactly one level** - a project that already has a parent
+  can't itself be given subprojects, and a project that already has
+  subprojects can't be given a parent. Both directions are enforced in
+  `ProjectRoutes.kt`'s `POST /projects/{id}/subprojects` (attach an
+  existing project as a child) rather than in `ProjectStore`, matching
+  this codebase's existing pattern of putting business-rule validation in
+  routes and keeping the store as a plain field setter
+  (`ProjectRepository.setParent`, a single nullable setter rather than
+  separate attach/detach methods like `attachFact`/`detachFact`, since a
+  project has at most one parent).
+- **A subproject is a full `Project` in its own right** - own `status`,
+  `component`, `priority`, `factIds`/`documentIds`, entries. Nothing about
+  it is restricted by having a parent; the maintainer's call ("no sense in
+  preventing it") was to not special-case a child project's own content at
+  all. The parent is likewise an ordinary `Project` - it doesn't need to be
+  a pure organizational shell with no content of its own.
+- **Two ways to create the relationship**: `POST /projects` gained an
+  optional `parentId` form field (used by the "Or create a new subproject"
+  form on a parent's own `/projects/{id}` page, which posts to the same
+  create endpoint with a hidden `parentId`); or attach an already-existing
+  top-level project via `POST /projects/{id}/subprojects` (`childId` form
+  field, picker only offers projects with no parent and no children of
+  their own, mirroring the route's own validation so the UI never offers
+  something the route would reject).
+- **`/projects/{id}` renders differently depending on which side of the
+  relationship it's on**: a project with a parent shows a "Subproject of
+  {parent}" line and a detach button instead of a Subprojects section (it
+  can't have one); a project without a parent shows its current
+  subprojects plus both attach paths above.
+- **`ProjectPage.kt`'s `hasParent` boolean** - `project.ftl` branches on
+  `!project.hasParent` rather than `!project.parent??`. `CLAUDE.md`'s
+  FreeMarker gotchas section already documents `??`/null-comparison
+  footguns in this codebase; rather than rely on `!x??`'s precedence
+  parsing the way intended, the existence check was done once in Kotlin
+  and handed to the template as a plain boolean.
+
 ## Configuration reference
 
 Concrete IDs and config values — the single source of truth for these

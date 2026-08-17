@@ -130,7 +130,20 @@ fun Route.projectRoutes(
             call.respondRedirect("/projects?error=${"Please fill in all fields".encodeURLQueryComponent()}")
             return@post
         }
-        val project = projectStore.add(ownerId, name, status, component, priority)
+        // Optional - set when this form is the "Add subproject" one on a
+        // parent project's own page (a hidden parentId field). A parent
+        // that's itself already a subproject is rejected here rather than
+        // just being hidden from the form, since a stale/tampered form
+        // submission could otherwise create a two-level hierarchy.
+        val parentId = formParams["parentId"]?.trim()?.ifEmpty { null }
+        if (parentId != null) {
+            val parent = projectStore.get(ownerId, parentId)
+                ?: return@post call.respondRedirect("/projects?error=${"Parent project not found".encodeURLQueryComponent()}")
+            if (parent.parentId != null) {
+                return@post call.respondRedirect("/projects/$parentId?error=${"A subproject can't itself have subprojects".encodeURLQueryComponent()}")
+            }
+        }
+        val project = projectStore.add(ownerId, name, status, component, priority, parentId)
         call.respondRedirect("/projects/${project.id}?message=${"Created ${project.name}".encodeURLQueryComponent()}")
     }
 
@@ -141,9 +154,10 @@ fun Route.projectRoutes(
         val facts = houseFactStore.all(ownerId)
         val documents = houseDocumentStore.all(ownerId)
         val entries = projectEntryStore.forProject(ownerId, id)
+        val allProjects = projectStore.all(ownerId)
         val message = call.request.queryParameters["message"]
         val error = call.request.queryParameters["error"]
-        val model = projectPageModel(project, facts, documents, entries, message, error) + call.currentUserModel()
+        val model = projectPageModel(project, allProjects, facts, documents, entries, message, error) + call.currentUserModel()
         call.respond(FreeMarkerContent("project.ftl", model))
     }
 
@@ -207,6 +221,47 @@ fun Route.projectRoutes(
         val documentId = call.parameters["documentId"] ?: return@post call.respond(HttpStatusCode.NotFound)
         val updated = projectStore.detachDocument(ownerId, id, documentId) ?: return@post call.respond(HttpStatusCode.NotFound)
         call.respondRedirect("/projects/${updated.id}?message=${"Removed document".encodeURLQueryComponent()}")
+    }
+
+    // Attaches an existing project as a subproject of {id}. Capped at one
+    // level: rejected if the parent is itself a subproject, if the
+    // candidate child already has a parent (detach it first rather than
+    // silently reparenting), or if the candidate child already has
+    // subprojects of its own (those would become orphaned grandchildren).
+    post("/projects/{id}/subprojects") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val parent = projectStore.get(ownerId, id)
+            ?: return@post call.respond(HttpStatusCode.NotFound)
+        if (parent.parentId != null) {
+            return@post call.respondRedirect("/projects/$id?error=${"A subproject can't itself have subprojects".encodeURLQueryComponent()}")
+        }
+        val formParams = call.receiveParameters()
+        val childId = formParams["childId"]?.trim().orEmpty()
+        if (childId.isEmpty() || childId == id) {
+            return@post call.respondRedirect("/projects/$id?error=${"Please choose a project to add".encodeURLQueryComponent()}")
+        }
+        val child = projectStore.get(ownerId, childId)
+            ?: return@post call.respondRedirect("/projects/$id?error=${"Project not found".encodeURLQueryComponent()}")
+        if (child.parentId != null) {
+            return@post call.respondRedirect("/projects/$id?error=${"${child.name} is already a subproject of another project".encodeURLQueryComponent()}")
+        }
+        val childHasSubprojects = projectStore.all(ownerId).any { it.parentId == childId }
+        if (childHasSubprojects) {
+            return@post call.respondRedirect("/projects/$id?error=${"${child.name} already has subprojects of its own".encodeURLQueryComponent()}")
+        }
+        projectStore.setParent(ownerId, childId, id)
+        call.respondRedirect("/projects/$id?message=${"Added ${child.name} as a subproject".encodeURLQueryComponent()}")
+    }
+
+    post("/projects/{id}/subprojects/{childId}/detach") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val childId = call.parameters["childId"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val child = projectStore.get(ownerId, childId)?.takeIf { it.parentId == id }
+            ?: return@post call.respond(HttpStatusCode.NotFound)
+        projectStore.setParent(ownerId, child.id, null)
+        call.respondRedirect("/projects/$id?message=${"Removed ${child.name} from this project".encodeURLQueryComponent()}")
     }
 
     // One free-form multipart form on project.ftl covers every entry type -
