@@ -384,6 +384,34 @@ class ProjectRoutesTest {
     }
 
     @Test
+    fun testTheMainProjectListHidesSubprojectsAndOffersAnExpandableDisclosureInstead() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        val parentId = client.createProject("Kitchen renovation")
+        client.post("/projects") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Electrical rough-in&status=PLANNED&component=ELECTRICAL&priority=MEDIUM&parentId=$parentId")
+        }
+        client.post("/projects") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Cabinets&status=PLANNED&component=OTHER&priority=MEDIUM&parentId=$parentId")
+        }
+
+        val listPage = client.get("/projects") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        // Both subproject titles are reachable via the parent's expandable
+        // disclosure, not as their own top-level rows.
+        assertTrue(listPage.contains("2 subprojects"))
+        assertTrue(listPage.contains("""<details class="subproject-disclosure">"""))
+        assertTrue(listPage.contains("""<a href="/projects/$parentId""""))
+
+        // A top-level project with no subprojects doesn't render a
+        // disclosure at all.
+        client.createProject("Replace roof")
+        val listPageAgain = client.get("/projects") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(listPageAgain.contains("Replace roof"))
+    }
+
+    @Test
     fun testAttachingAnExistingProjectAsASubprojectAndDetachingItAgain() = testApplication {
         testModule()
         val client = signInFakeUser()
