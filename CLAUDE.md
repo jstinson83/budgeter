@@ -175,7 +175,7 @@ shape.
   "Categorized 0 of 123" with no error banner at all - looked like a no-op,
   not a failure. Root cause: the original schema asked Gemini to echo back
   each transaction's full id (a 64-hex-char SHA-256 string) in its response,
-  and `gemini-2.5-flash` has extended thinking on by default; for a batch
+  and `gemini-3.5-flash` has extended thinking on by default; for a batch
   that size the model spent its whole output-token budget on reasoning and
   returned a candidate with `finishReason: MAX_TOKENS` and no text part at
   all - which the code silently treated as "nothing to report" instead of

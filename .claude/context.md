@@ -17,17 +17,16 @@ This repo previously scoped a budgeting app. `product_spec.md` (added
 2026-08-09) captures the pivot to the broader Household OS concept. The
 codebase itself is still budgeting-app-shaped (Google sign-in + CSV
 transaction import) — the first sprint toward Household OS deliberately
-started there (see "First feature" below) since it's the roadmap's own
-stated Version 1 groundwork: real persistence, real deploy, before any AI
-extraction work.
+started there (see the CSV transaction import section below) since it's
+the roadmap's own stated Version 1 groundwork: real persistence, real
+deploy, before any AI extraction work.
 
 `product_spec.md`'s "House Knowledge" section (added 2026-08-11) is a much
 deeper spec for the home-specific slice of the Knowledge/Documents model:
 a `Fact` object with typed provenance/evidence/epistemic-status, events and
 house components as first-class objects, and a document-upload →
-fact-extraction MVP workflow. Not implemented yet — this is vision only, same
-status as the rest of `product_spec.md` beyond the shipped
-CSV-import/categorization/dashboard features below.
+fact-extraction MVP workflow. Largely implemented now (see the House
+Knowledge subsystem below) — deferred fields are noted where they come up.
 
 ## Architecture at a glance
 
@@ -37,12 +36,46 @@ CSV-import/categorization/dashboard features below.
   `cloudbuild.yaml` at the repo root → Artifact Registry → Cloud Run. Live:
   the trigger builds and deploys on push to `main`, and Google sign-in works
   end to end on the deployed URL.
-- **Storage**: Firestore, database `home-os`. `TransactionRepository` /
-  `FirestoreTransactionStore` (`backend/src/main/kotlin/com/budgeter/TransactionStore.kt`)
-  is the first collection, following foodie's repository-interface +
-  Firestore-impl + in-memory-test-fake pattern.
+- **Storage**: Firestore, database `home-os`, plus GCS for uploaded file
+  blobs (documents, quotes, photos). Repository-interface +
+  Firestore-impl + in-memory-test-fake pattern throughout, following
+  foodie's convention — `TransactionRepository`/`FirestoreTransactionStore`
+  (`backend/src/main/kotlin/com/budgeter/TransactionStore.kt`) was the
+  first collection.
+- **AI**: Google Gemini (`gemini-3.5-flash`), called directly over REST
+  (`generativelanguage.googleapis.com`, no Google AI SDK dependency) via a
+  shared `geminiHttpClient`. Used for transaction categorization, house
+  document fact extraction (two-pass), component summaries, and project
+  recommendations — see each subsystem below for its specific call shape.
 
-## First feature: CSV transaction import
+## System map
+
+How the four subsystems below relate — this is the part a flat feature
+list doesn't make obvious:
+
+- **Transactions & Analysis** is the financial ledger: CSV import →
+  categorization (transfers/rules/Gemini) → `/analysis` and dashboard
+  views. Self-contained today; nothing else in the app reads from it yet.
+- **House Knowledge** turns uploaded documents into structured `HouseFact`
+  rows via a two-pass Gemini pipeline, grouped by `Component`. Also
+  self-contained — it doesn't know about transactions or projects.
+- **House Projects & Recommendations** consumes House Knowledge:
+  `Recommendation` rows are Gemini-generated from a component's current
+  facts, and accepting one creates a `Project` with the supporting facts
+  already attached. Projects also link facts/documents directly and
+  accumulate their own note/quote/photo/link feed, independent of whether
+  they originated from a recommendation.
+- **Financial Goals & Project Feasibility** (planned, not built — see
+  below) is the missing bridge: it will read Transactions & Analysis (for
+  a rolling savings rate) and Projects (for cost/timing) to judge whether
+  a project's cost fits a savings goal. This is the first feature that
+  will connect the financial and project sides of the app.
+
+---
+
+## Subsystem: Transactions & Analysis
+
+### CSV transaction import
 
 `/transactions` — upload a CSV, see imported transactions. Deliberately
 chosen as the first slice of work over spec's original "scan your home"
@@ -93,7 +126,8 @@ photo/document-capture features will reuse.
   distinct same-day/same-amount/same-description transactions within one
   file both still get kept. See `CLAUDE.md`'s Firestore gotchas section for
   the mechanics and the formatting-change tradeoff.
-## Second feature: Gemini spending analysis
+
+### Gemini spending analysis
 
 `/analysis` — category totals for a calendar month, paged one month at a
 time (Prev/Next), with a button to categorize any new transactions via
@@ -123,8 +157,9 @@ load); not built yet.
   page is what replaces the old button) - a cheap no-op once there's
   nothing left to fix. Three steps, in order, each covered in more detail
   where noted:
-  1. **Transfer/interest categorization** (`TransferMatcher` - see Third
-     feature below for the full mechanics). Synchronous, deterministic, no
+  1. **Transfer/interest categorization** (`TransferMatcher` - see the
+     account labeling + transfer matching section below for the full
+     mechanics). Synchronous, deterministic, no
      network call, and scans the owner's *entire* transaction history every
      time regardless of current category - not scoped to what's newly
      pending.
@@ -156,16 +191,16 @@ load); not built yet.
   used this pattern successfully on other Cloud Run services before. The
   maintainer's own reasoning for dropping the manual step: categorization
   is idempotent (steps 2-3, via `uncategorized(ownerId)` below - step 1 is
-  its own kind of idempotent, see Third feature) so re-triggering it costs
-  nothing when there's nothing new, and there's no legitimate reason to
-  ever *want* transactions left uncategorized.
+  its own kind of idempotent, see the transfer-matching section) so
+  re-triggering it costs nothing when there's nothing new, and there's no
+  legitimate reason to ever *want* transactions left uncategorized.
   - A Gemini job already `RUNNING` for this owner only blocks *launching a
     new* Gemini job (step 3) - steps 1-2 always run to completion on every
     `categorize()` call regardless of another job's status, so an unrelated
     in-flight Gemini pass never blocks transfer detection or rules. Bit by
     this exact gap once: the `RUNNING` guard originally sat at the top of
-    `categorize()`, before steps 1-2 ran at all - see Third feature's
-    gotcha writeup for the full story.
+    `categorize()`, before steps 1-2 ran at all - see the transfer-matching
+    section's gotcha writeup for the full story.
   - Gotcha hit while building this: `CategorizationJobManager`'s
     background coroutine used to call `categoryStore.all(ownerId)` itself
     (for the Gemini leg's allowed-category list) *concurrently* with
@@ -197,35 +232,36 @@ load); not built yet.
   symptom - chunking is what makes a large batch succeed at all, the job
   is what keeps a many-chunk batch from being cut off by Cloud Run's
   request timeout.
-
 - `Transaction.category: String?` (`TransactionStore.kt`) is null until
-  categorized, and holds a `Category.id` (see "Fifth feature" below) rather
-  than a fixed enum as of the categories/rules management page - categories
-  are per-owner and user-editable now, not a single compile-time set.
+  categorized, and holds a `Category.id` (see the categories management
+  section below) rather than a fixed enum as of the categories/rules
+  management page - categories are per-owner and user-editable now, not a
+  single compile-time set.
 - `TransactionRepository.uncategorized(ownerId)` (default method: filters
   `all(ownerId)` in memory) is what makes rules/Gemini (steps 2-3 above)
   idempotent - once a transaction has a category it's permanently excluded
   from both, so loading `/analysis` repeatedly never re-analyzes (or
   re-bills Gemini for) the same transaction twice. Step 1 (transfer/interest
-  categorization) deliberately does *not* use this - see Third feature.
+  categorization) deliberately does *not* use this - see the
+  transfer-matching section.
 - `GeminiTransactionCategorizer` (`GeminiCategorizer.kt`) calls the Gemini
   API directly over REST (`generativelanguage.googleapis.com`, model
   `gemini-3.5-flash`) using a `responseSchema` that constrains output to
   `{index, category}` pairs (index into the request's transaction list, not
   the transaction's real id - see CLAUDE.md gotcha below) from the caller's
   own active category set (passed into `categorize()`, not hardcoded - see
-  "Fifth feature" below) - no Google AI SDK dependency added, same "just use
-  ktor's HttpClient" pattern as the OAuth userinfo call in `Auth.kt`. Requires the
-  `GEMINI_API_KEY` env var, now set on the deployed Cloud Run service (see
-  `CLAUDE.md`'s deploy pipeline section - same manual-env-var pattern as the
-  OAuth secrets) - categorization works end to end in production. Thinking
-  is explicitly disabled (`thinkingConfig.thinkingBudget = 0`) - see
-  CLAUDE.md gotcha.
+  the categories management section below) - no Google AI SDK dependency
+  added, same "just use ktor's HttpClient" pattern as the OAuth userinfo
+  call in `Auth.kt`. Requires the `GEMINI_API_KEY` env var, now set on the
+  deployed Cloud Run service (see `CLAUDE.md`'s deploy pipeline section -
+  same manual-env-var pattern as the OAuth secrets) - categorization works
+  end to end in production. Thinking is explicitly disabled
+  (`thinkingConfig.thinkingBudget = 0`) - see CLAUDE.md gotcha.
 - The viewed period is always one calendar month (`year`/`month` query
   params, default to the current month) - no rolling-window or
   all-time option.
 
-## Third feature: bank/credit-card/LOC account labeling + transfer matching
+### Account labeling + transfer matching
 
 Transactions now carry `accountType: AccountType` (`BANK`, `CREDIT_CARD`, or
 `LOC`, `TransactionStore.kt`) - the CSV import format and sign convention are
@@ -275,18 +311,19 @@ lines up in amount and date with a real LOC `interest` charge is confirmed
 to be the one covering it. The interest charge itself is real spending
 (unlike a transfer) but booked as two ledger entries for one economic
 event, so only the LOC leg is categorized `INTEREST_CATEGORY_ID` (a real,
-seeded `Category` - see Fifth feature); the bank leg is excluded like any
-other transfer (`TRANSFER_CATEGORY_ID`) so the same interest isn't counted
-twice.
+seeded `Category` - see the categories management section); the bank leg
+is excluded like any other transfer (`TRANSFER_CATEGORY_ID`) so the same
+interest isn't counted twice.
 
 All transfer/interest categorization (`TRANSFER_CATEGORY_ID`, `"TRANSFER"`,
 `CategoryStore.kt`) is excluded from `/analysis` entirely, not just grouped
 into its own bucket. Runs automatically as the first step of every
 `categorize()` pass (`CategorizationJob.kt`), which itself now runs on
-every `GET /analysis` load rather than a manual button (see Second feature
-above). Currently assumes at most one bank account, one credit card, and
-one LOC (no per-account scoping beyond `accountType`); revisit if a second
-account of any of these types is ever added.
+every `GET /analysis` load rather than a manual button (see the Gemini
+spending analysis section above). Currently assumes at most one bank
+account, one credit card, and one LOC (no per-account scoping beyond
+`accountType`); revisit if a second account of any of these types is ever
+added.
 
 `categorize()`'s candidate pool for this is the owner's *entire* transaction
 history (`transactionStore.all(ownerId)`), not just this pass's
@@ -322,14 +359,14 @@ was to stop pairing altogether for the markers that don't need it (every
 one except LOC interest, per above) and decide each row's category from its
 own description alone - eliminating the whole class of "haven't found its
 partner yet" bug rather than chasing each way that gap could reopen.
-Separately, once categorization became automatic (see Second feature
-above), a background Gemini job left `RUNNING` for an unrelated owner used
-to block transfer/rule matching entirely (the guard sat at the top of
-`categorize()`); fixed by moving that guard to only gate the Gemini launch,
-its original purpose, so transfer matching always runs to completion
-regardless of another job's status.
+Separately, once categorization became automatic (see the Gemini spending
+analysis section above), a background Gemini job left `RUNNING` for an
+unrelated owner used to block transfer/rule matching entirely (the guard
+sat at the top of `categorize()`); fixed by moving that guard to only gate
+the Gemini launch, its original purpose, so transfer matching always runs
+to completion regardless of another job's status.
 
-### `INVESTMENT` category
+#### `INVESTMENT` category
 
 Tracks money moved into an investment/brokerage account, without modeling
 investment accounts/holdings themselves - deliberately a shallow "how much
@@ -337,12 +374,12 @@ did I invest" number, not a portfolio tracker. Unlike `TRANSFER`, it's a
 normal category: manually assignable via the recategorize dropdown and
 guessable by Gemini, and it shows its own bucket in `/analysis`'s category
 totals like any other category today. The one deliberate special case is
-future: when a spent-vs-earned/savings-rate calculation gets built (doesn't
-exist yet - see Second feature above), it should treat `INVESTMENT` as
+for the planned Financial Goals & Project Feasibility work (see below):
+when a savings-rate calculation gets built, it should treat `INVESTMENT` as
 neutral (neither income nor expense) and exclude it from that split, the
 same way `TRANSFER` is excluded from `/analysis` entirely now.
 
-## Fourth feature: manual recategorization + household rules
+### Manual recategorization + household rules
 
 Gemini inevitably dumps some recurring merchants into `OTHER` (or leaves
 them uncategorized) that the household knows how to bucket better than a
@@ -362,9 +399,9 @@ uncategorized-only `/analysis/categorize` pass on its own), and saves a
 `pattern`/`matchType`/`category`, Firestore collection
 `categorizationRules`, single-field `ownerId` equality query - no composite
 index needed, unlike `TransactionRepository.all()`). The target category
-must be one of the owner's own active `Category` rows (see "Fifth feature"
-below) - `TRANSFER` is never offered since it isn't a real `Category` row to
-begin with, and a disabled category is rejected too.
+must be one of the owner's own active `Category` rows (see the categories
+management section below) - `TRANSFER` is never offered since it isn't a
+real `Category` row to begin with, and a disabled category is rejected too.
 
 Saved rules apply **going forward only**, not retroactively: on every
 future `/analysis/categorize` run, `CategorizationRuleMatcher.kt` checks
@@ -383,7 +420,7 @@ owner's own `uncategorized()` list) - the handler re-fetches
 `transactionStore.all(ownerId)` and confirms the id belongs to the caller
 before touching it, rather than trusting the form value directly.
 
-## Fifth feature: categories + rules management page (`/categories`)
+### Categories + rules management page (`/categories`)
 
 Replaced the old fixed `TransactionCategory` enum with `Category`
 (`CategoryStore.kt`) - real per-owner Firestore rows (collection
@@ -441,7 +478,7 @@ compile-time set, so a household can add its own categories from the UI.
   (`/analysis/recategorize` and `/categories/rules`) apply the same "target
   must be one of the owner's own active categories" validation.
 
-## Sixth feature: dashboard landing page (`/`)
+### Dashboard landing page (`/`)
 
 `/` now renders a real summary page (`DashboardPage.kt`/`DashboardRoutes.kt`,
 `dashboard.ftl`) instead of just redirecting to `/analysis` - the first
@@ -466,7 +503,11 @@ precomputed/cron layer, same "quick version first" posture as `/analysis`):
   lookback (`NET_CHANGE_TREND_MONTHS` in `DashboardPage.kt`) - this whole
   section only reasons over whatever transactions have actually been
   imported, with no assumption that every account is fully linked/imported,
-  so a short window keeps that promise honest.
+  so a short window keeps that promise honest. **This is also the natural
+  building block for the planned Financial Goals savings-rate calculation**
+  (see the Financial Goals & Project Feasibility subsystem below) - that
+  work would split `monthlyNetChange` into income vs. expense per month
+  rather than just net, reusing the same aggregation.
 - **Coverage**: per account type, earliest/latest transaction date, days
   since the last import (flagged stale past 35 days), and any internal gap
   longer than 21 days between consecutive transactions surfaced as a
@@ -487,7 +528,51 @@ this depended on (`Transaction.balance`, `ParsedTransaction.balance`) was
 reverted along with it - the CSV's 5th column goes back to being parsed and
 discarded, same as before this feature.
 
-## Seventh feature: House Knowledge (document upload + fact extraction)
+### Spending pie chart (dashboard + `/analysis`)
+
+Both landing-page sections that already computed a per-category spend total
+for some period - the dashboard's current month (`DashboardPage.kt`) and
+`/analysis`'s viewed month (`AnalysisPage.kt`) - now also render a donut
+chart of where that spend went, via a shared `PieChart.kt` +
+`_pie-chart.ftl` partial (included from both `dashboard.ftl`, below "Money
+in/out" and above "Coverage", and `analysis.ftl`, below the net-change total
+and above the category list).
+
+- **Chartable set**: only categories with a net *outflow* for the period
+  (`pieChartSlices` in `PieChart.kt`) - a net-positive category (an income
+  category, or refunds outweighing spend) isn't "where the money went" and
+  is silently dropped rather than shown as a negative-size slice. Unlike
+  `analysisEligible`'s netChange calculation, `INVESTMENT` **is** included
+  here - a contribution is a real outflow from checking, which is what this
+  chart is answering, even though it's treated as neutral for net-change
+  purposes.
+- **Top 5 + "Other categories"**: beyond the 5 biggest slices, the rest are
+  summed into one bucket, ranked last regardless of its own size. Named
+  "Other categories" specifically (not "Other") so it doesn't collide with
+  the real built-in `OTHER` category (`CategoryStore.kt`), which can still
+  appear as its own top-5 slice.
+- **No JS chart library** (same "no framework" posture as the rest of the
+  app - see `analysis-category.ftl`/CLAUDE.md): each slice is one SVG
+  `<circle>` using the `stroke-dasharray`/`stroke-dashoffset` technique
+  (full-circumference dash pattern, offset by every earlier slice's
+  cumulative arc length) - only arc-length math, no trig. A native `<title>`
+  gives each slice a hover tooltip for free; the legend list (label, amount,
+  percent) is what actually carries identity, not color alone.
+- **Colors assigned by spend rank, not a stable per-category map**:
+  categories are per-owner and user-creatable (see the categories
+  management section above), so there's no fixed universe to hand a
+  permanent color to. The 5-slot categorical palette (`--pie-1`..`--pie-5`
+  in `styles.css`, `--pie-other` for the overflow bucket) was run through
+  the data-viz skill's `validate_palette.js` for both light and dark
+  surfaces - passes CVD/normal-vision separation; the light-mode contrast
+  WARN on a few slots is covered by the always-present text legend (the
+  skill's "relief" rule).
+
+---
+
+## Subsystem: House Knowledge
+
+### Document upload + fact extraction
 
 The first real slice of `product_spec.md`'s "House Knowledge" section
 (added 2026-08-11 as vision, implemented 2026-08-11) - the "MVP: House
@@ -517,15 +602,19 @@ candidate facts via Gemini, resolve the ambiguous ones. New top-level
   `HouseRoutes.kt`'s upload handler reads it from a `PartData.FormItem`
   named `context` alongside the file part; retry re-passes the persisted
   `document.context` rather than requiring it to be re-typed. Also carries
-  `debugNotes: String?` - the most recent successful extraction's pass
-  1/pass 2 diagnostic text (`HouseFactExtractor.ExtractionResult.debugNotes`,
-  set by `HouseFactExtractionJobManager` right after a successful
-  extraction), rendered in a collapsible "Extraction debug info" section on
-  `house-document.ftl`. Added so recall gaps can be diagnosed by anyone
-  looking at the document page, not just whoever has Cloud Logging access -
-  see `CLAUDE.md`'s House Knowledge gotchas for the debugging story this
-  shortcuts. Stale after a failed retry (only updated on success), which is
-  an accepted tradeoff, not a bug - see `HouseDocument.debugNotes`'s comment.
+  `error: String?` - the failure message from the most recent failed
+  extraction attempt, shown on `house-document.ftl` when a document is
+  `FAILED`, and `debugNotes: String?` - the most recent successful
+  extraction's pass 1/pass 2 diagnostic text
+  (`HouseFactExtractor.ExtractionResult.debugNotes`, set by
+  `HouseFactExtractionJobManager` right after a successful extraction),
+  rendered in a collapsible "Extraction debug info" section on
+  `house-document.ftl`. `debugNotes` was added so recall gaps can be
+  diagnosed by anyone looking at the document page, not just whoever has
+  Cloud Logging access - see `CLAUDE.md`'s House Knowledge gotchas for the
+  debugging story this shortcuts. Stale after a failed retry (only updated
+  on success), which is an accepted tradeoff, not a bug - see
+  `HouseDocument.debugNotes`'s comment.
 - **`HouseFact`** (`HouseFactStore.kt`, Firestore collection `houseFacts`)
   is a deliberately narrow slice of the spec's full `Fact` model:
   what/type/component/status/importance/sourceQuote/sourceLocation/
@@ -586,9 +675,16 @@ candidate facts via Gemini, resolve the ambiguous ones. New top-level
   gathered across a household's whole
   document set, not just one document's pass-1 output, though nothing wires
   that up yet; today it only ever sees one document's candidates per run.
-  **Not yet exercised against the real Gemini API** - see `CLAUDE.md`'s
-  House Knowledge gotchas for what to check first if the first real upload
-  fails.
+  **Exercised against the real Gemini API across five extraction rounds**
+  against the same real structural-drawing document (see `CLAUDE.md`'s
+  House Knowledge gotchas for the round-by-round detail) - request/response
+  plumbing works reliably now; extraction *completeness* is still being
+  tuned empirically. The one gap that has survived every round so far is a
+  wood-beam-on-wood-posts system that has never once appeared in the
+  document walkthrough or the candidate list - the working theory is a
+  pass-1 vision/perception issue (the model isn't reading that part of the
+  drawing at all) rather than a prompt or reconciliation bug, but that
+  hasn't been confirmed yet.
 - **Extraction runs on a background coroutine** (`HouseFactExtractionJobManager`,
   `HouseFactExtractionJob.kt`), same async-job-plus-poll pattern as Gemini
   categorization (`CategorizationJobManager`) - originally synchronous in
@@ -634,8 +730,9 @@ components/events/relationships graph:
 - **`HouseFact.component: Component`** (`HouseFactStore.kt`) - a flat
   9-value enum (`FOUNDATION`, `STRUCTURE`, `EXTERIOR`, `ROOF`, `PLUMBING`,
   `ELECTRICAL`, `HVAC`, `SAFETY`, `OTHER`), the top level of the spec's
-  component hierarchy with no sub-part nesting. `GeminiHouseFactExtractor`
-  assigns it in the same extraction call as `type` (one more schema
+  component hierarchy with no sub-part nesting. `HouseFactNormalizer.kt`'s
+  `GeminiHouseFactNormalizer` (pass 2, above) assigns it in the same call
+  as `type` and the rest of the classification fields (one more schema
   field/prompt instruction, not a separate pass). Facts extracted before
   this field existed read back as `OTHER` (Firestore fallback, same pattern
   as an unrecognized `type` string) - re-running "Retry extraction" on an
@@ -672,51 +769,16 @@ components/events/relationships graph:
   async-job-plus-poll treatment; revisit only if a component's fact count
   grows enough for that to stop holding.
 
-## Eighth feature: spending pie chart (dashboard + `/analysis`)
+---
 
-Both landing-page sections that already computed a per-category spend total
-for some period - the dashboard's current month (`DashboardPage.kt`) and
-`/analysis`'s viewed month (`AnalysisPage.kt`) - now also render a donut
-chart of where that spend went, via a shared `PieChart.kt` +
-`_pie-chart.ftl` partial (included from both `dashboard.ftl`, below "Money
-in/out" and above "Coverage", and `analysis.ftl`, below the net-change total
-and above the category list).
+## Subsystem: House Projects & Recommendations
 
-- **Chartable set**: only categories with a net *outflow* for the period
-  (`pieChartSlices` in `PieChart.kt`) - a net-positive category (an income
-  category, or refunds outweighing spend) isn't "where the money went" and
-  is silently dropped rather than shown as a negative-size slice. Unlike
-  `analysisEligible`'s netChange calculation, `INVESTMENT` **is** included
-  here - a contribution is a real outflow from checking, which is what this
-  chart is answering, even though it's treated as neutral for net-change
-  purposes.
-- **Top 5 + "Other categories"**: beyond the 5 biggest slices, the rest are
-  summed into one bucket, ranked last regardless of its own size. Named
-  "Other categories" specifically (not "Other") so it doesn't collide with
-  the real built-in `OTHER` category (`CategoryStore.kt`), which can still
-  appear as its own top-5 slice.
-- **No JS chart library** (same "no framework" posture as the rest of the
-  app - see `analysis-category.ftl`/CLAUDE.md): each slice is one SVG
-  `<circle>` using the `stroke-dasharray`/`stroke-dashoffset` technique
-  (full-circumference dash pattern, offset by every earlier slice's
-  cumulative arc length) - only arc-length math, no trig. A native `<title>`
-  gives each slice a hover tooltip for free; the legend list (label, amount,
-  percent) is what actually carries identity, not color alone.
-- **Colors assigned by spend rank, not a stable per-category map**:
-  categories are per-owner and user-creatable (Fifth feature above), so
-  there's no fixed universe to hand a permanent color to. The 5-slot
-  categorical palette (`--pie-1`..`--pie-5` in `styles.css`, `--pie-other`
-  for the overflow bucket) was run through the data-viz skill's
-  `validate_palette.js` for both light and dark surfaces - passes CVD/
-  normal-vision separation; the light-mode contrast WARN on a few slots is
-  covered by the always-present text legend (the skill's "relief" rule).
+Turns house facts into a manageable set of projects, with Gemini-generated
+project recommendations. New top-level `/projects` area. Built in five
+chunks, listed here in build order (see `current.md` for the completed
+checklist).
 
-## Ninth feature: House Projects & Recommendations (chunk 1 - project core)
-
-First slice of a new top-level `/projects` area, turning house facts into a
-manageable set of projects - see `.claude/current.md` for the full chunked
-plan (facts/documents linking, a notes/decisions/quotes/photos/links feed,
-and Gemini-generated recommendations are later chunks, not built yet).
+### Chunk 1 - project core
 
 - **`Project`** (`ProjectStore.kt`, Firestore collection `projects`,
   single-field `ownerId` equality query, same no-composite-index shape as
@@ -738,7 +800,9 @@ and Gemini-generated recommendations are later chunks, not built yet).
   structure/electrical/plumbing) just picks one dominant tag for now. A
   "merge projects" action to combine multiple single-component projects
   into one was discussed and deliberately deferred rather than making
-  `Project` multi-tagged from the start - see `current.md`.
+  `Project` multi-tagged from the start - see the Subprojects section
+  below for the alternative that was built instead, and `current.md` for
+  the still-deferred merge idea.
 - **`/projects`** (`ProjectRoutes.kt`, `projects.ftl`) lists projects
   grouped by status (in `ACTIVE`/`PLANNED`/`DEPRIORITIZED`/`COMPLETED`
   order, empty groups skipped - same pattern `houseFactsPageModel` uses for
@@ -749,8 +813,131 @@ and Gemini-generated recommendations are later chunks, not built yet).
   project's four fields are small enough to edit together in one `POST`.
 - **Not built in chunk 1**: linking existing `HouseFact`/`HouseDocument`
   rows to a project, the notes/decisions/quotes/photos/links feed, project
-  deletion, and anything recommendation-related. See `current.md` for the
-  remaining chunk sequence.
+  deletion, and anything recommendation-related - all covered by the later
+  chunks below.
+
+### Chunk 2 - linking facts & documents to a project
+
+`Project` gained `factIds`/`documentIds: List<String>` (`ProjectStore.kt`) -
+many-to-many, no ownership implied: the same `HouseFact`/`HouseDocument` can
+back more than one project. `ProjectRepository` gained
+`attachFact`/`detachFact`/`attachDocument`/`detachDocument`, each a
+read-modify-write against the existing project (add/remove from the list,
+write the whole array back) rather than Firestore's `arrayUnion`/
+`arrayRemove` - kept consistent with the read-then-`update()` style the rest
+of this store (and `HouseFactStore.resolve`) already uses, not for a
+specific correctness reason.
+
+`/projects/{id}` (`project.ftl`) now shows two sections, each split into
+"linked" (with a Remove button posting to `/projects/{id}/facts/{factId}/
+detach` or `/projects/{id}/documents/{documentId}/detach`) and an "available
+to attach" `<select>` picker (posting to `/projects/{id}/facts` or
+`/projects/{id}/documents`) - `projectPageModel` (`ProjectPage.kt`) takes
+the owner's *entire* fact/document collections and partitions them by
+`project.factIds`/`documentIds` membership, same "fetch everything, split in
+memory" approach `houseFactsPageModel` uses for review/accepted facts. A
+fact/document can be picked from more than one project's picker at once -
+attaching to project B never removes it from project A.
+
+Attach handlers re-resolve the client-supplied `factId`/`documentId` against
+`houseFactStore.all(ownerId)` / `houseDocumentStore.get(ownerId, id)` before
+writing - same "never trust a client-supplied id directly" posture as
+`/analysis/recategorize`'s `transactionId` handling.
+
+### Chunk 3 - the project entry feed
+
+`ProjectEntry` (`ProjectEntryStore.kt`, Firestore collection
+`projectEntries`) is a project's accumulating feed - one type with a
+`ProjectEntryType` discriminator (`NOTE`/`DECISION`/`QUOTE`/`PHOTO`/`LINK`)
+rather than five parallel collections, since they all render as a single
+chronological list on `/projects/{id}`. `text` is required content for
+Note/Decision, an optional caption for Quote/Photo/Link; `url` only applies
+to Link; `storagePath`/`filename` only apply to Quote/Photo.
+
+**Quote/Photo attachments deliberately do *not* create a `HouseDocument`
+row.** The chunk-3 plan originally said "reusing the existing GCS upload
+path," which turned out to be ambiguous between two readings once actually
+built: link an already-extracted `HouseDocument` (chunk 2 already covers
+that case), or reuse the *upload mechanism* (`DocumentBlobStore`) for a
+fresh file that never goes through extraction. Went with the latter -
+`ProjectRoutes.kt`'s `POST /projects/{id}/entries` uploads straight to the
+same `DocumentBlobStore`/GCS bucket `HouseDocument` uses
+(`{ownerId}/{random-uuid}/{filename}`, same pattern `HouseRoutes.kt`'s
+upload handler uses), but never creates a `HouseDocument` row and never
+touches `HouseFactExtractionJobManager`. Two reasons: a quote or photo
+attached to a project isn't house-knowledge source material to run fact
+extraction against, and `HouseRoutes.kt`'s upload handler is
+hard-restricted to PDF - a Photo entry is typically a JPEG/PNG, which that
+path rejects outright. `ProjectEntryRepository.delete` doesn't touch the
+blob itself; `POST /projects/{id}/entries/{entryId}/delete` deletes the GCS
+blob (when `storagePath` is set) before deleting the Firestore row, mirroring
+`HouseRoutes.kt`'s document-delete handler.
+
+**Revised after the first pass to a single free-form field**: the maintainer
+pushed back on the initial type-picker design ("might be better to just have
+a single text field... we can figure out what is a link and what isn't").
+`project.ftl`'s entry form is now just a `text` textarea plus an optional
+`file` input - no type select, no separate `url` field for the homeowner to
+fill in. `ProjectEntryType` dropped from five values to four
+(`NOTE`/`QUOTE`/`PHOTO`/`LINK` - `DECISION` removed) and is now inferred
+server-side by `detectEntryType()` (`ProjectRoutes.kt`): an attached file
+wins first (checked by extension against a fixed image-extension set, since
+a multipart part's declared Content-Type is client-supplied and not always
+accurate - an image extension makes it `PHOTO`, anything else `QUOTE`);
+otherwise a URL found anywhere in the text (via a simple `https?://\S+`
+regex) makes it `LINK`, with the *matched URL* stored separately in
+`ProjectEntry.url` for a clean `<a href>` while `ProjectEntry.text` keeps
+the homeowner's full typed text (so "Found this one: `<url>` looks good"
+still shows its own caption, not just the bare link); anything left over is
+`NOTE`. `POST /projects/{id}/entries` requires at least one of text/file
+non-empty - that's the only server-side validation now, there's no
+per-type-required-field branching to maintain.
+
+**No separate `DECISION` type** - dropped rather than kept as a fifth
+value, since (unlike a URL or a file) there's no reliable signal in free
+text that says "this is a decision, not a note." A decision the homeowner
+wants remembered is just a `NOTE` whose text happens to record one; nothing
+distinguishes it structurally. Discussed three options with the maintainer
+(fold into Note, a manual checkbox, keyword-sniffing) - the maintainer
+didn't respond before the change was needed, so this went with the
+recommended default (fold into Note) as the simplest option consistent with
+"figure out what is a link and what isn't" - flagged clearly in case the
+maintainer wants a distinct Decision type back.
+
+**Links are linkified in place, not extracted-and-duplicated.** The first
+version showed the extracted URL as its own clickable line, then the full
+raw text again below it - redundant, and only ever linkified the *first*
+URL in a note even if it had several. Replaced with
+`ProjectPage.kt`'s `linkifySegments()`: splits an entry's raw `text` into
+alternating plain-text/URL segments (every URL the regex finds, not just
+one), and `project.ftl` loops the segments, rendering each URL segment as
+its own `<a>` and everything else through FreeMarker's normal `${...}`
+auto-escaping - never builds a raw HTML string and marks it trusted, so
+there's no injection risk to reason about beyond what `${...}` already
+handles. This also removed the `entry.text != (entry.url!"")` null-comparison
+guard the first version needed (see `CLAUDE.md`'s FreeMarker gotchas) - with
+segments there's no separate `url` field to compare against `text` at
+render time.
+
+**Trailing sentence punctuation has to be trimmed off a matched URL.** The
+regex (`\S+`) has no way to know a URL ends where the sentence does -
+`"...https://example.com/x, leaning toward..."` matched
+`https://example.com/x,` *with* the comma, producing a link that 404s on a
+URL that doesn't exist. Fixed by `trimTrailingUrlPunctuation()`
+(`ProjectEntryStore.kt`): strips generic trailing punctuation
+(`.,;:!?'"`) unconditionally, and a trailing `)` only when it's unbalanced
+within the match, so a URL that legitimately ends in a balanced
+parenthetical (a Wikipedia `(disambiguation)`-style link) is left alone.
+Applied both where `linkifySegments()` builds a URL segment and where
+`ProjectRoutes.kt` stores `ProjectEntry.url`. Caught by browser
+verification, not the unit test suite - the mocked-request tests never
+exercised text with a URL followed directly by punctuation until this was
+added as a regression test afterward.
+
+No download link is offered for an attached Quote/Photo file yet - the app
+doesn't have a signed-URL/download-proxy route for GCS blobs anywhere
+(`HouseDocument`'s own uploaded PDFs aren't downloadable from the UI
+either), so this stays consistent with that rather than being a new gap.
 
 ### Chunk 4 - recommendation generation
 
@@ -850,135 +1037,6 @@ later if it turns out to matter.
   confirmed the resulting project page already had the fact attached and
   the recommendation gone from the pending list.
 
-### Chunk 2 - linking facts & documents to a project
-
-`Project` gained `factIds`/`documentIds: List<String>` (`ProjectStore.kt`) -
-many-to-many, no ownership implied: the same `HouseFact`/`HouseDocument` can
-back more than one project. `ProjectRepository` gained
-`attachFact`/`detachFact`/`attachDocument`/`detachDocument`, each a
-read-modify-write against the existing project (add/remove from the list,
-write the whole array back) rather than Firestore's `arrayUnion`/
-`arrayRemove` - kept consistent with the read-then-`update()` style the rest
-of this store (and `HouseFactStore.resolve`) already uses, not for a
-specific correctness reason.
-
-`/projects/{id}` (`project.ftl`) now shows two sections, each split into
-"linked" (with a Remove button posting to `/projects/{id}/facts/{factId}/
-detach` or `/projects/{id}/documents/{documentId}/detach`) and an "available
-to attach" `<select>` picker (posting to `/projects/{id}/facts` or
-`/projects/{id}/documents`) - `projectPageModel` (`ProjectPage.kt`) takes
-the owner's *entire* fact/document collections and partitions them by
-`project.factIds`/`documentIds` membership, same "fetch everything, split in
-memory" approach `houseFactsPageModel` uses for review/accepted facts. A
-fact/document can be picked from more than one project's picker at once -
-attaching to project B never removes it from project A.
-
-Attach handlers re-resolve the client-supplied `factId`/`documentId` against
-`houseFactStore.all(ownerId)` / `houseDocumentStore.get(ownerId, id)` before
-writing - same "never trust a client-supplied id directly" posture as
-`/analysis/recategorize`'s `transactionId` handling.
-
-Still not built at this point: the notes/decisions/quotes/photos/links feed
-(chunk 3), project deletion, and anything recommendation-related.
-
-### Chunk 3 - the project entry feed
-
-`ProjectEntry` (`ProjectEntryStore.kt`, Firestore collection
-`projectEntries`) is a project's accumulating feed - one type with a
-`ProjectEntryType` discriminator (`NOTE`/`DECISION`/`QUOTE`/`PHOTO`/`LINK`)
-rather than five parallel collections, since they all render as a single
-chronological list on `/projects/{id}`. `text` is required content for
-Note/Decision, an optional caption for Quote/Photo/Link; `url` only applies
-to Link; `storagePath`/`filename` only apply to Quote/Photo.
-
-**Quote/Photo attachments deliberately do *not* create a `HouseDocument`
-row.** The chunk-3 plan in `current.md` originally said "reusing the
-existing GCS upload path," which turned out to be ambiguous between two
-readings once actually built: link an already-extracted `HouseDocument`
-(chunk 2 already covers that case), or reuse the *upload mechanism*
-(`DocumentBlobStore`) for a fresh file that never goes through extraction.
-Went with the latter - `ProjectRoutes.kt`'s `POST /projects/{id}/entries`
-uploads straight to the same `DocumentBlobStore`/GCS bucket
-`HouseDocument` uses (`{ownerId}/{random-uuid}/{filename}`, same pattern
-`HouseRoutes.kt`'s upload handler uses), but never creates a `HouseDocument`
-row and never touches `HouseFactExtractionJobManager`. Two reasons: a quote
-or photo attached to a project isn't house-knowledge source material to run
-fact extraction against, and `HouseRoutes.kt`'s upload handler is
-hard-restricted to PDF - a Photo entry is typically a JPEG/PNG, which that
-path rejects outright. `ProjectEntryRepository.delete` doesn't touch the
-blob itself; `POST /projects/{id}/entries/{entryId}/delete` deletes the GCS
-blob (when `storagePath` is set) before deleting the Firestore row, mirroring
-`HouseRoutes.kt`'s document-delete handler.
-
-**Revised after the first pass to a single free-form field**: the maintainer
-pushed back on the initial type-picker design ("might be better to just have
-a single text field... we can figure out what is a link and what isn't").
-`project.ftl`'s entry form is now just a `text` textarea plus an optional
-`file` input - no type select, no separate `url` field for the homeowner to
-fill in. `ProjectEntryType` dropped from five values to four
-(`NOTE`/`QUOTE`/`PHOTO`/`LINK` - `DECISION` removed) and is now inferred
-server-side by `detectEntryType()` (`ProjectRoutes.kt`): an attached file
-wins first (checked by extension against a fixed image-extension set, since
-a multipart part's declared Content-Type is client-supplied and not always
-accurate - an image extension makes it `PHOTO`, anything else `QUOTE`);
-otherwise a URL found anywhere in the text (via a simple `https?://\S+`
-regex) makes it `LINK`, with the *matched URL* stored separately in
-`ProjectEntry.url` for a clean `<a href>` while `ProjectEntry.text` keeps
-the homeowner's full typed text (so "Found this one: `<url>` looks good"
-still shows its own caption, not just the bare link); anything left over is
-`NOTE`. `POST /projects/{id}/entries` requires at least one of text/file
-non-empty - that's the only server-side validation now, there's no
-per-type-required-field branching to maintain.
-
-**No separate `DECISION` type** - dropped rather than kept as a fifth
-value, since (unlike a URL or a file) there's no reliable signal in free
-text that says "this is a decision, not a note." A decision the homeowner
-wants remembered is just a `NOTE` whose text happens to record one; nothing
-distinguishes it structurally. Discussed three options with the maintainer
-(fold into Note, a manual checkbox, keyword-sniffing) - the maintainer
-didn't respond before the change was needed, so this went with the
-recommended default (fold into Note) as the simplest option consistent with
-"figure out what is a link and what isn't" - flagged clearly in case the
-maintainer wants a distinct Decision type back.
-
-**Links are linkified in place, not extracted-and-duplicated.** The first
-version showed the extracted URL as its own clickable line, then the full
-raw text again below it - redundant, and only ever linkified the *first*
-URL in a note even if it had several. Replaced with
-`ProjectPage.kt`'s `linkifySegments()`: splits an entry's raw `text` into
-alternating plain-text/URL segments (every URL the regex finds, not just
-one), and `project.ftl` loops the segments, rendering each URL segment as
-its own `<a>` and everything else through FreeMarker's normal `${...}`
-auto-escaping - never builds a raw HTML string and marks it trusted, so
-there's no injection risk to reason about beyond what `${...}` already
-handles. This also removed the `entry.text != (entry.url!"")` null-comparison
-guard the first version needed (see `CLAUDE.md`'s FreeMarker gotchas) - with
-segments there's no separate `url` field to compare against `text` at
-render time.
-
-**Trailing sentence punctuation has to be trimmed off a matched URL.** The
-regex (`\S+`) has no way to know a URL ends where the sentence does -
-`"...https://example.com/x, leaning toward..."` matched
-`https://example.com/x,` *with* the comma, producing a link that 404s on a
-URL that doesn't exist. Fixed by `trimTrailingUrlPunctuation()`
-(`ProjectEntryStore.kt`): strips generic trailing punctuation
-(`.,;:!?'"`) unconditionally, and a trailing `)` only when it's unbalanced
-within the match, so a URL that legitimately ends in a balanced
-parenthetical (a Wikipedia `(disambiguation)`-style link) is left alone.
-Applied both where `linkifySegments()` builds a URL segment and where
-`ProjectRoutes.kt` stores `ProjectEntry.url`. Caught by browser
-verification, not the unit test suite - the mocked-request tests never
-exercised text with a URL followed directly by punctuation until this was
-added as a regression test afterward.
-
-No download link is offered for an attached Quote/Photo file yet - the app
-doesn't have a signed-URL/download-proxy route for GCS blobs anywhere
-(`HouseDocument`'s own uploaded PDFs aren't downloadable from the UI
-either), so this stays consistent with that rather than being a new gap.
-
-Still not built: project deletion and anything recommendation-related -
-see `current.md`.
-
 ### UI cleanup pass
 
 The bare, unlabeled `<select>`/`<input>` rows on `/projects` and
@@ -1028,7 +1086,7 @@ new chunk:
 ### Subprojects (parent/child grouping)
 
 Discussed with the maintainer as an alternative to the deferred "merge
-projects" idea above (line ~739): rather than combining multiple
+projects" idea above (chunk 1): rather than combining multiple
 single-component projects' content into one multi-component project
 (which raises "what component does the merged project get?"), a project
 can now have a parent project instead. `Project.parentId: String?`
@@ -1084,16 +1142,19 @@ still not built; this is a separate, additive mechanism.
   parsing the way intended, the existence check was done once in Kotlin
   and handed to the template as a plain boolean.
 
-## Tenth feature: Financial Goals & Project Feasibility (planned, 2026-08-17)
+---
+
+## Subsystem: Financial Goals & Project Feasibility (planned, 2026-08-17)
 
 Not built yet - design discussed 2026-08-17, see `current.md` for the
 chunked plan. Connects the two halves of the app that have so far been
-separate: transactions/analysis (financial) and `Project`/`Recommendation`
-(House Projects). The core idea: track a savings goal (e.g. "save 70k this
-year"), compute a rolling savings rate from actual transaction history, and
-judge project feasibility by projecting that rate forward to the goal's
-target date with the project's cost inserted at its planned timing - not
-just a static "this project costs X" comparison.
+separate (see "System map" above): Transactions & Analysis (financial) and
+House Projects & Recommendations (`Project`). The core idea: track a
+savings goal (e.g. "save 70k this year"), compute a rolling savings rate
+from actual transaction history, and judge project feasibility by
+projecting that rate forward to the goal's target date with the project's
+cost inserted at its planned timing - not just a static "this project
+costs X" comparison.
 
 Chosen over the simpler static-comparison version specifically because
 timing and recurring costs matter: a project's impact on hitting a
@@ -1130,6 +1191,8 @@ Primitives identified:
   the same savings, across all `ACTIVE`/selected projects combined (a
   project that looks feasible alone can still bust the goal alongside
   others).
+
+---
 
 ## Configuration reference
 
