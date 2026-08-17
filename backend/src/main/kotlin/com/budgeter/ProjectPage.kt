@@ -18,15 +18,25 @@ fun projectsPageModel(
     message: String?,
     error: String?
 ): Map<String, Any?> {
-    val projectsById = projects.associateBy { it.id }
-    val filtered = if (componentFilter != null) projects.filter { it.component == componentFilter } else projects
+    // Subprojects don't get their own row here - the maintainer's call was
+    // that they clutter the main list. Each top-level project instead
+    // carries its own subprojects (titles only) for projects.ftl to render
+    // as a <details> disclosure the homeowner can expand in place, without
+    // navigating to the parent's own page. Note this means a component
+    // filter only ever matches on a *top-level* project's own component - a
+    // subproject whose component differs from its parent's can't currently
+    // be surfaced by the filter on its own; not addressed since hiding
+    // subprojects from the list at all was the more important ask.
+    val topLevelProjects = projects.filter { it.parentId == null }
+    val subprojectsByParentId = projects.filter { it.parentId != null }.groupBy { it.parentId }
+    val filtered = if (componentFilter != null) topLevelProjects.filter { it.component == componentFilter } else topLevelProjects
     val byStatus = filtered.groupBy { it.status }
     val groups = ProjectStatus.entries.mapNotNull { status ->
         val statusProjects = byStatus[status].orEmpty()
         if (statusProjects.isEmpty()) return@mapNotNull null
         mapOf(
             "status" to status.name,
-            "projects" to statusProjects.map { projectSummaryModel(it, projectsById) }
+            "projects" to statusProjects.map { projectSummaryModel(it, subprojectsByParentId[it.id].orEmpty()) }
         )
     }
     val factsById = facts.associateBy { it.id }
@@ -50,12 +60,12 @@ private fun recommendationSummaryModel(recommendation: Recommendation, factsById
     "supportingFacts" to recommendation.supportingFactIds.mapNotNull { factsById[it]?.what }
 )
 
-private fun projectSummaryModel(project: Project, projectsById: Map<String, Project>): Map<String, Any?> = mapOf(
+private fun projectSummaryModel(project: Project, subprojects: List<Project>): Map<String, Any?> = mapOf(
     "id" to project.id,
     "name" to project.name,
     "component" to project.component.name,
     "priority" to project.priority.name,
-    "parentName" to project.parentId?.let { projectsById[it]?.name }
+    "subprojects" to subprojects.map { mapOf("id" to it.id, "name" to it.name) }
 )
 
 // allProjects is the owner's whole collection (not pre-filtered) - used to

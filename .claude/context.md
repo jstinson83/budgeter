@@ -1064,6 +1064,19 @@ still not built; this is a separate, additive mechanism.
   {parent}" line and a detach button instead of a Subprojects section (it
   can't have one); a project without a parent shows its current
   subprojects plus both attach paths above.
+- **The main `/projects` list hides subprojects entirely** rather than
+  listing them as their own rows - maintainer's call, a flat list with
+  subprojects mixed in read as clutter. Each top-level project instead
+  carries its subprojects' titles for `projects.ftl` to render as a native
+  `<details>/<summary>` disclosure (`.subproject-disclosure` in
+  `styles.css`, same "no framework, plain HTML disclosure" pattern already
+  used for `house-document.ftl`'s extraction debug notes) - expandable in
+  place, no click-through, no JS. `projectsPageModel` groups only
+  `parentId == null` projects by status; a project's `?component=` filter
+  match is checked against its own component only, so a subproject whose
+  component differs from its parent's currently can't be surfaced by the
+  filter on its own - not addressed, since hiding subprojects from the
+  main list was the more important ask.
 - **`ProjectPage.kt`'s `hasParent` boolean** - `project.ftl` branches on
   `!project.hasParent` rather than `!project.parent??`. `CLAUDE.md`'s
   FreeMarker gotchas section already documents `??`/null-comparison

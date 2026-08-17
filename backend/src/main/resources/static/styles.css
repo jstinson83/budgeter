@@ -1007,6 +1007,26 @@ input[type="file"]::file-selector-button:hover {
   overflow-y: auto;
 }
 
+.subproject-disclosure summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.subproject-list {
+  margin: 0.4rem 0 0;
+  padding-left: 1.25rem;
+  font-size: 0.9rem;
+}
+
+.subproject-list li {
+  margin-bottom: 0.2rem;
+}
+
+.subproject-list a {
+  color: inherit;
+}
+
 .fact-type-badge {
   color: var(--text-dim);
   font-size: 0.78rem;
