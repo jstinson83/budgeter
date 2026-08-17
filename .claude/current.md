@@ -6,63 +6,60 @@ continuity" section for how this file gets maintained: written down when a
 plan is communicated, items removed as they're finished, otherwise left
 alone. See `context.md` for the stable project overview instead.
 
-## Active task: House Projects & Recommendations
+## Completed: House Projects & Recommendations
 
-Turn house facts into a manageable set of projects, with Gemini-generated
-project recommendations. Design discussed and agreed 2026-08-16 - see
-`context.md`'s House Knowledge section for the existing `HouseFact`/
-`HouseDocument`/`Component` model this builds on. Working in chunks,
-smallest first:
+All five chunks done (project core, fact/document linking, entry feed,
+recommendation generation, recommendation review UI) - see `context.md`'s
+Ninth feature for the full writeup. Core loop (Facts -> Recommendations ->
+Projects -> Work) is live end to end.
 
-- [x] **1. Project core (manual only)** - `Project` entity + Firestore
-      store (`id`, `ownerId`, `name`, `status`: Active/Planned/
-      Deprioritized/Completed, `component`: single `Component` tag,
-      `priority`: High/Medium/Low, mutable), `/projects` page (list by
-      status, filter by component), create/edit form, change status. No
-      recommendations, no linked facts yet.
-- [x] **2. Link facts & documents to a project** - project detail page
-      gains attach/detach pickers for existing `HouseFact`/`HouseDocument`
-      rows (`factIds`/`documentIds` on `Project`).
-- [x] **3. Project entry feed** - `ProjectEntry` (Note/Quote/Photo/Link
-      types) as one chronological feed on the project detail page. Revised
-      after the first pass to a single free-form text field + optional file
-      attachment, with type inferred server-side (a URL in the text ->
-      Link, an attached image -> Photo, any other attached file -> Quote,
-      otherwise -> Note) rather than a type picker - the maintainer's call.
-      No separate Decision type: dropped since there's no reliable textual
-      signal to detect one, so an undetected "decision" is just a Note.
-      Quote/Photo upload straight to the same GCS bucket `HouseDocument`
-      uses, *not* as a `HouseDocument` row - a quote/photo isn't
-      house-knowledge source material to extract facts from, and isn't
-      PDF-only. See `context.md`.
-- [x] **4. Recommendation generation** - `Recommendation` entity/store
-      (`component`, `name`, rationale, `supportingFactIds`,
-      `suggestedPriority`, `status`: Pending/Accepted/Rejected - Rejected
-      is one merged state covering both "deprioritize" and "dismiss", no
-      distinction). Async job loops `Component.values()`, skipping any
-      component with no new facts since its own last generation (a stored
-      per-`(ownerId, component)` staleness marker), one Gemini call per
-      stale component - same async-job-plus-poll shape as document
-      extraction. One "Generate recommendations" button on `/projects`
-      drives the whole loop. No review UI yet - generation just persists
-      PENDING rows and reports a summary banner ("Generated N
-      recommendation(s) across M component(s)"); chunk 5 builds the actual
-      list/actions. See `context.md`.
-- [x] **5. Recommendation review UI** - pending recommendations
-      (name/rationale/supporting facts/priority) render inline on
-      `/projects` itself, not a dedicated page - maintainer's call, see
-      `context.md`. Actions: Create project (pre-fills name/component/
-      suggestedPriority, status PLANNED, and attaches the supporting facts)
-      and Reject (persisted as `RecommendationStatus.REJECTED`, drops off
-      the pending list). No browse-past-accepted/rejected view - nothing
-      needs it yet.
+**Deferred, noted for later, not part of any active chunk sequence:** a
+"merge project" action for combining multiple single-component projects
+into one multi-component project - decided to keep `Project` single-tag
+and revisit merging as its own follow-up feature if it comes up again.
 
-**All five chunks of House Projects & Recommendations are done.** Core
-loop (Facts -> Recommendations -> Projects -> Work) is live end to end.
+## Active task: Financial Goals & Project Feasibility
 
-**Deferred, noted for later, not part of this chunk sequence:** a "merge
-project" action for combining multiple single-component projects into one
-multi-component project - came up when discussing whether `Project` should
-support more than one `component` tag; decided to keep it single-tag for
-now and revisit merging as its own follow-up feature once chunk 1 is
-solid.
+Connect the financial side (transactions/analysis) to the project side
+(`Project`/`Recommendation`) - track a savings goal, compute a rolling
+savings rate, and judge project feasibility as a forward projection rather
+than a static cost comparison. Design discussed and agreed 2026-08-17 -
+see `context.md`'s Tenth feature for the full primitive list and reasoning
+this builds on. Working in chunks, smallest first:
+
+**Phase 1 - goal & rate (no project linkage yet)**
+- [ ] **1. `SavingsGoal` entity** - name, target amount, target date, start
+      date + Firestore store + minimal create/view UI.
+- [ ] **2. Savings rate calculation** - reuse `DashboardPage.kt`'s
+      `monthlyNetChange` aggregation, split into income vs. expense per
+      month, compute a 3-month rolling savings rate.
+- [ ] **3. Goal progress view** - given the rate + amount saved since the
+      goal's start date, project forward to the target date -> "on track /
+      behind by $X / ahead by $X". Useful standalone before any project
+      logic exists.
+
+**Phase 2 - project cost estimation**
+- [ ] **4. Single cost estimate on `Project`** - `estimatedCost` (amount +
+      source: Quote/Link/Guess) as the simplest first cut.
+- [ ] **5. Itemized costs** - a project can have multiple cost line items,
+      each with its own source, summed to a total - what actually
+      satisfies "different levels of automation."
+- [ ] **6. Recurring cost delta** - optional ongoing monthly amount on a
+      project's cost, separate from the one-time spend.
+
+**Phase 3 - timing**
+- [ ] **7. Planned spend timing** - a planned month on a project, so its
+      cost can be placed on the projection timeline instead of assumed
+      immediate.
+
+**Phase 4 - feasibility**
+- [ ] **8. Single-project feasibility** - insert one project's cost (+
+      recurring delta) at its planned month into the goal projection, show
+      before/after impact.
+- [ ] **9. Portfolio feasibility** - same projection across all
+      ACTIVE/selected projects combined, since projects compete for the
+      same savings.
+
+**Phase 5 - surfacing**
+- [ ] **10. Dashboard integration** - goal status + at-risk projects
+      visible on `/` without opening each project.
