@@ -10,8 +10,9 @@ alone. See `context.md` for the stable project overview instead.
 
 All five chunks done (project core, fact/document linking, entry feed,
 recommendation generation, recommendation review UI) - see `context.md`'s
-Ninth feature for the full writeup. Core loop (Facts -> Recommendations ->
-Projects -> Work) is live end to end.
+House Projects & Recommendations subsystem section for the full writeup.
+Core loop (Facts -> Recommendations -> Projects -> Work) is live end to
+end.
 
 **Deferred, noted for later, not part of any active chunk sequence:** a
 "merge project" action for combining multiple single-component projects
@@ -24,8 +25,8 @@ Connect the financial side (transactions/analysis) to the project side
 (`Project`/`Recommendation`) - track a savings goal, compute a rolling
 savings rate, and judge project feasibility as a forward projection rather
 than a static cost comparison. Design discussed and agreed 2026-08-17 -
-see `context.md`'s Tenth feature for the full primitive list and reasoning
-this builds on. Working in chunks, smallest first:
+see `context.md`'s Financial Goals & Project Feasibility subsystem section
+for the full primitive list and reasoning this builds on. Working in chunks, smallest first:
 
 **Phase 1 - goal & rate (no project linkage yet)**
 - [ ] **1. `SavingsGoal` entity** - name, target amount, target date, start
