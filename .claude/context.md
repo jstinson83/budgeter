@@ -1142,6 +1142,53 @@ still not built; this is a separate, additive mechanism.
   parsing the way intended, the existence check was done once in Kotlin
   and handed to the template as a plain boolean.
 
+### Card-based redesign of Projects/House/Categories (2026-08-18)
+
+Maintainer feedback: these three pages (unlike Analysis/Transactions, which
+they were happy with) looked "ugly and organizationally clunky." Root cause
+- they reused `.transaction-*` CSS classes (`.transaction-item`,
+`.transaction-row`, `.transaction-list`) built for money rows
+(amount-aligned, flat, border-bottom separated), so projects/facts/
+categories all rendered as if they were bank transactions. Fixed with new
+shared classes in `styles.css` instead of a money-row lookalike:
+`.card-list`/`.info-card`/`.info-card-header` (bordered, rounded boxes
+replacing flat rows - used by house-facts.ftl's fact list, project.ftl's
+notes/facts/documents lists, categories.ftl's category/rule rows),
+`.tab-bar`/`.tab-link` (house.ftl <-> house-facts.ftl), `.project-board`/
+`.project-column`/`.project-card` (Projects page), and `.detail-section`
+(collapsible `<details>` wrapper for project.ftl's Subprojects/Notes/Facts/
+Documents sections). No backend/route changes - `projectsPageModel`'s
+existing status-based `groups` and `houseFactsPageModel`'s component-based
+groups are just laid out differently.
+
+- **Projects (`/projects`) is now a kanban-style board** - each status
+  (`ProjectStatus.entries`, empty ones already skipped by
+  `projectsPageModel`) is a `.project-column`, laid out via
+  `grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr))` so it's 1
+  column on phone widths and up to ~2 inside the app's existing
+  `.container{max-width:640px}` on wider screens - not a full-width kanban
+  view, since changing the app's global container width wasn't part of this
+  pass. A project card can't itself be the whole-card `<a>` (invalid HTML -
+  can't nest a `<details>`/another `<a>` inside an anchor), so
+  `.project-card` is a `<div>` with the name as its own `.project-card-name`
+  link and the subprojects count/disclosure (`.subproject-disclosure`,
+  unchanged from the original chunk) as a sibling inside it.
+- **House Knowledge's two pages (`/house`, `/house/facts`) are now tabs**
+  on one feature (`.tab-bar`) instead of connected by a one-line "View
+  facts by category ->" link - routes/controllers unchanged, purely a
+  navigation affordance change.
+- **Project detail (`/projects/{id}`)'s Subprojects/Notes/Facts/Documents
+  sections are now `<details class="detail-section">` instead of bare
+  `<h2>`s** - defaults to `open` when the section already has content
+  (`(list?size gt 0)`), closed otherwise, so a project with little on it
+  reads shorter without hiding anything a filled-in project already has.
+- Verified by rendering all five pages (Projects board, project detail with
+  seeded subprojects/notes/facts, House documents, House facts-by-category,
+  Categories+rules) through a throwaway Ktor-test-harness dump to static
+  HTML + the real `styles.css`, screenshotted with headless Chromium - full
+  OAuth sign-in isn't available outside a real browser session, so this
+  substituted for driving the live app directly.
+
 ---
 
 ## Subsystem: Financial Goals & Project Feasibility (planned, 2026-08-17)

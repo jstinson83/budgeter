@@ -13,8 +13,6 @@
   <div class="container">
     <#include "_nav.ftl">
 
-    <a href="/house" class="back-link">&larr; House Knowledge</a>
-
     <#if message??>
     <p class="banner-success">${message}</p>
     </#if>
@@ -22,7 +20,12 @@
     <p class="banner-error">${error}</p>
     </#if>
 
-    <h1>Facts by category</h1>
+    <h1>House Knowledge</h1>
+
+    <div class="tab-bar">
+      <a href="/house" class="tab-link">Documents</a>
+      <a href="/house/facts" class="tab-link tab-link-active">Facts by category</a>
+    </div>
 
     <#if (groups?size == 0)>
     <p class="empty-state">No facts yet. Upload a document from House Knowledge to get started.</p>
@@ -47,10 +50,10 @@
         </form>
       </div>
 
-      <div class="transaction-list">
+      <div class="card-list">
         <#list group.facts as fact>
-        <div class="transaction-item">
-          <div class="transaction-row">
+        <div class="info-card">
+          <div class="info-card-header">
             <span class="transaction-description">${fact.what}</span>
             <span class="fact-type-badge">${fact.type?replace("_", " ")?lower_case}</span>
           </div>

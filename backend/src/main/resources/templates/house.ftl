@@ -22,7 +22,10 @@
 
     <h1>House Knowledge</h1>
 
-    <a href="/house/facts" class="back-link">View facts by category &rarr;</a>
+    <div class="tab-bar">
+      <a href="/house" class="tab-link tab-link-active">Documents</a>
+      <a href="/house/facts" class="tab-link">Facts by category</a>
+    </div>
 
     <form method="post" action="/house/documents/upload" enctype="multipart/form-data" class="upload-form">
       <input type="file" name="file" accept=".pdf" required>
@@ -33,16 +36,18 @@
     <#if (documents?size == 0)>
     <p class="empty-state">No documents yet. Upload a home inspection or engineering plans to get started.</p>
     <#else>
-    <div class="transaction-list">
+    <div class="card-list">
       <#list documents as doc>
-      <a href="/house/documents/${doc.id}" class="transaction-row transaction-row-link">
-        <span class="transaction-description">${doc.filename}</span>
-        <span class="transaction-account">
-          <#if doc.status == "EXTRACTING">Extracting&hellip;
-          <#elseif doc.status == "FAILED">Extraction failed
-          <#elseif doc.status == "EXTRACTED">${doc.factCount} fact(s)<#if doc.needsReviewCount gt 0>, ${doc.needsReviewCount} need review</#if>
-          <#else>Uploaded
-          </#if>
+      <a href="/house/documents/${doc.id}" class="info-card">
+        <span class="info-card-header">
+          <span class="transaction-description">${doc.filename}</span>
+          <span class="transaction-account">
+            <#if doc.status == "EXTRACTING">Extracting&hellip;
+            <#elseif doc.status == "FAILED">Extraction failed
+            <#elseif doc.status == "EXTRACTED">${doc.factCount} fact(s)<#if doc.needsReviewCount gt 0>, ${doc.needsReviewCount} need review</#if>
+            <#else>Uploaded
+            </#if>
+          </span>
         </span>
       </a>
       </#list>

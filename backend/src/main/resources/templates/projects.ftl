@@ -32,10 +32,10 @@
 
     <#if (recommendations?size gt 0)>
     <h2>Recommendations</h2>
-    <div class="transaction-list">
+    <div class="card-list">
       <#list recommendations as rec>
-      <div class="transaction-item">
-        <div class="transaction-row">
+      <div class="info-card">
+        <div class="info-card-header">
           <span class="transaction-description">${rec.name}</span>
           <span class="transaction-account">${rec.component?lower_case?cap_first}</span>
           <span class="priority-badge priority-badge-${rec.priority?lower_case}">${rec.priority?lower_case?cap_first}</span>
@@ -77,32 +77,32 @@
     <#if (groups?size == 0)>
     <p class="empty-state">No projects yet. Add one below.</p>
     <#else>
+    <div class="project-board">
     <#list groups as group>
-    <section class="component-group">
-      <h2>${group.status?lower_case?cap_first}</h2>
-      <div class="transaction-list">
-        <#list group.projects as project>
-        <div class="transaction-item">
-          <a href="/projects/${project.id}" class="transaction-row transaction-row-link">
-            <span class="transaction-description">${project.name}</span>
-            <span class="transaction-account">${project.component?lower_case?cap_first}</span>
-            <span class="priority-badge priority-badge-${project.priority?lower_case}">${project.priority?lower_case?cap_first}</span>
-          </a>
-          <#if (project.subprojects?size gt 0)>
-          <details class="subproject-disclosure">
-            <summary>${project.subprojects?size} subproject<#if (project.subprojects?size gt 1)>s</#if></summary>
-            <ul class="subproject-list">
-              <#list project.subprojects as sub>
-              <li><a href="/projects/${sub.id}">${sub.name}</a></li>
-              </#list>
-            </ul>
-          </details>
-          </#if>
-        </div>
-        </#list>
+    <section class="project-column">
+      <h2 class="project-column-title">${group.status?lower_case?cap_first} <span class="project-column-count">${group.projects?size}</span></h2>
+      <#list group.projects as project>
+      <div class="project-card">
+        <a href="/projects/${project.id}" class="project-card-name">${project.name}</a>
+        <span class="project-card-meta">
+          <span>${project.component?lower_case?cap_first}</span>
+          <span class="priority-badge priority-badge-${project.priority?lower_case}">${project.priority?lower_case?cap_first}</span>
+        </span>
+        <#if (project.subprojects?size gt 0)>
+        <details class="subproject-disclosure">
+          <summary>${project.subprojects?size} subproject<#if (project.subprojects?size gt 1)>s</#if></summary>
+          <ul class="subproject-list">
+            <#list project.subprojects as sub>
+            <li><a href="/projects/${sub.id}">${sub.name}</a></li>
+            </#list>
+          </ul>
+        </details>
+        </#if>
       </div>
+      </#list>
     </section>
     </#list>
+    </div>
     </#if>
 
     <div class="form-card">
