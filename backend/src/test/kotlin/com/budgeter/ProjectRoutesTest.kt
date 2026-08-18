@@ -126,12 +126,12 @@ class ProjectRoutesTest {
 
         val listPage = client.get("/projects") { header(HttpHeaders.Accept, "text/html") }
         val body = listPage.bodyAsText()
-        assertTrue(body.contains("<h2>Active</h2>"))
+        assertTrue(body.contains("Active <span"))
         // The status has no PLANNED projects left, so its group heading
         // shouldn't render - "Planned" as plain text still appears in the
         // "Add project" form's option, so check for the group heading
         // specifically rather than the word anywhere on the page.
-        assertFalse(body.contains("<h2>Planned</h2>"))
+        assertFalse(body.contains("Planned <span"))
     }
 
     @Test

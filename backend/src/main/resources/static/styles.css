@@ -1007,26 +1007,6 @@ input[type="file"]::file-selector-button:hover {
   overflow-y: auto;
 }
 
-.subproject-disclosure summary {
-  cursor: pointer;
-  color: var(--text-dim);
-  font-size: 0.85rem;
-}
-
-.subproject-list {
-  margin: 0.4rem 0 0;
-  padding-left: 1.25rem;
-  font-size: 0.9rem;
-}
-
-.subproject-list li {
-  margin-bottom: 0.2rem;
-}
-
-.subproject-list a {
-  color: inherit;
-}
-
 .fact-type-badge {
   color: var(--text-dim);
   font-size: 0.78rem;
@@ -1143,4 +1123,194 @@ input[type="file"]::file-selector-button:hover {
 .priority-badge-low {
   background: var(--border);
   color: var(--text-dim);
+}
+
+/* Cards & tabs - the Projects/House/Categories pages use these instead of
+   the .transaction-* row vocabulary above, which was built for money rows
+   (amount-aligned, flat, border-bottom separated) and made projects/facts/
+   categories read like bank transactions. Bordered, rounded boxes give
+   this content its own identity instead. */
+
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.info-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  text-decoration: none;
+  color: inherit;
+}
+
+a.info-card:hover {
+  border-color: var(--brass);
+}
+
+.info-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Tabs (house.ftl / house-facts.ftl) */
+
+.tab-bar {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-link {
+  padding: 0.55rem 0.9rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab-link:hover {
+  color: var(--text);
+}
+
+.tab-link-active {
+  color: var(--brass);
+  border-bottom-color: var(--brass);
+  font-weight: 600;
+}
+
+/* Project board (projects.ftl) - status groups laid out as columns instead
+   of stacked sections, so priority/status can be scanned across the whole
+   board at once. */
+
+.project-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 1rem;
+  align-items: start;
+  margin-bottom: 1.5rem;
+}
+
+.project-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.project-column-title {
+  margin: 0;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.project-column-count {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+.project-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.project-card:hover {
+  border-color: var(--brass);
+}
+
+.project-card-name {
+  font-weight: 600;
+  color: inherit;
+  text-decoration: none;
+}
+
+.project-card-name:hover {
+  text-decoration: underline;
+}
+
+.subproject-disclosure summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.subproject-list {
+  margin: 0.4rem 0 0;
+  padding-left: 1.25rem;
+  font-size: 0.9rem;
+}
+
+.subproject-list li {
+  margin-bottom: 0.2rem;
+}
+
+.subproject-list a {
+  color: inherit;
+}
+
+.project-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+/* Collapsible detail sections (project.ftl) - native <details>, chunks a
+   long project page into distinct bordered sections instead of one
+   continuous stack of <h2>s. */
+
+.detail-section {
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.detail-section > summary {
+  cursor: pointer;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.1rem;
+  list-style: none;
+}
+
+.detail-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.detail-section > summary::after {
+  content: "\203A";
+  float: right;
+  color: var(--text-dim);
+  transition: transform 0.15s ease;
+}
+
+.detail-section[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+.detail-section > summary + * {
+  margin-top: 0.85rem;
 }
