@@ -19,9 +19,31 @@
     <p class="empty-state">No transactions yet. <a href="/transactions">Import a CSV</a> to see your summary here.</p>
     <#else>
 
+    <form method="get" action="/" class="period-selector" id="period-form">
+      <div class="segmented-control period-segmented-control" role="radiogroup" aria-label="Time period">
+        <input type="radio" name="period" value="3m" id="period-3m"<#if periodOption == "3m"> checked</#if>>
+        <label for="period-3m">3 months</label>
+        <input type="radio" name="period" value="6m" id="period-6m"<#if periodOption == "6m"> checked</#if>>
+        <label for="period-6m">6 months</label>
+        <input type="radio" name="period" value="custom" id="period-custom"<#if periodOption == "custom"> checked</#if>>
+        <label for="period-custom">Custom</label>
+      </div>
+      <div class="period-custom-range" id="period-custom-range"<#if periodOption != "custom"> hidden</#if>>
+        <div class="form-field">
+          <label class="form-field-label" for="period-start">Start</label>
+          <input type="date" name="start" id="period-start" value="${periodStartInput}">
+        </div>
+        <div class="form-field">
+          <label class="form-field-label" for="period-end">End</label>
+          <input type="date" name="end" id="period-end" value="${periodEndInput}">
+        </div>
+        <button type="submit" class="button button-small">Apply</button>
+      </div>
+    </form>
+
     <h2 class="dashboard-section-title">Money in/out</h2>
     <div class="month-summary">
-      <span class="month-summary-label">Last ${netChangeTrendMonths?c} months</span>
+      <span class="month-summary-label">${periodLabel}</span>
       <span class="transaction-amount month-summary-amount ${netChangeTotalClass}">${netChangeTotal}</span>
     </div>
     <div class="dashboard-trend-bars">
@@ -38,7 +60,7 @@
     <#if (pieSlices?size > 0)>
     <h2 class="dashboard-section-title">Where it went</h2>
     <div class="month-summary">
-      <span class="month-summary-label">Last ${netChangeTrendMonths?c} months</span>
+      <span class="month-summary-label">${periodLabel}</span>
     </div>
     <#include "_pie-chart.ftl">
     </#if>
@@ -76,5 +98,27 @@
     </#if>
     </main>
   </div>
+
+  <#if hasTransactions>
+  <script>
+    // No framework in this app - see analysis.ftl/CLAUDE.md. A 3/6-month
+    // preset applies immediately; "Custom" just reveals the date fields
+    // instead, since the maintainer still needs to pick dates before there's
+    // anything to submit.
+    (function () {
+      var customRange = document.getElementById('period-custom-range');
+      document.querySelectorAll('#period-form input[name="period"]').forEach(function (radio) {
+        radio.addEventListener('change', function () {
+          if (radio.value === 'custom') {
+            customRange.hidden = false;
+          } else {
+            customRange.hidden = true;
+            document.getElementById('period-form').submit();
+          }
+        });
+      });
+    })();
+  </script>
+  </#if>
 </body>
 </html>

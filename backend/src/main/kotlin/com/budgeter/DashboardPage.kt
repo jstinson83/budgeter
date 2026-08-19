@@ -30,10 +30,58 @@ private const val STALE_THRESHOLD_DAYS = 35L
 private const val MOVER_MIN_BASELINE = 20.0
 
 // How many trailing months the "money in/out" trend (bar chart + its single
-// summary total) covers - deliberately modest, not a longer lookback, since
-// this section only reasons over whatever's actually been imported (see
-// dashboardPageModel below).
-private const val NET_CHANGE_TREND_MONTHS = 3
+// summary total) covers by default, before the maintainer picks a longer
+// window via the period selector below.
+private const val DEFAULT_TREND_MONTHS = 3
+private const val SIX_MONTH_TREND_MONTHS = 6
+
+// Upper bound on a custom period's span, so a fat-fingered start date (or a
+// deliberately huge range) doesn't render a bar for every month since 1990 -
+// three years is already far beyond what "understand longer trends" needs
+// given the household's import history starts in 2026.
+private const val MAX_CUSTOM_TREND_MONTHS = 36
+
+// The dashboard's time-period selector: two fixed presets plus a custom
+// range the maintainer picks explicit dates for. Only the "Money in/out"
+// bar chart and "Where it went" pie chart (both below) respect this - the
+// coverage cards look at all-time data regardless, and "Categories trending
+// up"/"Biggest expense" are always about the real current month, not
+// whichever period is selected (see dashboardPageModel).
+enum class DashboardPeriodOption(val paramValue: String, val label: String) {
+    THREE_MONTHS("3m", "Last 3 months"),
+    SIX_MONTHS("6m", "Last 6 months"),
+    CUSTOM("custom", "Custom")
+}
+
+// startMonth/endMonth are whole calendar months (inclusive) - the trend bar
+// chart is inherently a monthly rollup, so a custom range is resolved down
+// to the months it touches rather than tracked at day granularity. See
+// DashboardRoutes.kt's resolveDashboardPeriod for how user input becomes
+// this.
+data class DashboardPeriod(val option: DashboardPeriodOption, val startMonth: YearMonth, val endMonth: YearMonth) {
+    companion object {
+        private fun preset(option: DashboardPeriodOption, months: Int, today: LocalDate): DashboardPeriod {
+            val endMonth = YearMonth.from(today)
+            return DashboardPeriod(option, endMonth.minusMonths((months - 1).toLong()), endMonth)
+        }
+
+        fun default(today: LocalDate): DashboardPeriod = preset(DashboardPeriodOption.THREE_MONTHS, DEFAULT_TREND_MONTHS, today)
+
+        fun sixMonths(today: LocalDate): DashboardPeriod = preset(DashboardPeriodOption.SIX_MONTHS, SIX_MONTH_TREND_MONTHS, today)
+
+        // Resolves a maintainer-picked custom range down to whole calendar
+        // months: the end clamps to the current month (no such thing as a
+        // future transaction) and the span clamps to MAX_CUSTOM_TREND_MONTHS
+        // regardless of what was picked - a swapped/typo'd start date still
+        // resolves to something renderable instead of erroring the page.
+        fun custom(start: LocalDate, end: LocalDate, today: LocalDate): DashboardPeriod {
+            val endMonth = minOf(YearMonth.from(end), YearMonth.from(today))
+            val earliestAllowedStart = endMonth.minusMonths((MAX_CUSTOM_TREND_MONTHS - 1).toLong())
+            val startMonth = maxOf(minOf(YearMonth.from(start), endMonth), earliestAllowedStart)
+            return DashboardPeriod(DashboardPeriodOption.CUSTOM, startMonth, endMonth)
+        }
+    }
+}
 
 data class AccountCoverage(
     val accountType: AccountType,
@@ -44,6 +92,9 @@ data class AccountCoverage(
 )
 
 data class CategoryMover(val label: String, val currentTotal: Double, val priorAverage: Double, val delta: Double)
+
+private fun monthYearLabel(month: YearMonth): String =
+    "${month.month.getDisplayName(TextStyle.SHORT, Locale.getDefault())} ${month.year}"
 
 data class NotableTransaction(val description: String, val amount: Double, val date: LocalDate, val accountType: AccountType)
 
@@ -131,9 +182,9 @@ fun categoryMovers(transactions: List<Transaction>, categories: List<Category>, 
 }
 
 // Spend by category over [start, end), keyed by label - feeds the
-// dashboard's pie chart, which rolls up the same trailing window as the
-// money in/out bar chart (NET_CHANGE_TREND_MONTHS) rather than just the
-// current month. TRANSFER is excluded (never real spending, see
+// dashboard's pie chart, which rolls up the same selected period as the
+// money in/out bar chart rather than just the current month. TRANSFER is
+// excluded (never real spending, see
 // analysisEligible above); unlike analysisEligible, INVESTMENT is kept -
 // a pie chart answering "where did the money go" should show an investment
 // contribution as a real outflow, the same reasoning /analysis's own pie
@@ -157,23 +208,43 @@ fun biggestExpense(transactions: List<Transaction>, month: YearMonth): NotableTr
 
 // Same flattening rationale as AnalysisPage.kt/TransactionPage.kt: FreeMarker
 // needs already-display-ready values, not java.time types or data classes.
-fun dashboardPageModel(transactions: List<Transaction>, categories: List<Category>, today: LocalDate = LocalDate.now()): Map<String, Any?> {
+fun dashboardPageModel(
+    transactions: List<Transaction>,
+    categories: List<Category>,
+    today: LocalDate = LocalDate.now(),
+    period: DashboardPeriod = DashboardPeriod.default(today)
+): Map<String, Any?> {
+    // Movers/biggestExpense are always about the real current month - they
+    // don't move with the period selector, see DashboardPeriodOption's doc.
     val currentMonth = YearMonth.from(today)
     val coverage = accountCoverage(transactions, today)
-    val netChangeSeries = monthlyNetChange(transactions, currentMonth, months = NET_CHANGE_TREND_MONTHS)
+    val trendMonths = (ChronoUnit.MONTHS.between(period.startMonth, period.endMonth) + 1).toInt()
+    val netChangeSeries = monthlyNetChange(transactions, period.endMonth, months = trendMonths)
     val netChangeTotal = netChangeSeries.sumOf { it.second }
     val maxAbsNetChange = netChangeSeries.maxOfOrNull { kotlin.math.abs(it.second) }?.takeIf { it > 0 } ?: 1.0
     val movers = categoryMovers(transactions, categories, currentMonth)
     val biggest = biggestExpense(transactions, currentMonth)
-    val pieRangeStart = currentMonth.minusMonths((NET_CHANGE_TREND_MONTHS - 1).toLong()).atDay(1)
-    val pieRangeEnd = currentMonth.plusMonths(1).atDay(1)
+    val pieRangeStart = period.startMonth.atDay(1)
+    val pieRangeEnd = period.endMonth.plusMonths(1).atDay(1)
     val pieSlices = pieChartModel(categoryTotalsByLabel(transactions, categories, pieRangeStart, pieRangeEnd))
+    // A custom range spanning more than one calendar year is ambiguous with
+    // a bare "Jun" bar label (which June?) - the two fixed presets never
+    // span more than 6 months so this only ever kicks in for custom.
+    val includeYearInBarLabel = period.startMonth.year != period.endMonth.year
+    val periodLabel = when (period.option) {
+        DashboardPeriodOption.CUSTOM -> "${monthYearLabel(period.startMonth)} – ${monthYearLabel(period.endMonth)}"
+        else -> period.option.label
+    }
 
     return mapOf(
         "hasTransactions" to transactions.isNotEmpty(),
-        "netChangeTrendMonths" to NET_CHANGE_TREND_MONTHS,
+        "netChangeTrendMonths" to trendMonths,
         "netChangeTotal" to formatSignedAmount(netChangeTotal),
         "netChangeTotalClass" to amountClass(netChangeTotal),
+        "periodOption" to period.option.paramValue,
+        "periodLabel" to periodLabel,
+        "periodStartInput" to period.startMonth.atDay(1).toString(),
+        "periodEndInput" to period.endMonth.atEndOfMonth().toString(),
         "coverage" to coverage.map { c ->
             mapOf(
                 "accountType" to c.accountType.label,
@@ -192,7 +263,7 @@ fun dashboardPageModel(transactions: List<Transaction>, categories: List<Categor
         },
         "netChangeSeries" to netChangeSeries.map { (month, total) ->
             mapOf(
-                "label" to month.month.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
+                "label" to if (includeYearInBarLabel) monthYearLabel(month) else month.month.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
                 "amount" to formatSignedAmount(total),
                 "amountClass" to amountClass(total),
                 "barPercent" to ((kotlin.math.abs(total) / maxAbsNetChange) * 100).toInt(),

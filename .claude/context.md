@@ -500,23 +500,37 @@ the dashboard links out to it rather than replacing it.
 Two parts, both computed on the fly from `all(ownerId)` (no new
 precomputed/cron layer, same "quick version first" posture as `/analysis`):
 
-- **Money in/out**: deterministic, not Gemini-generated - a 3-month net-change
-  bar series plus a single total summarizing it (`monthlyNetChange`, same
+- **Money in/out**: deterministic, not Gemini-generated - a net-change bar
+  series plus a single total summarizing it (`monthlyNetChange`, same
   TRANSFER/INVESTMENT exclusions as `/analysis`'s net change; the total is
   just `netChangeSeries.sumOf { it.second }`, shown above the bars the same
   way `/analysis`'s own net change is displayed), categories whose
   current-month spend jumped meaningfully vs. their own trailing 3-month
   average (`categoryMovers`, with a $20 baseline floor so a tiny category's
   noise doesn't read as a dramatic swing), and the single biggest expense
-  this month (`biggestExpense`). Deliberately just 3 months, not a longer
-  lookback (`NET_CHANGE_TREND_MONTHS` in `DashboardPage.kt`) - this whole
-  section only reasons over whatever transactions have actually been
-  imported, with no assumption that every account is fully linked/imported,
-  so a short window keeps that promise honest. **This is also the natural
-  building block for the planned Financial Goals savings-rate calculation**
-  (see the Financial Goals & Project Feasibility subsystem below) - that
-  work would split `monthlyNetChange` into income vs. expense per month
-  rather than just net, reusing the same aggregation.
+  this month (`biggestExpense`). **This is also the natural building block
+  for the planned Financial Goals savings-rate calculation** (see the
+  Financial Goals & Project Feasibility subsystem below) - that work would
+  split `monthlyNetChange` into income vs. expense per month rather than
+  just net, reusing the same aggregation.
+  - **Time-period selector**: originally hardcoded to a 3-month trailing
+    window ("deliberately just 3 months, not a longer lookback" - see git
+    history if that reasoning is ever needed again); now a selector
+    (`DashboardPeriodOption`/`DashboardPeriod` in `DashboardPage.kt`,
+    `resolveDashboardPeriod` in `DashboardRoutes.kt`, `?period=3m|6m|custom&
+    start=&end=` on `/`) covering 3 months, 6 months, or a maintainer-picked
+    custom range. Only "Money in/out" and "Where it went" (the pie chart)
+    respect this - Coverage always looks at all-time data, and
+    `categoryMovers`/`biggestExpense` are always about the real current
+    calendar month regardless of what period is selected, since "what
+    changed this month" is a different question than "what does the trend
+    look like." A custom range is resolved down to whole calendar months
+    (the bar chart is inherently a monthly rollup) and clamped: end can't go
+    past the current month, and span is capped at 36 months
+    (`MAX_CUSTOM_TREND_MONTHS`) so a typo'd start date can't render decades
+    of empty bars. Bar labels include the year when the resolved range spans
+    more than one calendar year (only possible for a custom range, since
+    both presets top out at 6 months).
 - **Coverage**: per account type, earliest/latest transaction date, days
   since the last import (flagged stale past 35 days), and any internal gap
   longer than 21 days between consecutive transactions surfaced as a
@@ -540,8 +554,9 @@ discarded, same as before this feature.
 ### Spending pie chart (dashboard + `/analysis`)
 
 Both landing-page sections that already computed a per-category spend total
-for some period - the dashboard's current month (`DashboardPage.kt`) and
-`/analysis`'s viewed month (`AnalysisPage.kt`) - now also render a donut
+for some period - the dashboard's selected time period (`DashboardPage.kt`,
+see the time-period selector above) and `/analysis`'s viewed month
+(`AnalysisPage.kt`) - now also render a donut
 chart of where that spend went, via a shared `PieChart.kt` +
 `_pie-chart.ftl` partial (included from both `dashboard.ftl`, below "Money
 in/out" and above "Coverage", and `analysis.ftl`, below the net-change total
