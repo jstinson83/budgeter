@@ -390,7 +390,7 @@ input[type="file"]::file-selector-button:hover {
 .app-main {
   flex: 1;
   margin-left: 220px;
-  padding: 2.25rem 2.5rem 4rem;
+  padding: 2.25rem 2.5rem 4rem 3.5rem;
   max-width: 960px;
 }
 
