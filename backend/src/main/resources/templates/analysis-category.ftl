@@ -10,9 +10,11 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 </head>
 <body>
-  <div class="container">
+  <div class="app-shell">
+    <#assign activeSection = "finances">
     <#include "_nav.ftl">
 
+    <main class="app-main">
     <a href="${backHref}" class="back-link">&larr; ${monthLabel}</a>
     <h1>${categoryLabel} <span class="transaction-amount ${totalClass}">${total}</span></h1>
 
@@ -64,6 +66,7 @@
       </#list>
     </div>
     </#if>
+    </main>
   </div>
   <script>
     // Each transaction row opens its own <dialog> (no framework in this

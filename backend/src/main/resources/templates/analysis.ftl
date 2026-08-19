@@ -10,9 +10,11 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 </head>
 <body>
-  <div class="container">
+  <div class="app-shell">
+    <#assign activeSection = "finances">
     <#include "_nav.ftl">
 
+    <main class="app-main">
     <#assign activeTab = "analysis">
     <#include "_finances-tabs.ftl">
 
@@ -56,6 +58,7 @@
       </#list>
     </div>
     </#if>
+    </main>
   </div>
 
   <#if jobRunning>

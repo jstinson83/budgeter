@@ -10,9 +10,11 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 </head>
 <body>
-  <div class="container">
+  <div class="app-shell">
+    <#assign activeSection = "house">
     <#include "_nav.ftl">
 
+    <main class="app-main">
     <a href="/house" class="back-link">&larr; House Knowledge</a>
 
     <#if message??>
@@ -110,6 +112,7 @@
       <pre>${document.debugNotes}</pre>
     </details>
     </#if>
+    </main>
   </div>
 
   <#if document.status == "EXTRACTING">

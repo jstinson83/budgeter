@@ -10,9 +10,11 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 </head>
 <body>
-  <div class="container">
+  <div class="app-shell">
+    <#assign activeSection = "dashboard">
     <#include "_nav.ftl">
 
+    <main class="app-main">
     <#if !hasTransactions>
     <p class="empty-state">No transactions yet. <a href="/transactions">Import a CSV</a> to see your summary here.</p>
     <#else>
@@ -72,6 +74,7 @@
     </#if>
 
     </#if>
+    </main>
   </div>
 </body>
 </html>

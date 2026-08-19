@@ -10,9 +10,11 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 </head>
 <body>
-  <div class="container">
+  <div class="app-shell">
+    <#assign activeSection = "house">
     <#include "_nav.ftl">
 
+    <main class="app-main">
     <a href="/projects" class="back-link">&larr; Projects</a>
 
     <#if message??>
@@ -265,6 +267,7 @@
       </form>
       </#if>
     </details>
+    </main>
   </div>
 </body>
 </html>

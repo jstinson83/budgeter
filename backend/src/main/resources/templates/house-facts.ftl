@@ -10,9 +10,11 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 </head>
 <body>
-  <div class="container">
+  <div class="app-shell">
+    <#assign activeSection = "house">
     <#include "_nav.ftl">
 
+    <main class="app-main">
     <#assign activeTab = "facts">
     <#include "_house-tabs.ftl">
 
@@ -68,6 +70,7 @@
     </section>
     </#list>
     </#if>
+    </main>
   </div>
 </body>
 </html>

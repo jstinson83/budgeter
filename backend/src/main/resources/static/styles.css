@@ -7,6 +7,7 @@
 
   --bg: #f2f0e9;
   --surface: #ffffff;
+  --surface-soft: #f6f2e5;
   --border: #dbd6c8;
   --text: #26241f;
   --text-dim: #86806f;
@@ -22,6 +23,24 @@
   --danger-fill: #a6452e;
   --danger-fill-text: #f7f1e8;
   --shadow: 0 4px 24px rgba(38, 36, 31, 0.08);
+
+  /* Radius + shadow scale for the elevated "premium" card language - flat
+     1px borders replaced by soft depth throughout the app. */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+  --shadow-card-sm: 0 1px 2px rgba(38, 36, 31, 0.04), 0 4px 14px rgba(38, 36, 31, 0.05);
+  --shadow-card: 0 1px 2px rgba(38, 36, 31, 0.05), 0 8px 24px rgba(38, 36, 31, 0.07);
+  --shadow-hero: 0 1px 2px rgba(87, 63, 10, 0.06), 0 14px 34px rgba(87, 63, 10, 0.14);
+
+  /* Sidebar/topbar/tabbar chrome - a fixed dark brass-brown regardless of
+     theme, distinct from the (theme-aware) content surfaces above. */
+  --sidebar-bg: #241f16;
+  --sidebar-text: #ede4d2;
+  --sidebar-text-dim: #b6a98a;
+  --sidebar-active-bg: var(--brass-fill);
+  --sidebar-active-text: #241d0d;
 
   /* Pie chart categorical palette - fixed hue order (assigned by spend
      rank, see PieChart.kt), validated for CVD-safe adjacency. Distinct
@@ -39,6 +58,7 @@
   :root {
     --bg: #201d17;
     --surface: #2a261d;
+    --surface-soft: #332c1e;
     --border: #3d372a;
     --text: #ede8da;
     --text-dim: #9c9484;
@@ -54,6 +74,10 @@
     --danger-fill: #a6452e;
     --danger-fill-text: #f7f1e8;
     --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+
+    --shadow-card-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 16px rgba(0, 0, 0, 0.28);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 26px rgba(0, 0, 0, 0.35);
+    --shadow-hero: 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 36px rgba(0, 0, 0, 0.4);
 
     --pie-1: #3987e5;
     --pie-2: #d95926;
@@ -110,11 +134,11 @@ h1, h2 {
 .auth-card {
   width: 320px;
   max-width: 90vw;
-  padding: 2rem;
-  border-radius: 4px;
-  border: 1px solid var(--border);
+  padding: 2.25rem 2rem;
+  border-radius: var(--radius-lg);
+  border: none;
   background: var(--surface);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-card);
   text-align: center;
 }
 
@@ -134,12 +158,13 @@ h1, h2 {
   justify-content: center;
   gap: 0.6rem;
   padding: 0.65rem;
-  border-radius: 4px;
+  border-radius: var(--radius-pill);
   border: 1px solid #dadce0;
   background: #ffffff;
   color: #1a1a1a;
   text-decoration: none;
   font-weight: 600;
+  box-shadow: var(--shadow-card-sm);
 }
 
 .button {
@@ -147,48 +172,60 @@ h1, h2 {
   align-items: center;
   justify-content: center;
   gap: 0.6rem;
-  padding: 0.65rem;
-  border-radius: 4px;
+  padding: 0.65rem 1.15rem;
+  border-radius: var(--radius-pill);
   border: none;
   background: var(--brass-fill);
   color: var(--brass-fill-text);
   text-decoration: none;
-  font-weight: 600;
+  font-weight: 700;
   margin-bottom: 0.75rem;
   cursor: pointer;
+  box-shadow: var(--shadow-card-sm);
+}
+
+.button:hover {
+  filter: brightness(1.05);
 }
 
 .auth-signout {
   width: 100%;
   padding: 0.6rem;
   border: 1px solid var(--brick);
-  border-radius: 4px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--brick);
   font-weight: 600;
   cursor: pointer;
 }
 
-/* Form controls (shared across the app) - bare, unclassed inputs/selects
-   previously fell back to browser-default styling everywhere except inside
-   .recategorize-dialog; this brings every page in line with that same
-   look instead of duplicating it per-page. */
+/* Form controls (shared across the app) - soft filled pills instead of
+   bare-bordered native controls. */
 
 input[type="text"],
 input[type="url"],
 input[type="number"],
 select,
 textarea {
-  padding: 0.5rem;
-  border-radius: 4px;
-  border: 1px solid var(--border);
+  padding: 0.55rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
   font-size: 0.9rem;
   font-family: inherit;
-  background: var(--bg);
+  background: var(--surface-soft);
   color: var(--text);
   /* 16px min on iOS Safari - anything smaller triggers an auto-zoom on
      focus, which is disorienting on a phone. */
   min-height: 2.5rem;
+}
+
+input[type="text"]:focus-visible,
+input[type="url"]:focus-visible,
+input[type="number"]:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
 }
 
 textarea {
@@ -202,8 +239,8 @@ textarea {
 input[type="file"] {
   padding: 0.3rem;
   border: 1px dashed var(--border);
-  border-radius: 4px;
-  background: var(--bg);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
   color: var(--text-dim);
   font-size: 0.82rem;
   max-width: 100%;
@@ -213,10 +250,10 @@ input[type="file"]::file-selector-button {
   padding: 0.55rem 1rem;
   margin-right: 0.75rem;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-pill);
   background: var(--brass-fill);
   color: var(--brass-fill-text);
-  font-weight: 600;
+  font-weight: 700;
   font-size: 0.85rem;
   cursor: pointer;
 }
@@ -225,75 +262,187 @@ input[type="file"]::file-selector-button:hover {
   background: var(--brass);
 }
 
-/* App shell */
+/* App shell - a fixed dark sidebar (desktop) that collapses into a top
+   bar + bottom tab bar (mobile) below the .app-shell breakpoint. */
 
-.container {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 1.5rem 1rem;
+.app-shell {
+  display: flex;
+  min-height: 100vh;
 }
 
-.nav {
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 220px;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-text);
+  padding: 1.75rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+}
+
+.sidebar-brand {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1.75rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--brass-line);
+  gap: 0.55rem;
+  padding: 0 0.35rem;
+  margin-bottom: 2.25rem;
+  text-decoration: none;
+  color: var(--sidebar-text);
 }
 
-.nav-right {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-}
-
-.nav-user {
-  color: var(--text-dim);
-  font-size: 0.85rem;
+.brand-text {
   font-family: var(--serif);
+  font-weight: 700;
+  font-size: 1.05rem;
 }
 
-.nav-logout button {
-  padding: 0.4rem 0.8rem;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
 }
 
-.account-menu {
-  position: relative;
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-sm);
+  color: var(--sidebar-text-dim);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 600;
 }
 
-.account-toggle {
+.sidebar-item svg {
+  flex: 0 0 auto;
+}
+
+.sidebar-item:hover {
+  color: var(--sidebar-text);
+}
+
+.sidebar-item-active,
+.sidebar-item-active:hover {
+  background: var(--sidebar-active-bg);
+  color: var(--sidebar-active-text);
+}
+
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem 0.5rem;
+  border-top: 1px solid rgba(237, 228, 210, 0.12);
+  margin-top: 1rem;
+}
+
+.sidebar-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--brass-fill);
+  color: var(--brass-fill-text);
   display: flex;
   align-items: center;
   justify-content: center;
+  font-weight: 700;
+  font-size: 0.82rem;
+  font-family: var(--serif);
+  flex: 0 0 auto;
+}
+
+.sidebar-user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.sidebar-user-name {
+  font-size: 0.82rem;
+  color: var(--sidebar-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-signout button {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.72rem;
+  color: var(--sidebar-text-dim);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.sidebar-signout button:hover {
+  color: var(--sidebar-text);
+}
+
+.app-main {
+  flex: 1;
+  margin-left: 220px;
+  padding: 2.25rem 2.5rem 4rem;
+  max-width: 960px;
+}
+
+/* Mobile top bar + bottom tab bar - hidden on desktop, replace the
+   sidebar below the breakpoint. */
+
+.topbar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.1rem;
+  background: var(--surface);
+  box-shadow: 0 1px 0 rgba(38, 36, 31, 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 15;
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.topbar-account {
+  position: relative;
+}
+
+.topbar-avatar {
   width: 1.9rem;
   height: 1.9rem;
   border-radius: 50%;
-  border: 1px solid var(--brass-line);
-  background: var(--surface);
-  color: var(--brass);
-  font-family: var(--serif);
+  background: var(--brass-fill);
+  color: var(--brass-fill-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  font-family: var(--serif);
   cursor: pointer;
   list-style: none;
   user-select: none;
 }
 
-.account-toggle::-webkit-details-marker {
+.topbar-avatar::-webkit-details-marker {
   display: none;
 }
 
-.account-menu[open] .account-toggle {
-  border-color: var(--brass);
-}
-
-.account-menu-panel {
+.topbar-account-panel {
   position: absolute;
   top: calc(100% + 0.5rem);
   right: 0;
@@ -304,14 +453,99 @@ input[type="file"]::file-selector-button:hover {
   gap: 0.6rem;
   min-width: 160px;
   padding: 0.75rem;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--surface);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-card);
 }
 
-.account-menu-panel .nav-logout button {
+.topbar-account-panel .topbar-user-name {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  font-family: var(--serif);
+}
+
+.topbar-account-panel form button {
   width: 100%;
+  padding: 0.45rem 0.7rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.tabbar {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  gap: 0.25rem;
+  background: var(--sidebar-bg);
+  padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  z-index: 20;
+}
+
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.3rem 0.2rem;
+  color: var(--sidebar-text-dim);
+  text-decoration: none;
+}
+
+.tab-icon-wrap {
+  display: flex;
+  padding: 0.3rem 0.8rem;
+  border-radius: var(--radius-md);
+}
+
+.tab-item-active {
+  color: var(--sidebar-active-text);
+}
+
+.tab-item-active .tab-icon-wrap {
+  background: var(--sidebar-active-bg);
+}
+
+.tab-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  /* .app-shell is a row flex container on desktop (sidebar + app-main side
+     by side). The sidebar drops out of flow (display:none) below, but the
+     topbar is only sticky (still a flex item) and the tabbar's fixed
+     positioning doesn't retroactively fix its siblings' layout - without
+     switching to a column direction here, the topbar ends up squeezed into
+     a narrow flex column beside app-main instead of stacked above it. */
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .app-main {
+    margin-left: 0;
+    max-width: none;
+    padding: 1.25rem 1.1rem 5.5rem;
+  }
+
+  .topbar {
+    display: flex;
+  }
+
+  .tabbar {
+    display: flex;
+  }
 }
 
 .empty-state {
@@ -322,99 +556,26 @@ input[type="file"]::file-selector-button:hover {
   font-style: italic;
 }
 
-.nav-link {
-  color: var(--text-dim);
-  text-decoration: none;
-  font-size: 0.85rem;
-}
-
-.nav-link:hover {
-  color: var(--brass);
-}
-
-.nav-links {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-}
-
-.nav-menu {
-  display: none;
-  position: relative;
-}
-
-.nav-menu-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.9rem;
-  height: 1.9rem;
-  border-radius: 4px;
-  border: 1px solid var(--brass-line);
-  background: var(--surface);
-  color: var(--brass);
-  font-size: 1rem;
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-}
-
-.nav-menu-toggle::-webkit-details-marker {
-  display: none;
-}
-
-.nav-menu[open] .nav-menu-toggle {
-  border-color: var(--brass);
-}
-
-.nav-menu-panel {
-  position: absolute;
-  top: calc(100% + 0.5rem);
-  right: 0;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.6rem;
-  min-width: 160px;
-  padding: 0.75rem;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-}
-
-@media (max-width: 640px) {
-  .nav-links {
-    display: none;
-  }
-
-  .nav-menu {
-    display: block;
-  }
-}
-
 /* Transactions */
 
 .banner-success,
 .banner-error {
-  padding: 0.6rem 0.9rem;
-  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
   border: 1px solid transparent;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
   font-size: 0.9rem;
+  box-shadow: var(--shadow-card-sm);
 }
 
 .banner-success {
   background: var(--green-soft-bg);
   color: var(--green);
-  border-color: var(--green);
 }
 
 .banner-error {
   background: var(--brick-soft-bg);
   color: var(--brick);
-  border-color: var(--brick);
 }
 
 .upload-form {
@@ -431,12 +592,12 @@ input[type="file"]::file-selector-button:hover {
 
 .upload-form textarea {
   flex-basis: 100%;
-  padding: 0.5rem;
-  border-radius: 4px;
-  border: 1px solid var(--border);
+  padding: 0.55rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
   font-size: 0.9rem;
   font-family: inherit;
-  background: var(--bg);
+  background: var(--surface-soft);
   color: var(--text);
   resize: vertical;
 }
@@ -446,9 +607,24 @@ input[type="file"]::file-selector-button:hover {
   color: var(--danger-fill-text);
 }
 
+.button-save {
+  background: var(--green-soft-bg);
+  color: var(--green);
+  box-shadow: none;
+}
+
+/* transaction-list doubles as a lightweight "ledger card" - every plain
+   row list in the app (CSV imports, category totals, per-category
+   transactions, dashboard movers, fact review items) renders inside one
+   without any template changes. */
 .transaction-list {
   display: flex;
   flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 0.25rem 1.1rem;
+  margin-bottom: 1.75rem;
 }
 
 .transaction-list .transaction-row {
@@ -521,22 +697,23 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .month-nav-arrow {
-  padding: 0.35rem 0.75rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-pill);
+  border: none;
   text-decoration: none;
   color: var(--text-dim);
   font-size: 0.9rem;
   background: var(--surface);
+  box-shadow: var(--shadow-card-sm);
 }
 
 .month-nav-arrow:hover {
   color: var(--brass);
-  border-color: var(--brass);
 }
 
 .month-nav-arrow-disabled {
   opacity: 0.35;
+  box-shadow: none;
 }
 
 .month-nav-label {
@@ -546,20 +723,31 @@ input[type="file"]::file-selector-button:hover {
   text-align: center;
 }
 
+/* Also doubles as the dashboard's "Money in/out" hero stat and, on
+   dashboard.ftl's "Where it went" section, a label-only header line - kept
+   to a moderate card rather than a big hero treatment so it doesn't look
+   like an empty box when it's only holding a label. */
 .month-summary {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin-bottom: 1.5rem;
-  padding: 0.75rem 1rem;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  background: var(--surface);
+  padding: 0.9rem 1.25rem;
+  border-radius: var(--radius-lg);
+  border: none;
+  background: var(--brass-soft-bg);
+  box-shadow: var(--shadow-card-sm);
   font-family: var(--serif);
 }
 
 .month-summary-label {
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--brass);
 }
 
 .month-summary-note {
@@ -567,10 +755,12 @@ input[type="file"]::file-selector-button:hover {
   font-family: ui-sans-serif, system-ui, sans-serif;
   color: var(--text-dim);
   font-size: 0.85rem;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .month-summary-amount {
-  font-size: 1.2rem;
+  font-size: 1.6rem;
 }
 
 .category-count {
@@ -582,10 +772,11 @@ input[type="file"]::file-selector-button:hover {
   text-decoration: none;
   color: inherit;
   cursor: pointer;
+  border-radius: var(--radius-sm);
 }
 
 .transaction-row-link:hover {
-  background: var(--surface);
+  background: var(--surface-soft);
 }
 
 .back-link {
@@ -614,7 +805,7 @@ input[type="file"]::file-selector-button:hover {
 }
 
 .button-small {
-  padding: 0.3rem 0.6rem;
+  padding: 0.35rem 0.75rem;
   font-size: 0.8rem;
   margin-bottom: 0;
 }
@@ -622,7 +813,7 @@ input[type="file"]::file-selector-button:hover {
 /* Dashboard */
 
 .dashboard-section-title {
-  margin: 2rem 0 0.75rem;
+  margin: 2.5rem 0 1rem;
 }
 
 .dashboard-section-title:first-of-type {
@@ -631,29 +822,31 @@ input[type="file"]::file-selector-button:hover {
 
 .dashboard-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.75rem;
 }
 
 .dashboard-card {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  padding: 0.75rem 0.9rem;
-  border-radius: 4px;
-  border: 1px solid var(--border);
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius-md);
+  border: none;
+  border-left: 4px solid var(--green);
   background: var(--surface);
+  box-shadow: var(--shadow-card-sm);
 }
 
 .dashboard-card-warning {
-  border-color: var(--brick);
+  border-left-color: var(--brick);
   background: var(--brick-soft-bg);
 }
 
 .dashboard-card-label {
   font-family: var(--serif);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .dashboard-card-note {
@@ -670,9 +863,12 @@ input[type="file"]::file-selector-button:hover {
   display: flex;
   align-items: flex-end;
   gap: 0.75rem;
-  height: 7rem;
-  padding: 0 0.15rem;
-  margin-bottom: 1.5rem;
+  height: 7.5rem;
+  padding: 1.5rem 1.25rem 1.25rem;
+  margin-bottom: 1.75rem;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
 }
 
 .dashboard-trend-bar-col {
@@ -702,12 +898,13 @@ input[type="file"]::file-selector-button:hover {
   width: 100%;
   display: flex;
   align-items: flex-end;
+  justify-content: center;
 }
 
 .dashboard-trend-bar {
-  width: 100%;
-  min-height: 2px;
-  border-radius: 2px 2px 0 0;
+  width: 65%;
+  min-height: 4px;
+  border-radius: 8px 8px 3px 3px;
 }
 
 .dashboard-trend-bar-positive {
@@ -734,20 +931,21 @@ input[type="file"]::file-selector-button:hover {
   font: inherit;
   text-align: left;
   cursor: pointer;
+  border-radius: var(--radius-sm);
 }
 
 .transaction-row-button:hover {
-  background: var(--surface);
+  background: var(--surface-soft);
 }
 
 .recategorize-dialog {
-  width: min(24rem, calc(100vw - 2.5rem));
-  padding: 1.25rem;
+  width: min(26rem, calc(100vw - 2.5rem));
+  padding: 1.5rem;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   color: var(--text);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-card);
 }
 
 .recategorize-dialog::backdrop {
@@ -776,6 +974,16 @@ input[type="file"]::file-selector-button:hover {
   font-size: 0.9rem;
 }
 
+/* categories.ftl's rule rows reuse .recategorize-form outside the dialog -
+   laid out as an inline row of controls instead of the dialog's stacked
+   form. */
+.info-card .recategorize-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .field-label {
   font-size: 0.8rem;
   color: var(--text-dim);
@@ -785,11 +993,11 @@ input[type="file"]::file-selector-button:hover {
 .recategorize-dialog select,
 .recategorize-dialog input[type="text"] {
   width: 100%;
-  padding: 0.5rem;
-  border-radius: 4px;
-  border: 1px solid var(--border);
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius-sm);
+  border: none;
   font-size: 0.9rem;
-  background: var(--bg);
+  background: var(--surface-soft);
   color: var(--text);
 }
 
@@ -800,7 +1008,7 @@ input[type="file"]::file-selector-button:hover {
   display: flex;
   margin-top: 0.5rem;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
 }
 
@@ -850,6 +1058,7 @@ input[type="file"]::file-selector-button:hover {
   background: transparent;
   color: var(--text);
   border: 1px solid var(--border);
+  box-shadow: none;
 }
 
 /* Pie chart (dashboard.ftl + analysis.ftl, via _pie-chart.ftl) */
@@ -864,9 +1073,13 @@ input[type="file"]::file-selector-button:hover {
 .pie-chart-section {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 1.75rem;
   flex-wrap: wrap;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.75rem;
+  padding: 1.5rem 1.75rem;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
 }
 
 .pie-chart {
@@ -876,6 +1089,13 @@ input[type="file"]::file-selector-button:hover {
   /* SVG stroke drawing starts at 3 o'clock and runs clockwise; rotating the
      whole chart -90deg starts the first (biggest) slice at 12 o'clock. */
   transform: rotate(-90deg);
+  filter: drop-shadow(0 6px 14px rgba(38, 36, 31, 0.18));
+}
+
+@media (prefers-color-scheme: dark) {
+  .pie-chart {
+    filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
+  }
 }
 
 .pie-chart-slice {
@@ -922,6 +1142,11 @@ input[type="file"]::file-selector-button:hover {
 .pie-chart-legend-percent {
   color: var(--text-dim);
   font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.75rem;
+  background: var(--surface-soft);
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-pill);
+  margin-left: 0.3rem;
 }
 
 /* House Knowledge */
@@ -984,9 +1209,11 @@ input[type="file"]::file-selector-button:hover {
 
 .debug-notes {
   margin-top: 2rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-card-sm);
+  padding: 0.85rem 1.1rem;
 }
 
 .debug-notes summary {
@@ -998,8 +1225,8 @@ input[type="file"]::file-selector-button:hover {
 .debug-notes pre {
   margin: 0.75rem 0 0;
   padding: 0.75rem;
-  background: var(--bg);
-  border-radius: 4px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-sm);
   font-size: 0.8rem;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1029,11 +1256,12 @@ input[type="file"]::file-selector-button:hover {
   flex-direction: column;
   align-items: flex-start;
   gap: 0.5rem;
-  padding: 0.75rem;
+  padding: 0.85rem 1rem;
   margin-bottom: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: none;
+  border-radius: var(--radius-md);
   background: var(--surface);
+  box-shadow: var(--shadow-card-sm);
 }
 
 .component-summary p {
@@ -1047,15 +1275,17 @@ input[type="file"]::file-selector-button:hover {
 /* Projects */
 
 .form-card {
-  padding: 1rem;
-  margin-bottom: 1.5rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  padding: 1.5rem 1.6rem;
+  margin-bottom: 1.75rem;
+  border: none;
+  border-radius: var(--radius-lg);
   background: var(--surface);
+  box-shadow: var(--shadow-card);
 }
 
 .form-card h2 {
   margin-top: 0;
+  font-size: 1.05rem;
 }
 
 .form-row {
@@ -1103,10 +1333,11 @@ input[type="file"]::file-selector-button:hover {
 .priority-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  border-radius: var(--radius-pill);
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 
@@ -1128,85 +1359,112 @@ input[type="file"]::file-selector-button:hover {
 /* Cards & tabs - the Projects/House/Categories pages use these instead of
    the .transaction-* row vocabulary above, which was built for money rows
    (amount-aligned, flat, border-bottom separated) and made projects/facts/
-   categories read like bank transactions. Bordered, rounded boxes give
+   categories read like bank transactions. Elevated, rounded cards give
    this content its own identity instead. */
 
 .card-list {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.75rem;
+  margin-bottom: 1.75rem;
 }
 
 .info-card {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  padding: 0.75rem 0.9rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  gap: 0.5rem;
+  padding: 1rem 1.15rem;
+  border: none;
+  border-radius: var(--radius-md);
   background: var(--surface);
+  box-shadow: var(--shadow-card-sm);
   text-decoration: none;
   color: inherit;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 a.info-card:hover {
-  border-color: var(--brass);
+  box-shadow: var(--shadow-card);
+  transform: translateY(-1px);
 }
 
 .info-card-header {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
-/* Tabs (house.ftl / house-facts.ftl) */
+/* Tabs (house.ftl / house-facts.ftl / _finances-tabs.ftl / _house-tabs.ftl) */
 
 .tab-bar {
   display: flex;
-  gap: 0.25rem;
-  margin-bottom: 1.5rem;
-  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 2rem;
 }
 
 .tab-link {
-  padding: 0.55rem 0.9rem;
+  padding: 0.55rem 1rem;
   font-size: 0.85rem;
   color: var(--text-dim);
   text-decoration: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
 }
 
 .tab-link:hover {
   color: var(--text);
+  background: var(--surface-soft);
 }
 
 .tab-link-active {
-  color: var(--brass);
-  border-bottom-color: var(--brass);
-  font-weight: 600;
+  color: var(--bg);
+  background: var(--text);
+  font-weight: 700;
+}
+
+.tab-link-active:hover {
+  color: var(--bg);
+  background: var(--text);
 }
 
 /* Project board (projects.ftl) - status groups laid out as columns instead
    of stacked sections, so priority/status can be scanned across the whole
-   board at once. */
+   board at once. Each column is tinted by status. */
 
 .project-board {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1.25rem;
   align-items: start;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.75rem;
 }
 
 .project-column {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  padding: 0.85rem;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--surface);
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  border: none;
+  background: var(--surface-soft);
+}
+
+.project-column-planned {
+  background: var(--surface-soft);
+}
+
+.project-column-active {
+  background: var(--brass-soft-bg);
+}
+
+.project-column-completed {
+  background: var(--green-soft-bg);
+}
+
+.project-column-deprioritized {
+  background: var(--border);
 }
 
 .project-column-title {
@@ -1227,14 +1485,15 @@ a.info-card:hover {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  padding: 0.7rem 0.8rem;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--bg);
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--surface);
+  box-shadow: var(--shadow-card-sm);
 }
 
 .project-card:hover {
-  border-color: var(--brass);
+  box-shadow: var(--shadow-card);
 }
 
 .project-card-name {
@@ -1276,16 +1535,81 @@ a.info-card:hover {
   color: var(--text-dim);
 }
 
+/* Categories - enable/disable toggle pills */
+
+.pill-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1.5rem;
+}
+
+.cat-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--surface-soft);
+  border-radius: var(--radius-pill);
+  padding: 0.5rem 0.5rem 0.5rem 1rem;
+  font-size: 0.85rem;
+}
+
+.cat-pill-disabled {
+  opacity: 0.55;
+}
+
+.cat-pill form {
+  display: flex;
+}
+
+.cat-toggle {
+  width: 2.1rem;
+  height: 1.2rem;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+  border: none;
+  position: relative;
+  flex: 0 0 auto;
+  cursor: pointer;
+  padding: 0;
+}
+
+.cat-toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: left 0.15s ease;
+}
+
+.cat-toggle-on {
+  background: var(--green);
+}
+
+.cat-toggle-on::after {
+  left: calc(100% - 1.1rem);
+}
+
 /* Collapsible detail sections (project.ftl) - native <details>, chunks a
-   long project page into distinct bordered sections instead of one
+   long project page into distinct elevated sections instead of one
    continuous stack of <h2>s. */
 
 .detail-section {
-  margin-bottom: 1.25rem;
-  padding: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  margin-bottom: 1.5rem;
+  padding: 1.25rem 1.4rem;
+  border: none;
+  border-radius: var(--radius-lg);
   background: var(--surface);
+  box-shadow: var(--shadow-card-sm);
+}
+
+.detail-section[open] {
+  box-shadow: var(--shadow-card);
 }
 
 .detail-section > summary {
