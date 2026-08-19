@@ -113,16 +113,19 @@ suspend fun ApplicationTestBuilder.signInFakeUser(): HttpClient {
 
 // In-memory stand-in for FirestoreTransactionStore, same shape as
 // FakeRecipeRepository in foodie - keeps the test suite from ever touching
-// real Firestore. Mirrors the real store's fingerprint-as-ID dedup so
-// duplicate-import behavior is exercised the same way in tests.
+// real Firestore. Mirrors the real store's fingerprint-as-ID dedup and
+// withoutContentOverlap cross-file dedup so duplicate-import behavior is
+// exercised the same way in tests.
 class FakeTransactionRepository : TransactionRepository {
     private val transactions = mutableListOf<Transaction>()
 
     override suspend fun addAll(ownerId: String, fileHash: String, transactions: List<ParsedTransaction>): TransactionImportResult {
+        val (newRows, contentOverlapCount) = withoutContentOverlap(all(ownerId), transactions)
+
         val existingIds = this.transactions.filter { it.ownerId == ownerId }.map { it.id }.toMutableSet()
         val stored = mutableListOf<Transaction>()
         var duplicateCount = 0
-        for (parsed in transactions) {
+        for (parsed in newRows) {
             val fingerprint = transactionFingerprint(ownerId, fileHash, parsed)
             if (!existingIds.add(fingerprint)) {
                 duplicateCount++
@@ -132,7 +135,7 @@ class FakeTransactionRepository : TransactionRepository {
             stored += transaction
             this.transactions += transaction
         }
-        return TransactionImportResult(stored, duplicateCount)
+        return TransactionImportResult(stored, duplicateCount + contentOverlapCount)
     }
 
     override suspend fun all(ownerId: String): List<Transaction> =

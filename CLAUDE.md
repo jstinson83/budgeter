@@ -133,6 +133,24 @@ breaks, not the facts themselves.
   formatting change (e.g. an added header row) hashes differently and
   re-imports everything as new - there's no real per-transaction ID from
   the source data to do better than this without one.
+- **Cross-file overlap is handled separately, by content, not by
+  fingerprint.** The fingerprint above only catches re-uploading the exact
+  same file. It does nothing for a *different* export whose date range
+  overlaps previously-imported statements for the same account - e.g.
+  uploading a fresh "Jan-Aug" export after "Jan-Jun" was already imported:
+  every row hashes as new (different fileHash) and would re-import the
+  whole overlapping range as duplicates. `withoutContentOverlap()` in
+  `TransactionStore.kt` closes this gap as a deliberate, isolated heuristic
+  (not a general solution - see its doc comment): claim-once content
+  matching keyed on `(accountType, date, description, amount)`, run in
+  `FirestoreTransactionStore.addAll()` before the fingerprint check. It
+  assumes date/description/amount are stable across re-exports of the same
+  underlying data, not that rows appear in any particular order. Rows this
+  step drops count toward the same `duplicateCount` the fingerprint check
+  reports - the import summary banner doesn't distinguish the two. Mirrored
+  in `FakeTransactionRepository` (`TestFixtures.kt`) so tests exercise the
+  same behavior; see `testUploadingAWiderStatementSkipsThePreviouslyImportedOverlap`
+  in `TransactionRoutesTest.kt`.
 
 ## Dashboard net position gotcha (feature since pulled)
 
