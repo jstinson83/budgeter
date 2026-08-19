@@ -13,6 +13,9 @@
   <div class="container">
     <#include "_nav.ftl">
 
+    <#assign activeTab = "projects">
+    <#include "_house-tabs.ftl">
+
     <#if message??>
     <p class="banner-success">${message}</p>
     </#if>

@@ -1189,6 +1189,44 @@ groups are just laid out differently.
   OAuth sign-in isn't available outside a real browser session, so this
   substituted for driving the live app directly.
 
+### Top nav collapsed to two groups: Finances / House (2026-08-19)
+
+Follow-up to the card redesign above - the top nav's five flat links
+(Analysis/Transactions/Categories/House/Projects) got collapsed to two,
+grouping pages by what they're actually for rather than what they happened
+to be called. Maintainer's reasoning: Categories is transaction-
+categorization settings (used by Analysis/Transactions), not
+household-knowledge content, so it groups with the financial pages despite
+its name proximity to House/Projects in the old flat nav.
+
+- **`_nav.ftl`** now links only `/analysis` ("Finances") and `/projects`
+  ("House") in both the desktop `.nav-links` and the mobile
+  `.nav-menu-panel` - same two hrefs in both, chosen as each group's
+  default landing page per the maintainer's explicit call (Analysis over
+  Transactions/Categories since "mostly happy with the main page and the
+  analysis page for the financial stuff" already signaled it as primary;
+  Projects over House-documents/House-facts as the more frequently-checked
+  actionable page vs. reference material).
+- **New shared partials `_finances-tabs.ftl` (Analysis/Transactions/
+  Categories) and `_house-tabs.ftl` (Projects/Documents/Facts by
+  category)** render a `.tab-bar` on all six pages, replacing the ad-hoc
+  2-tab bar the House/House-facts pair already had (folded into the new
+  3-tab `_house-tabs.ftl` instead of keeping its own). Each page does
+  `<#assign activeTab = "...">` then `<#include>`s the group's partial -
+  same "assign a variable, then include a partial that reads it" pattern
+  `_nav.ftl` itself already relies on for `currentUser`, so no macro/
+  parameterized-include mechanism was needed. `activeTab` is guarded with
+  `(activeTab!"")` in the partials' `==` comparisons rather than compared
+  bare, per `CLAUDE.md`'s FreeMarker null-comparison gotcha - defensive
+  here since every including page does set it, but cheap enough to match
+  the codebase's established convention anyway.
+- `analysis-category.ftl` (the per-category drill-down under Analysis) and
+  `house-document.ftl`/`project.ftl` (detail pages under House/Projects)
+  deliberately do NOT get a tab bar - same "list pages get it, detail/
+  drill-down pages don't" split the card redesign above already
+  established for House vs. House-facts before this change existed.
+- No backend/route changes.
+
 ---
 
 ## Subsystem: Financial Goals & Project Feasibility (planned, 2026-08-17)
