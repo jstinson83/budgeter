@@ -76,6 +76,6 @@ class AuthTest {
 
         val response = client.get("/styles.css")
         assertEquals(HttpStatusCode.OK, response.status)
-        assertTrue(response.bodyAsText().contains(".container"), "Static stylesheet should be served at /styles.css")
+        assertTrue(response.bodyAsText().contains(".sidebar"), "Static stylesheet should be served at /styles.css")
     }
 }

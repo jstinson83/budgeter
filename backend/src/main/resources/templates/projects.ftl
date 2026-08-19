@@ -10,9 +10,11 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 </head>
 <body>
-  <div class="container">
+  <div class="app-shell">
+    <#assign activeSection = "house">
     <#include "_nav.ftl">
 
+    <main class="app-main">
     <#assign activeTab = "projects">
     <#include "_house-tabs.ftl">
 
@@ -82,7 +84,7 @@
     <#else>
     <div class="project-board">
     <#list groups as group>
-    <section class="project-column">
+    <section class="project-column project-column-${group.status?lower_case}">
       <h2 class="project-column-title">${group.status?lower_case?cap_first} <span class="project-column-count">${group.projects?size}</span></h2>
       <#list group.projects as project>
       <div class="project-card">
@@ -143,6 +145,7 @@
         <button type="submit" class="button">Add project</button>
       </form>
     </div>
+    </main>
   </div>
 
   <#if isGenerating>

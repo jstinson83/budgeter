@@ -10,9 +10,11 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 </head>
 <body>
-  <div class="container">
+  <div class="app-shell">
+    <#assign activeSection = "finances">
     <#include "_nav.ftl">
 
+    <main class="app-main">
     <#assign activeTab = "categories">
     <#include "_finances-tabs.ftl">
 
@@ -27,12 +29,12 @@
 
     <div class="form-card">
       <h2>Manage categories</h2>
-      <div class="card-list">
+      <div class="pill-grid">
         <#list categories as c>
-        <div class="info-card-header">
-          <span class="transaction-description">${c.label}<#if !c.active> (disabled)</#if></span>
+        <div class="cat-pill<#if !c.active> cat-pill-disabled</#if>">
+          <span>${c.label}<#if !c.active> (disabled)</#if></span>
           <form method="post" action="/categories/${c.id}/toggle">
-            <button type="submit" class="button button-small"><#if c.active>Disable<#else>Enable</#if></button>
+            <button type="submit" class="cat-toggle<#if c.active> cat-toggle-on</#if>" aria-label="<#if c.active>Disable<#else>Enable</#if> ${c.label}"></button>
           </form>
         </div>
         </#list>
@@ -63,7 +65,7 @@
               <option value="${option.name}" <#if option.name == rule.categoryId>selected</#if>>${option.label}</option>
               </#list>
             </select>
-            <button type="submit" class="button button-small">Save</button>
+            <button type="submit" class="button button-small button-save">Save</button>
           </form>
           <form method="post" action="/categories/rules/${rule.id}/delete">
             <button type="submit" class="button button-small button-danger">Delete</button>
@@ -89,6 +91,7 @@
         <button type="submit" class="button">Add rule</button>
       </form>
     </div>
+    </main>
   </div>
 </body>
 </html>
