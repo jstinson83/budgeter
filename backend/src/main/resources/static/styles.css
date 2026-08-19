@@ -205,6 +205,7 @@ h1, h2 {
 input[type="text"],
 input[type="url"],
 input[type="number"],
+input[type="date"],
 select,
 textarea {
   padding: 0.55rem 0.85rem;
@@ -222,6 +223,7 @@ textarea {
 input[type="text"]:focus-visible,
 input[type="url"]:focus-visible,
 input[type="number"]:focus-visible,
+input[type="date"]:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--brass);
@@ -723,6 +725,25 @@ input[type="file"]::file-selector-button:hover {
   text-align: center;
 }
 
+/* Dashboard time-period selector - a 3-way segmented control (3/6 months
+   auto-submit on click via dashboard.ftl's script) plus a custom date range
+   that only appears once "Custom" is picked. */
+.period-selector {
+  margin-bottom: 1.5rem;
+}
+
+.period-segmented-control {
+  max-width: 22rem;
+}
+
+.period-custom-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
 /* Also doubles as the dashboard's "Money in/out" hero stat and, on
    dashboard.ftl's "Where it went" section, a label-only header line - kept
    to a moderate card rather than a big hero treatment so it doesn't look
@@ -1028,7 +1049,7 @@ input[type="file"]::file-selector-button:hover {
   user-select: none;
 }
 
-.segmented-control label:first-of-type {
+.segmented-control label:not(:last-of-type) {
   border-right: 1px solid var(--border);
 }
 

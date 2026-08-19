@@ -159,6 +159,81 @@ class DashboardPageTest {
     }
 
     @Test
+    fun testDashboardPeriodSixMonthsCoversTheTrailingSixCalendarMonths() {
+        val period = DashboardPeriod.sixMonths(today = LocalDate.of(2026, 6, 20))
+        assertEquals(YearMonth.of(2026, 1), period.startMonth)
+        assertEquals(YearMonth.of(2026, 6), period.endMonth)
+    }
+
+    @Test
+    fun testDashboardPeriodCustomClampsAFutureEndDateToTheCurrentMonth() {
+        val period = DashboardPeriod.custom(
+            start = LocalDate.of(2026, 1, 1),
+            end = LocalDate.of(2027, 1, 1),
+            today = LocalDate.of(2026, 6, 20)
+        )
+        assertEquals(YearMonth.of(2026, 6), period.endMonth)
+    }
+
+    @Test
+    fun testDashboardPeriodCustomClampsAnOverlyLongSpanToTheMax() {
+        val period = DashboardPeriod.custom(
+            start = LocalDate.of(1990, 1, 1),
+            end = LocalDate.of(2026, 6, 20),
+            today = LocalDate.of(2026, 6, 20)
+        )
+        // 36-month cap: June 2026 back through July 2023.
+        assertEquals(YearMonth.of(2023, 7), period.startMonth)
+        assertEquals(YearMonth.of(2026, 6), period.endMonth)
+    }
+
+    @Test
+    fun testDashboardPeriodCustomClampsAStartAfterEndToASingleMonth() {
+        val period = DashboardPeriod.custom(
+            start = LocalDate.of(2026, 8, 1),
+            end = LocalDate.of(2026, 3, 1),
+            today = LocalDate.of(2026, 8, 20)
+        )
+        assertEquals(period.endMonth, period.startMonth)
+    }
+
+    @Test
+    fun testDashboardPageModelSixMonthPeriodExpandsTheTrendSeriesAndPieWindow() {
+        val transactions = listOf(
+            tx("1", date = LocalDate.of(2026, 1, 10), amount = -50.0, category = "GROCERIES"),
+            tx("2", date = LocalDate.of(2026, 6, 10), amount = -20.0, category = "GROCERIES")
+        )
+
+        val model = dashboardPageModel(
+            transactions,
+            emptyList(),
+            today = LocalDate.of(2026, 6, 20),
+            period = DashboardPeriod.sixMonths(LocalDate.of(2026, 6, 20))
+        )
+
+        assertEquals(6, model["netChangeTrendMonths"])
+        assertEquals("Last 6 months", model["periodLabel"])
+        @Suppress("UNCHECKED_CAST")
+        val pieSlices = model["pieSlices"] as List<Map<String, Any?>>
+        assertEquals("70.00", pieSlices.single { it["label"] == "GROCERIES" }["amount"])
+    }
+
+    @Test
+    fun testDashboardPageModelCustomPeriodLabelsTheBarsWithYearWhenTheRangeCrossesOne() {
+        val model = dashboardPageModel(
+            listOf(tx("1", date = LocalDate.of(2025, 12, 15), amount = -10.0)),
+            emptyList(),
+            today = LocalDate.of(2026, 6, 20),
+            period = DashboardPeriod.custom(LocalDate.of(2025, 12, 1), LocalDate.of(2026, 1, 31), LocalDate.of(2026, 6, 20))
+        )
+
+        assertEquals("Dec 2025 – Jan 2026", model["periodLabel"])
+        @Suppress("UNCHECKED_CAST")
+        val series = model["netChangeSeries"] as List<Map<String, Any?>>
+        assertEquals(listOf("Dec 2025", "Jan 2026"), series.map { it["label"] })
+    }
+
+    @Test
     fun testDashboardPageModelSummarizesTheTrendAsASingleTotal() {
         val transactions = listOf(
             // Within the 3-month window ending June: April, May, June.
