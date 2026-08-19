@@ -41,6 +41,8 @@
       </div>
     </form>
 
+    <a class="export-link" href="/export/transactions?period=${periodOption}&start=${periodStartInput}&end=${periodEndInput}">Export CSV (${periodLabel})</a>
+
     <h2 class="dashboard-section-title">Money in/out</h2>
     <div class="month-summary">
       <span class="month-summary-label">${periodLabel}</span>

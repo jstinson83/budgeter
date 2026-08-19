@@ -531,6 +531,16 @@ precomputed/cron layer, same "quick version first" posture as `/analysis`):
     of empty bars. Bar labels include the year when the resolved range spans
     more than one calendar year (only possible for a custom range, since
     both presets top out at 6 months).
+  - **CSV export** (`GET /export/transactions`, `TransactionExport.kt`'s
+    `transactionsToCsv`, an "Export CSV" link on `dashboard.ftl` next to the
+    period selector): one row per transaction (date, account, description,
+    amount, category label) for whichever period is currently selected -
+    reuses `resolveDashboardPeriod`/`DashboardPeriod.dateRange()` so the
+    export always matches what the dashboard is showing, not a separate
+    full-history dump. TRANSFER is special-cased to the label "Transfer"
+    (it isn't a real `Category` row, see `CategoryStore.kt`) so a transfer
+    between the household's own accounts is identifiable in the exported
+    data rather than blank or a raw id.
 - **Coverage**: per account type, earliest/latest transaction date, days
   since the last import (flagged stale past 35 days), and any internal gap
   longer than 21 days between consecutive transactions surfaced as a
