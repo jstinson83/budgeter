@@ -753,6 +753,18 @@ input[type="file"]::file-selector-button:hover {
   display: none;
 }
 
+.export-link {
+  display: inline-block;
+  margin-bottom: 1.5rem;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.export-link:hover {
+  color: var(--brass);
+}
+
 /* Also doubles as the dashboard's "Money in/out" hero stat and, on
    dashboard.ftl's "Where it went" section, a label-only header line - kept
    to a moderate card rather than a big hero treatment so it doesn't look

@@ -38,4 +38,23 @@ fun Route.dashboardRoutes(transactionStore: TransactionRepository, categoryStore
         val model = dashboardPageModel(transactions, categories, today, period) + call.currentUserModel()
         call.respond(FreeMarkerContent("dashboard.ftl", model))
     }
+
+    // CSV download of whatever period the dashboard's selector is currently
+    // showing (same ?period=/&start=/&end= params, resolved the same way) -
+    // deliberately not a full-history export, see TransactionExport.kt.
+    get("/export/transactions") {
+        val ownerId = call.requireUserId()
+        val categories = categoryStore.all(ownerId)
+        val today = LocalDate.now()
+        val period = resolveDashboardPeriod(call.request.queryParameters, today)
+        val (start, end) = period.dateRange()
+        val transactions = transactionStore.all(ownerId).filter { !it.date.isBefore(start) && it.date.isBefore(end) }
+
+        val csv = transactionsToCsv(transactions, categories)
+        call.response.header(
+            HttpHeaders.ContentDisposition,
+            ContentDisposition.Attachment.withParameter(ContentDisposition.Parameters.FileName, "transactions-$start-to-${end.minusDays(1)}.csv").toString()
+        )
+        call.respondText(csv, ContentType.Text.CSV)
+    }
 }

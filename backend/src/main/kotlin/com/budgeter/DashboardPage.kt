@@ -59,6 +59,12 @@ enum class DashboardPeriodOption(val paramValue: String, val label: String) {
 // DashboardRoutes.kt's resolveDashboardPeriod for how user input becomes
 // this.
 data class DashboardPeriod(val option: DashboardPeriodOption, val startMonth: YearMonth, val endMonth: YearMonth) {
+    // [start, end) day range spanning the whole of startMonth through
+    // endMonth - the single source of truth both dashboardPageModel's pie
+    // chart and DashboardRoutes.kt's CSV export filter transactions by, so
+    // "what you exported" always matches "what you were looking at."
+    fun dateRange(): Pair<LocalDate, LocalDate> = startMonth.atDay(1) to endMonth.plusMonths(1).atDay(1)
+
     companion object {
         private fun preset(option: DashboardPeriodOption, months: Int, today: LocalDate): DashboardPeriod {
             val endMonth = YearMonth.from(today)
@@ -224,8 +230,7 @@ fun dashboardPageModel(
     val maxAbsNetChange = netChangeSeries.maxOfOrNull { kotlin.math.abs(it.second) }?.takeIf { it > 0 } ?: 1.0
     val movers = categoryMovers(transactions, categories, currentMonth)
     val biggest = biggestExpense(transactions, currentMonth)
-    val pieRangeStart = period.startMonth.atDay(1)
-    val pieRangeEnd = period.endMonth.plusMonths(1).atDay(1)
+    val (pieRangeStart, pieRangeEnd) = period.dateRange()
     val pieSlices = pieChartModel(categoryTotalsByLabel(transactions, categories, pieRangeStart, pieRangeEnd))
     // A custom range spanning more than one calendar year is ambiguous with
     // a bare "Jun" bar label (which June?) - the two fixed presets never
