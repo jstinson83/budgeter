@@ -13,6 +13,9 @@
   <div class="container">
     <#include "_nav.ftl">
 
+    <#assign activeTab = "house">
+    <#include "_house-tabs.ftl">
+
     <#if message??>
     <p class="banner-success">${message}</p>
     </#if>
@@ -21,11 +24,6 @@
     </#if>
 
     <h1>House Knowledge</h1>
-
-    <div class="tab-bar">
-      <a href="/house" class="tab-link tab-link-active">Documents</a>
-      <a href="/house/facts" class="tab-link">Facts by category</a>
-    </div>
 
     <form method="post" action="/house/documents/upload" enctype="multipart/form-data" class="upload-form">
       <input type="file" name="file" accept=".pdf" required>

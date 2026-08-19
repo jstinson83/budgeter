@@ -3,20 +3,14 @@
   <div class="nav-right">
     <#if currentUser??>
     <div class="nav-links">
-      <a href="/analysis" class="nav-link">Analysis</a>
-      <a href="/transactions" class="nav-link">Transactions</a>
-      <a href="/categories" class="nav-link">Categories</a>
-      <a href="/house" class="nav-link">House</a>
-      <a href="/projects" class="nav-link">Projects</a>
+      <a href="/analysis" class="nav-link">Finances</a>
+      <a href="/projects" class="nav-link">House</a>
     </div>
     <details class="nav-menu">
       <summary class="nav-menu-toggle" aria-label="Menu">&#9776;</summary>
       <div class="nav-menu-panel">
-        <a href="/analysis" class="nav-link">Analysis</a>
-        <a href="/transactions" class="nav-link">Transactions</a>
-        <a href="/categories" class="nav-link">Categories</a>
-        <a href="/house" class="nav-link">House</a>
-        <a href="/projects" class="nav-link">Projects</a>
+        <a href="/analysis" class="nav-link">Finances</a>
+        <a href="/projects" class="nav-link">House</a>
       </div>
     </details>
     <details class="account-menu">

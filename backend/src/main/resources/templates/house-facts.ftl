@@ -13,6 +13,9 @@
   <div class="container">
     <#include "_nav.ftl">
 
+    <#assign activeTab = "facts">
+    <#include "_house-tabs.ftl">
+
     <#if message??>
     <p class="banner-success">${message}</p>
     </#if>
@@ -21,11 +24,6 @@
     </#if>
 
     <h1>House Knowledge</h1>
-
-    <div class="tab-bar">
-      <a href="/house" class="tab-link">Documents</a>
-      <a href="/house/facts" class="tab-link tab-link-active">Facts by category</a>
-    </div>
 
     <#if (groups?size == 0)>
     <p class="empty-state">No facts yet. Upload a document from House Knowledge to get started.</p>
