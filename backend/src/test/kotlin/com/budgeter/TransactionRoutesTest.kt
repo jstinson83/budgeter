@@ -106,6 +106,43 @@ class TransactionRoutesTest {
     }
 
     @Test
+    fun testUploadingAWiderStatementSkipsThePreviouslyImportedOverlap() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        // First upload covers Jan-Jun. A later export of the same account
+        // (a different file - different fileHash - so the fingerprint-based
+        // dedup alone wouldn't catch this) covers Jan-Aug: it re-sends the
+        // same two Jan-Jun rows verbatim, plus two genuinely new rows.
+        val janToJune = "2026-01-15,Starbucks,4.75,,995.25\n2026-06-01,Payroll,,2500.00,3495.25"
+        val janToAugust = "2026-01-15,Starbucks,4.75,,995.25\n2026-06-01,Payroll,,2500.00,3495.25\n" +
+            "2026-07-04,Fireworks Store,25.00,,3470.25\n2026-08-01,Payroll,,2500.00,5970.25"
+
+        suspend fun import(csv: String, filename: String): String {
+            val response = client.submitFormWithBinaryData(
+                url = "/transactions/import",
+                formData = formData {
+                    append("file", csv.toByteArray(), Headers.build {
+                        append(HttpHeaders.ContentType, "text/csv")
+                        append(HttpHeaders.ContentDisposition, "filename=\"$filename\"")
+                    })
+                }
+            )
+            return response.headers[HttpHeaders.Location]!!
+        }
+
+        import(janToJune, "jan-to-jun.csv")
+        val secondRedirect = import(janToAugust, "jan-to-aug.csv")
+
+        val listResponse = client.get(secondRedirect)
+        val body = listResponse.bodyAsText()
+        assertTrue(body.contains("Imported 2 transaction(s), skipped 2 duplicate(s)"))
+        assertEquals(1, Regex("Starbucks").findAll(body).count())
+        assertEquals(1, Regex("Fireworks Store").findAll(body).count())
+        assertEquals(2, Regex("Payroll").findAll(body).count())
+    }
+
+    @Test
     fun testIdenticalRowsInTheSameFileAreNotTreatedAsDuplicatesOfEachOther() = testApplication {
         testModule()
         val client = signInFakeUser()

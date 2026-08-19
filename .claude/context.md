@@ -126,6 +126,15 @@ photo/document-capture features will reuse.
   distinct same-day/same-amount/same-description transactions within one
   file both still get kept. See `CLAUDE.md`'s Firestore gotchas section for
   the mechanics and the formatting-change tradeoff.
+- Dedup on a *different*, overlapping file (e.g. a wider re-export that
+  covers dates already imported from an earlier, narrower export) is a
+  separate content-based check, `withoutContentOverlap()` in
+  `TransactionStore.kt`, run before the fingerprint check above - fileHash
+  differs across exports, so the fingerprint check alone can't catch this
+  case. Deliberately a narrow heuristic (claim-once matching on
+  `(accountType, date, description, amount)`, no row-order assumption), not
+  a general dedup solution - see `CLAUDE.md`'s Firestore gotchas section for
+  the full reasoning.
 
 ### Gemini spending analysis
 

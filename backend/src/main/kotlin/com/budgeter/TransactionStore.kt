@@ -64,6 +64,46 @@ fun sha256Hex(text: String): String {
 fun transactionFingerprint(ownerId: String, fileHash: String, parsed: ParsedTransaction): String =
     sha256Hex("$ownerId|$fileHash|${parsed.rowNumber}")
 
+// Cross-file overlap dedup - a deliberate heuristic, not a general solution
+// (see CLAUDE.md's "Dedup on CSV import" gotcha). transactionFingerprint
+// above only catches re-uploading the exact same file (same fileHash). It
+// does nothing for a *different* export whose date range overlaps
+// previously-imported statements for the same account - e.g. a fresh
+// "Jan-Aug" export uploaded after "Jan-Jun" was already imported hashes
+// every row as new and would re-import the whole overlapping range as
+// duplicates. This closes that gap with claim-once content matching, keyed
+// on (accountType, date, description, amount): each already-stored
+// transaction can be "claimed" by at most one row of the new file. It
+// doesn't assume anything about row order in the export - only that a
+// transaction's date/description/amount are stable between exports of the
+// same underlying data - and it still correctly keeps genuinely-repeated
+// same-day/same-amount transactions (e.g. two identical coffees) as
+// separate as long as the new file doesn't contain more of them than are
+// already stored.
+private data class TransactionContentKey(val accountType: AccountType, val date: LocalDate, val description: String, val amount: Double)
+
+private fun ParsedTransaction.contentKey() = TransactionContentKey(accountType, date, description, amount)
+private fun Transaction.contentKey() = TransactionContentKey(accountType, date, description, amount)
+
+// Returns `parsed` with the content-overlapping subsection removed, in
+// order, plus how many rows were dropped as overlap duplicates.
+fun withoutContentOverlap(existing: List<Transaction>, parsed: List<ParsedTransaction>): Pair<List<ParsedTransaction>, Int> {
+    val remainingClaims = existing.groupingBy { it.contentKey() }.eachCount().toMutableMap()
+    var overlapCount = 0
+    val newRows = parsed.filter { row ->
+        val key = row.contentKey()
+        val claimsLeft = remainingClaims[key] ?: 0
+        if (claimsLeft > 0) {
+            remainingClaims[key] = claimsLeft - 1
+            overlapCount++
+            false
+        } else {
+            true
+        }
+    }
+    return newRows to overlapCount
+}
+
 interface TransactionRepository {
     // One batched write for a whole CSV import rather than N individual
     // round-trips - see FirestoreTransactionStore. fileHash identifies the
@@ -97,7 +137,13 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
     override suspend fun addAll(ownerId: String, fileHash: String, transactions: List<ParsedTransaction>): TransactionImportResult {
         if (transactions.isEmpty()) return TransactionImportResult(emptyList(), 0)
 
-        val withFingerprints = transactions.map { it to transactionFingerprint(ownerId, fileHash, it) }
+        // Fetches the owner's whole transaction history to check for
+        // content overlap - same "small per-user dataset, fine to scan in
+        // memory" tradeoff already made by uncategorized()/deleteAll() above.
+        val (newRows, contentOverlapCount) = withoutContentOverlap(all(ownerId), transactions)
+        if (newRows.isEmpty()) return TransactionImportResult(emptyList(), contentOverlapCount)
+
+        val withFingerprints = newRows.map { it to transactionFingerprint(ownerId, fileHash, it) }
         val docRefs = withFingerprints.map { (_, fingerprint) -> collection.document(fingerprint) }
         // One batched existence check for the whole import rather than a
         // per-row read - same round-trip-minimizing idea as the write batch
@@ -119,7 +165,7 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
             stored += Transaction(fingerprint, ownerId, parsed.accountType, parsed.date, parsed.description, parsed.amount)
         }
         if (stored.isNotEmpty()) batch.commit().get()
-        return TransactionImportResult(stored, duplicateCount)
+        return TransactionImportResult(stored, duplicateCount + contentOverlapCount)
     }
 
     override suspend fun all(ownerId: String): List<Transaction> {
