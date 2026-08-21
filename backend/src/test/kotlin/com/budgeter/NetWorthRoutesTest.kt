@@ -418,4 +418,76 @@ class NetWorthRoutesTest {
         val afterDelete = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
         assertTrue(afterDelete.contains("No scenarios yet."))
     }
+
+    @Test
+    fun testAddingAScenarioWithAnRrspStrategyShowsItsRefundsOnTheGoalCard() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        client.post("/planning/goals") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Goal&type=NET_WORTH_TARGET&targetDate=2027-08-21&targetAmount=50000.00")
+        }
+
+        val response = client.post("/planning/scenarios") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody(
+                "name=Max RRSP&annualMarketGrowthRatePercent=0&investedSavingsFractionPercent=0&recreationalSpendAdjustment=0" +
+                    "&rrspMonthlyContribution=1000&rrspMarginalTaxRatePercent=40&rrspRoomRemaining=100000"
+            )
+        }
+        assertEquals("Added Max RRSP", Url(response.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("in RRSP refunds"))
+        assertTrue(page.contains("room left"))
+    }
+
+    @Test
+    fun testAddingAScenarioWithAnRrspStrategyPersistsTheReinvestRefundCheckbox() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        client.post("/planning/scenarios") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody(
+                "name=Max RRSP&annualMarketGrowthRatePercent=0&investedSavingsFractionPercent=0&recreationalSpendAdjustment=0" +
+                    "&rrspMonthlyContribution=1000&rrspMarginalTaxRatePercent=40&rrspRoomRemaining=100000&rrspReinvestRefund=on"
+            )
+        }
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("name=\"rrspReinvestRefund\" checked"))
+    }
+
+    @Test
+    fun testAddingAScenarioWithAPartialRrspStrategyIsRejected() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        // Contribution amount with no room cap or tax rate isn't a
+        // coherent strategy - all three or none.
+        val response = client.post("/planning/scenarios") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Bad&annualMarketGrowthRatePercent=7&investedSavingsFractionPercent=100&recreationalSpendAdjustment=0&rrspMonthlyContribution=1000")
+        }
+        assertEquals("Invalid scenario", Url(response.headers[HttpHeaders.Location]!!).parameters["error"])
+    }
+
+    @Test
+    fun testAddingAScenarioWithNoRrspStrategyStillShowsOnTrackOffTrackWithoutRefundText() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        client.post("/planning/goals") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Goal&type=NET_WORTH_TARGET&targetDate=2027-08-21&targetAmount=50000.00")
+        }
+        client.post("/planning/scenarios") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Plain growth&annualMarketGrowthRatePercent=7&investedSavingsFractionPercent=100&recreationalSpendAdjustment=0")
+        }
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("Plain growth"))
+        assertFalse(page.contains("in RRSP refunds"))
+    }
 }

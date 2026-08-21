@@ -312,9 +312,16 @@ class FakeScenarioRepository : ScenarioRepository {
         investedSavingsFraction: Double,
         recreationalSpendAdjustment: Double,
         salaryChangeDate: java.time.LocalDate?,
-        salaryChangeMonthlyDelta: Double?
+        salaryChangeMonthlyDelta: Double?,
+        rrspMonthlyContribution: Double?,
+        rrspMarginalTaxRate: Double?,
+        rrspRoomRemaining: Double?,
+        rrspReinvestRefund: Boolean
     ): Scenario {
-        val scenario = Scenario("scenario-${nextId++}", ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment, salaryChangeDate, salaryChangeMonthlyDelta)
+        val scenario = Scenario(
+            "scenario-${nextId++}", ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment,
+            salaryChangeDate, salaryChangeMonthlyDelta, rrspMonthlyContribution, rrspMarginalTaxRate, rrspRoomRemaining, rrspReinvestRefund
+        )
         scenarios += scenario
         return scenario
     }
@@ -327,7 +334,11 @@ class FakeScenarioRepository : ScenarioRepository {
         investedSavingsFraction: Double,
         recreationalSpendAdjustment: Double,
         salaryChangeDate: java.time.LocalDate?,
-        salaryChangeMonthlyDelta: Double?
+        salaryChangeMonthlyDelta: Double?,
+        rrspMonthlyContribution: Double?,
+        rrspMarginalTaxRate: Double?,
+        rrspRoomRemaining: Double?,
+        rrspReinvestRefund: Boolean
     ): Scenario? {
         val index = scenarios.indexOfFirst { it.id == id && it.ownerId == ownerId }
         if (index == -1) return null
@@ -337,7 +348,11 @@ class FakeScenarioRepository : ScenarioRepository {
             investedSavingsFraction = investedSavingsFraction,
             recreationalSpendAdjustment = recreationalSpendAdjustment,
             salaryChangeDate = salaryChangeDate,
-            salaryChangeMonthlyDelta = salaryChangeMonthlyDelta
+            salaryChangeMonthlyDelta = salaryChangeMonthlyDelta,
+            rrspMonthlyContribution = rrspMonthlyContribution,
+            rrspMarginalTaxRate = rrspMarginalTaxRate,
+            rrspRoomRemaining = rrspRoomRemaining,
+            rrspReinvestRefund = rrspReinvestRefund
         )
         scenarios[index] = updated
         return updated

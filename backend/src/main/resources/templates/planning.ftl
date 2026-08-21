@@ -168,6 +168,9 @@
             <#else>
             <span class="transaction-amount-negative">off track</span>
             </#if>
+            <#if outcome.hasRrspStrategy>
+            &mdash; ${outcome.totalRrspRefunds} in RRSP refunds, ${outcome.finalRrspRoomRemaining} room left
+            </#if>
           </p>
           </#list>
 
@@ -204,7 +207,10 @@
       <h2>Scenarios</h2>
       <p class="dashboard-card-note">Each scenario adds its own line to every goal's chart above, alongside the always-shown baseline (which always assumes today's real savings rate, no growth, and no changes).</p>
       <p class="dashboard-card-note">
-        <strong>Growth rate</strong> compounds today's existing investments plus whatever share of each month's new savings you mark as <strong>% of new savings invested</strong> - the rest sits as cash and never grows. <strong>Recreational spend adjustment</strong> redirects $/mo from spending into savings (negative = spend more instead). <strong>Salary change</strong> is optional, one-time, and takes effect from its date onward.
+        <strong>Growth rate</strong> compounds today's existing investments plus whatever share of each month's new savings you mark as <strong>% of new savings invested</strong> - the rest sits as cash and never grows. <strong>Recreational spend adjustment</strong> redirects $/mo from spending into savings (negative = spend more instead). <strong>Salary change</strong> is optional, one-time, and takes effect from its date onward - a negative amount models a deliberate pay cut (e.g. switching to a less demanding role), not just a raise.
+      </p>
+      <p class="dashboard-card-note">
+        <strong>RRSP strategy</strong> (optional) models diverting part of your savings into an RRSP: it's capped by the contribution room you enter, and once a year it triggers a refund (contributions that year &times; your marginal tax rate), which you can either keep as cash or reinvest. Your marginal rate and RRSP room are numbers you look up and enter yourself - this app never fetches or guesses tax figures.
       </p>
       <#if (scenarios?size == 0)>
       <p class="empty-state">No scenarios yet.</p>
@@ -212,30 +218,54 @@
       <div class="card-list">
         <#list scenarios as scenario>
         <div class="info-card">
-          <form method="post" action="/planning/scenarios/${scenario.id}" class="form-row">
-            <div class="form-field form-field-wide">
-              <span class="form-field-label">Name</span>
-              <input type="text" name="name" value="${scenario.name}" required>
+          <form method="post" action="/planning/scenarios/${scenario.id}">
+            <div class="form-row">
+              <div class="form-field form-field-wide">
+                <span class="form-field-label">Name</span>
+                <input type="text" name="name" value="${scenario.name}" required>
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">Growth rate (%/yr)</span>
+                <input type="number" name="annualMarketGrowthRatePercent" value="${scenario.annualMarketGrowthRatePercent}" step="0.1">
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">% of new savings invested</span>
+                <input type="number" name="investedSavingsFractionPercent" value="${scenario.investedSavingsFractionPercent}" step="1" min="0" max="100">
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">Recreational spend adj. ($/mo)</span>
+                <input type="number" name="recreationalSpendAdjustment" value="${scenario.recreationalSpendAdjustment}" step="0.01">
+              </div>
             </div>
-            <div class="form-field">
-              <span class="form-field-label">Growth rate (%/yr)</span>
-              <input type="number" name="annualMarketGrowthRatePercent" value="${scenario.annualMarketGrowthRatePercent}" step="0.1">
+            <p class="field-label">Salary change (optional)</p>
+            <div class="form-row">
+              <div class="form-field">
+                <span class="form-field-label">Date</span>
+                <input type="date" name="salaryChangeDate" value="${scenario.salaryChangeDate}">
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">Amount ($/mo)</span>
+                <input type="number" name="salaryChangeMonthlyDelta" value="${scenario.salaryChangeMonthlyDelta}" step="0.01">
+              </div>
             </div>
-            <div class="form-field">
-              <span class="form-field-label">% of new savings invested</span>
-              <input type="number" name="investedSavingsFractionPercent" value="${scenario.investedSavingsFractionPercent}" step="1" min="0" max="100">
-            </div>
-            <div class="form-field">
-              <span class="form-field-label">Recreational spend adj. ($/mo)</span>
-              <input type="number" name="recreationalSpendAdjustment" value="${scenario.recreationalSpendAdjustment}" step="0.01">
-            </div>
-            <div class="form-field">
-              <span class="form-field-label">Salary change date (optional)</span>
-              <input type="date" name="salaryChangeDate" value="${scenario.salaryChangeDate}">
-            </div>
-            <div class="form-field">
-              <span class="form-field-label">Salary change ($/mo)</span>
-              <input type="number" name="salaryChangeMonthlyDelta" value="${scenario.salaryChangeMonthlyDelta}" step="0.01">
+            <p class="field-label">RRSP strategy (optional)</p>
+            <div class="form-row">
+              <div class="form-field">
+                <span class="form-field-label">Monthly contribution ($)</span>
+                <input type="number" name="rrspMonthlyContribution" value="${scenario.rrspMonthlyContribution}" step="0.01" min="0">
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">Your marginal tax rate (%)</span>
+                <input type="number" name="rrspMarginalTaxRatePercent" value="${scenario.rrspMarginalTaxRatePercent}" step="0.1" min="0" max="100">
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">RRSP room remaining ($)</span>
+                <input type="number" name="rrspRoomRemaining" value="${scenario.rrspRoomRemaining}" step="0.01" min="0">
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">Refund handling</span>
+                <label><input type="checkbox" name="rrspReinvestRefund" <#if scenario.rrspReinvestRefund>checked</#if>> Reinvest into investments</label>
+              </div>
             </div>
             <button type="submit" class="button button-small button-save">Save</button>
           </form>
@@ -248,39 +278,63 @@
       </#if>
 
       <h3>Add scenario</h3>
-      <form method="post" action="/planning/scenarios" class="form-row" id="scenario-form">
-        <div class="form-field form-field-wide">
-          <span class="form-field-label">Name</span>
-          <input type="text" name="name" placeholder="e.g. Aggressive growth" required>
+      <form method="post" action="/planning/scenarios" id="scenario-form">
+        <div class="form-row">
+          <div class="form-field form-field-wide">
+            <span class="form-field-label">Name</span>
+            <input type="text" name="name" placeholder="e.g. Aggressive growth" required>
+          </div>
+          <div class="form-field">
+            <span class="form-field-label">Growth rate preset</span>
+            <select id="scenario-growth-preset">
+              <#list growthPresets as preset>
+              <option value="${preset.annualRatePercent}"<#if preset.name == "MODERATE"> selected</#if>>${preset.label}</option>
+              </#list>
+              <option value="">Custom</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <span class="form-field-label">Growth rate (%/yr)</span>
+            <input type="number" name="annualMarketGrowthRatePercent" id="scenario-growth-rate" value="7.0" step="0.1" required>
+          </div>
+          <div class="form-field">
+            <span class="form-field-label">% of new savings invested</span>
+            <input type="number" name="investedSavingsFractionPercent" value="100" step="1" min="0" max="100" required>
+          </div>
+          <div class="form-field">
+            <span class="form-field-label">Recreational spend adj. ($/mo)</span>
+            <input type="number" name="recreationalSpendAdjustment" value="0" step="0.01" required>
+          </div>
         </div>
-        <div class="form-field">
-          <span class="form-field-label">Growth rate preset</span>
-          <select id="scenario-growth-preset">
-            <#list growthPresets as preset>
-            <option value="${preset.annualRatePercent}"<#if preset.name == "MODERATE"> selected</#if>>${preset.label}</option>
-            </#list>
-            <option value="">Custom</option>
-          </select>
+        <p class="field-label">Salary change (optional)</p>
+        <div class="form-row">
+          <div class="form-field">
+            <span class="form-field-label">Date</span>
+            <input type="date" name="salaryChangeDate">
+          </div>
+          <div class="form-field">
+            <span class="form-field-label">Amount ($/mo)</span>
+            <input type="number" name="salaryChangeMonthlyDelta" step="0.01">
+          </div>
         </div>
-        <div class="form-field">
-          <span class="form-field-label">Growth rate (%/yr)</span>
-          <input type="number" name="annualMarketGrowthRatePercent" id="scenario-growth-rate" value="7.0" step="0.1" required>
-        </div>
-        <div class="form-field">
-          <span class="form-field-label">% of new savings invested</span>
-          <input type="number" name="investedSavingsFractionPercent" value="100" step="1" min="0" max="100" required>
-        </div>
-        <div class="form-field">
-          <span class="form-field-label">Recreational spend adj. ($/mo)</span>
-          <input type="number" name="recreationalSpendAdjustment" value="0" step="0.01" required>
-        </div>
-        <div class="form-field">
-          <span class="form-field-label">Salary change date (optional)</span>
-          <input type="date" name="salaryChangeDate">
-        </div>
-        <div class="form-field">
-          <span class="form-field-label">Salary change ($/mo)</span>
-          <input type="number" name="salaryChangeMonthlyDelta" step="0.01">
+        <p class="field-label">RRSP strategy (optional)</p>
+        <div class="form-row">
+          <div class="form-field">
+            <span class="form-field-label">Monthly contribution ($)</span>
+            <input type="number" name="rrspMonthlyContribution" step="0.01" min="0">
+          </div>
+          <div class="form-field">
+            <span class="form-field-label">Your marginal tax rate (%)</span>
+            <input type="number" name="rrspMarginalTaxRatePercent" step="0.1" min="0" max="100">
+          </div>
+          <div class="form-field">
+            <span class="form-field-label">RRSP room remaining ($)</span>
+            <input type="number" name="rrspRoomRemaining" step="0.01" min="0">
+          </div>
+          <div class="form-field">
+            <span class="form-field-label">Refund handling</span>
+            <label><input type="checkbox" name="rrspReinvestRefund"> Reinvest into investments</label>
+          </div>
         </div>
         <button type="submit" class="button">Add scenario</button>
       </form>

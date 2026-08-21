@@ -4,14 +4,14 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 
-// Slices 3-4 of the Financial Planning Projections feature (see
+// Slices 3-4+ of the Financial Planning Projections feature (see
 // .claude/current.md) - the actual projection math. Pure Kotlin, no I/O,
 // no Gemini anywhere in this file: a monthly time-step from today to a
 // goal's target date, starting from the NetWorthEntry baseline
 // (NetWorthStore.kt) and adding a monthly rate derived from real
 // transaction history, optionally perturbed by a Scenario (salary-change
-// events, market growth, the recreational-spend-vs-savings knob -
-// ScenarioStore.kt).
+// events, market growth, the recreational-spend-vs-savings knob, an RRSP
+// contribution/refund strategy - all defined in ScenarioStore.kt).
 
 const val BASELINE_TRAILING_MONTHS = 3
 
@@ -97,7 +97,25 @@ data class ScenarioProjectionPoint(val date: LocalDate, val invested: Double, va
     val netWorth: Double get() = invested + cash
 }
 
-fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactions: List<Transaction>, goal: FinancialGoal, today: LocalDate = LocalDate.now()): List<ScenarioProjectionPoint> {
+// How often an RRSP strategy's accumulated contributions turn into a cash
+// refund - a fixed 12-month anniversary of the projection's own start
+// date, not the real Jan-Dec tax year or actual filing/refund timing
+// (which depends on when a return is filed). A deliberate simplification,
+// same spirit as the rest of this engine's monthly-granularity modeling -
+// see Scenario's doc comment in ScenarioStore.kt.
+private const val RRSP_REFUND_INTERVAL_MONTHS = 12
+
+// totalRrspRefunds/finalRrspRoomRemaining are 0.0/the starting room
+// respectively for a scenario with no RRSP strategy - always present
+// (rather than nullable) so /planning's page model doesn't need to know
+// which scenarios opted in before deciding whether to show them.
+data class ScenarioProjection(
+    val points: List<ScenarioProjectionPoint>,
+    val totalRrspRefunds: Double,
+    val finalRrspRoomRemaining: Double
+)
+
+fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactions: List<Transaction>, goal: FinancialGoal, today: LocalDate = LocalDate.now()): ScenarioProjection {
     val startingInvested = entries.filter { it.type == NetWorthEntryType.INVESTMENT }.sumOf { it.value }
     val startingCash = netWorthTotal(entries) - startingInvested
     val baselineRate = baselineMonthlySavingsRate(transactions, today)
@@ -110,6 +128,9 @@ fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactio
     val points = mutableListOf(ScenarioProjectionPoint(startMonth.atDay(1), startingInvested, startingCash))
     var invested = startingInvested
     var cash = startingCash
+    var rrspRoomRemaining = scenario.rrspRoomRemaining ?: 0.0
+    var annualRrspContributions = 0.0
+    var totalRrspRefunds = 0.0
     for (offset in 1..months) {
         val monthStart = startMonth.plusMonths(offset).atDay(1)
         // Salary-change event applies from its own date onward - a
@@ -120,9 +141,33 @@ fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactio
             0.0
         }
         val monthlySavings = baselineRate + scenario.recreationalSpendAdjustment + salaryDelta
-        invested = invested * (1 + monthlyGrowthRate) + monthlySavings * scenario.investedSavingsFraction
-        cash += monthlySavings * (1 - scenario.investedSavingsFraction)
+
+        // The RRSP contribution redirects part of this month's savings
+        // into a fully-invested, room-limited bucket rather than adding
+        // extra money on top - capped by whatever room is left, so the
+        // simulation can't keep contributing once the room is exhausted
+        // (no accrual of new room is modeled either, since that needs an
+        // income figure this engine doesn't have - see ScenarioStore.kt).
+        val rrspContribution = if (scenario.rrspMonthlyContribution != null) {
+            minOf(scenario.rrspMonthlyContribution, rrspRoomRemaining).coerceAtLeast(0.0)
+        } else {
+            0.0
+        }
+        rrspRoomRemaining -= rrspContribution
+        annualRrspContributions += rrspContribution
+
+        val remainingSavings = monthlySavings - rrspContribution
+        invested = invested * (1 + monthlyGrowthRate) + remainingSavings * scenario.investedSavingsFraction + rrspContribution
+        cash += remainingSavings * (1 - scenario.investedSavingsFraction)
+
+        if (scenario.rrspMonthlyContribution != null && offset % RRSP_REFUND_INTERVAL_MONTHS == 0L) {
+            val refund = annualRrspContributions * (scenario.rrspMarginalTaxRate ?: 0.0)
+            if (scenario.rrspReinvestRefund) invested += refund else cash += refund
+            totalRrspRefunds += refund
+            annualRrspContributions = 0.0
+        }
+
         points += ScenarioProjectionPoint(monthStart, invested, cash)
     }
-    return points
+    return ScenarioProjection(points, totalRrspRefunds, rrspRoomRemaining)
 }

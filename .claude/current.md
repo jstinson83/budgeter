@@ -36,12 +36,20 @@ added as an event" once this lands. Slices 1-4 are done - `NetWorthEntry`
 CRUD, `FinancialGoal` CRUD, the baseline projection engine, and `Scenario`
 CRUD (named what-ifs: a market growth rate, an invested-vs-cash split of
 ongoing savings, a recreational-spend-vs-savings $/mo knob, one optional
-dated salary-change event - each rendered as its own line on every goal's
-chart alongside the always-shown baseline), see `context.md`'s Financial
+dated salary-change event, and one optional RRSP contribution/refund
+strategy - each scenario rendered as its own line on every goal's chart
+alongside the always-shown baseline), see `context.md`'s Financial
 Planning Projections subsystem section. Working in slices, smallest first:
-- [ ] 5. Gemini scenario-parameter suggestions (optional, additive, last -
-      suggests parameter values from spending trends via a constrained
-      schema, never touches the engine's arithmetic).
+- [ ] 5. Gemini-suggested marginal tax rate for the RRSP strategy's rate
+      field (optional, additive - a "suggest my rate" button using
+      province/income, reviewable before saving, never a live/authoritative
+      lookup since this app's Gemini calls have no web tool - see
+      `context.md`). Broaden to other scenario-parameter suggestions
+      (spending-trend-based growth/spend-adjustment guesses) if that still
+      seems worth it once this lands.
+- [ ] 6. Real estate/leverage scenario (borrow against net worth at a
+      rate, invest the proceeds, service via monthly interest) - raised as
+      an idea, not yet scoped into concrete fields.
 
 **Phase 2 onward below now builds on the engine above instead of the old
 Phase 1** (a project's cost/timing gets inserted into the new engine's

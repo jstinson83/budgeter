@@ -100,7 +100,7 @@ class ProjectionEngineTest {
         val scenario = Scenario("s1", "owner", "1%/mo growth", annualMarketGrowthRate = 0.12, investedSavingsFraction = 1.0, recreationalSpendAdjustment = 0.0)
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 10, 21), targetAmount = 1.0)
 
-        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21))
+        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21)).points
 
         assertEquals(3, points.size) // Aug, Sep, Oct
         assertEquals(10000.0, points[0].invested, 0.001)
@@ -119,7 +119,7 @@ class ProjectionEngineTest {
         val scenario = Scenario("s1", "owner", "40% invested", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.4, recreationalSpendAdjustment = 0.0)
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 10, 1), targetAmount = 1.0)
 
-        val points = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+        val points = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21)).points
 
         val last = points.last()
         assertEquals(800.0, last.invested, 0.01) // 2 months * 1000/mo * 0.4
@@ -133,7 +133,7 @@ class ProjectionEngineTest {
         val scenario = Scenario("s1", "owner", "Cut spending", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 200.0)
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 9, 21), targetAmount = 1.0)
 
-        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21))
+        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21)).points
 
         assertEquals(200.0, points.last().cash, 0.001) // 0 baseline + 200 redirected
     }
@@ -147,7 +147,7 @@ class ProjectionEngineTest {
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 10, 1), targetAmount = 1.0)
 
-        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21))
+        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21)).points
 
         assertEquals(0.0, points[0].cash, 0.001) // Aug: before the raise
         assertEquals(500.0, points[1].cash, 0.001) // Sep: raise applies
@@ -163,8 +163,72 @@ class ProjectionEngineTest {
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 9, 21), targetAmount = 1.0)
 
-        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21))
+        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21)).points
 
         assertEquals(0.0, points.last().cash, 0.001)
+    }
+
+    @Test
+    fun testProjectScenarioAppliesAnRrspStrategyGeneratingAnAnnualRefund() {
+        val entries = emptyList<NetWorthEntry>()
+        // A single +6000 transaction averaged over the trailing 3-month
+        // window gives a 2000/mo baseline.
+        val transactions = listOf(tx("1", "2026-08-15", 6000.0))
+        val scenario = Scenario(
+            "s1", "owner", "Max RRSP", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
+            rrspMonthlyContribution = 1000.0, rrspMarginalTaxRate = 0.40, rrspRoomRemaining = 100000.0, rrspReinvestRefund = false
+        )
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
+
+        val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+
+        assertEquals(12000.0, result.points.last().invested, 0.01) // 12 months * $1000 contributed, no growth
+        assertEquals(16800.0, result.points.last().cash, 0.01) // 12 * $1000 non-RRSP savings + $4800 refund
+        assertEquals(4800.0, result.totalRrspRefunds, 0.01) // $12000 contributed * 40%
+        assertEquals(88000.0, result.finalRrspRoomRemaining, 0.01) // 100000 - 12000
+    }
+
+    @Test
+    fun testProjectScenarioReinvestsTheRefundWhenReinvestRefundIsTrue() {
+        val entries = emptyList<NetWorthEntry>()
+        val transactions = listOf(tx("1", "2026-08-15", 6000.0))
+        val scenario = Scenario(
+            "s1", "owner", "Max RRSP, reinvest", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
+            rrspMonthlyContribution = 1000.0, rrspMarginalTaxRate = 0.40, rrspRoomRemaining = 100000.0, rrspReinvestRefund = true
+        )
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
+
+        val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+
+        assertEquals(16800.0, result.points.last().invested, 0.01) // 12000 contributed + 4800 refund reinvested
+        assertEquals(12000.0, result.points.last().cash, 0.01) // just the 12 * $1000 non-RRSP savings
+    }
+
+    @Test
+    fun testProjectScenarioStopsRrspContributionsOnceRoomIsExhausted() {
+        val entries = emptyList<NetWorthEntry>()
+        val scenario = Scenario(
+            "s1", "owner", "Limited room", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
+            rrspMonthlyContribution = 1000.0, rrspMarginalTaxRate = 0.40, rrspRoomRemaining = 2500.0, rrspReinvestRefund = false
+        )
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 12, 21), targetAmount = 1.0)
+
+        val result = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21))
+
+        assertEquals(0.0, result.finalRrspRoomRemaining, 0.01)
+        assertEquals(2500.0, result.points.last().invested, 0.01) // capped at the available room, not 4 * 1000
+        assertEquals(0.0, result.totalRrspRefunds, 0.01) // no 12-month boundary reached yet
+    }
+
+    @Test
+    fun testProjectScenarioWithNoRrspStrategyReportsZeroRefundsAndZeroRoom() {
+        val entries = emptyList<NetWorthEntry>()
+        val scenario = Scenario("s1", "owner", "No RRSP", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0)
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 9, 21), targetAmount = 1.0)
+
+        val result = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21))
+
+        assertEquals(0.0, result.totalRrspRefunds, 0.001)
+        assertEquals(0.0, result.finalRrspRoomRemaining, 0.001)
     }
 }

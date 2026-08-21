@@ -1395,11 +1395,62 @@ itself.
     `ProjectionEngine.kt` for the full derivation. The *actual*, valid gap
     from that conversation was the cash-vs-invested question above -
     `investedSavingsFraction` is what came out of it.
-- **Gemini scenario-parameter suggestions** (not built, last slice) - an
-  optional, skippable call that proposes parameter values (e.g. a
-  stress-test growth-rate range) from real spending trends via a
-  constrained `responseSchema`, same pattern as `GeminiTransactionCategorizer`.
-  Additive only - the feature works completely without it.
+  - **RRSP contribution/refund strategy** (`rrspMonthlyContribution`/
+    `rrspMarginalTaxRate`/`rrspRoomRemaining`/`rrspReinvestRefund`,
+    landed): the same "all set or all null" coherent-group pattern as the
+    salary-change pair, but a trio (plus `rrspReinvestRefund`, a plain
+    boolean that only matters when the trio is set). Modeled as its own
+    mechanic rather than folded into `recreationalSpendAdjustment`,
+    because it behaves differently from plain savings in two ways -
+    `ProjectionEngine.kt`'s `projectScenario()`:
+    - Each month, the contribution is capped by whatever `rrspRoomRemaining`
+      is left (`minOf(contribution, roomRemaining)`) and always lands
+      100% in the invested bucket, regardless of `investedSavingsFraction`
+      - it's earmarked, not subject to the general cash/invested split.
+      No accrual of *new* room during the projection is modeled (that
+      needs an income figure this engine doesn't have) - room only ever
+      goes down.
+    - Once every `RRSP_REFUND_INTERVAL_MONTHS` (12, a fixed anniversary of
+      the projection's start date - not the real Jan-Dec tax year or
+      actual filing/refund timing, a deliberate simplification), that
+      window's accumulated contributions × `rrspMarginalTaxRate` land as a
+      lump-sum refund, either kept as cash or reinvested per
+      `rrspReinvestRefund`.
+    - `projectScenario()`'s return type grew from a bare
+      `List<ScenarioProjectionPoint>` to `ScenarioProjection` (points +
+      `totalRrspRefunds` + `finalRrspRoomRemaining`) specifically so
+      `/planning` can show "how much did this actually save me" as a
+      number, not just a shifted chart line - a scenario with no RRSP
+      strategy reports `0.0`/`0.0` for both rather than nulls, so the page
+      model doesn't need an extra branch to decide whether to show them.
+    - **`rrspMarginalTaxRate` is a single flat rate the household looks up
+      and types in themselves, not a real federal+provincial bracket
+      table.** Decided explicitly after discussing the alternative (a
+      progressive bracket calculator) - this app has never hardcoded
+      market/tax data that changes over time or by jurisdiction (see the
+      growth-rate-preset reasoning above), and there's a second, sharper
+      reason specific to tax figures: this app's Gemini integration makes
+      a direct `generateContent` call with no web/browsing/grounding tool
+      wired up (`geminiHttpClient`, see `GeminiCategorizer.kt`), so
+      *any* Gemini-suggested tax number would be recalled from training
+      data, not looked up live - fine for a rough estimate, not something
+      that should silently drive a real financial calculation. A later,
+      explicitly-labeled "suggest my rate" Gemini helper (reviewable
+      before it's saved, same posture as the next bullet) is plan item 5
+      in `current.md`; a real bracket table isn't currently planned.
+      Spousal RRSP was considered and deliberately not built as a
+      separate mechanic: within this app's accumulation-phase projection
+      (no retirement/decumulation modeling exists), a spousal contribution
+      and a regular one produce identical refund math
+      (`contribution × contributor's marginal rate`) - the real spousal
+      benefit (lower tax at the *other* spouse's withdrawal) only
+      materializes at withdrawal, a phase this engine doesn't model.
+- **Gemini scenario-parameter suggestions** (not built) - see plan item 5
+  in `current.md`, now scoped first at a "suggest my marginal tax rate"
+  helper for the RRSP strategy above (reviewable, never authoritative -
+  see that bullet for why). Optional and skippable either way - the
+  feature works completely without it, same as every other Gemini call in
+  this app.
 
 This is an explicit prerequisite for the "Financial Goals & Project
 Feasibility" section below, not a peer feature: a `Project`'s cost/timing
