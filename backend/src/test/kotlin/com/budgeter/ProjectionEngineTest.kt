@@ -26,7 +26,11 @@ class ProjectionEngineTest {
             tx("3", "2026-08-17", -2000.0, INVESTMENT_CATEGORY_ID)
         )
         val rate = baselineMonthlySavingsRate(transactions, LocalDate.of(2026, 8, 21))
-        // Only the +5000 counts; the other two months in the trailing window are empty.
+        // Both are excluded from the sum, not subtracted - so the -2000
+        // RRSP-style contribution doesn't reduce the rate at all. Only the
+        // +5000 counts; see baselineMonthlySavingsRate's doc comment for why
+        // "excluded from the sum" already correctly counts an investment
+        // contribution as saved rather than erasing it.
         assertEquals(5000.0 / 3, rate, 0.001)
     }
 
@@ -85,5 +89,82 @@ class ProjectionEngineTest {
 
         assertFalse(projection.onTrack)
         assertEquals(999000.0, projection.shortfallOrSurplus, 0.001)
+    }
+
+    @Test
+    fun testProjectScenarioCompoundsGrowthOnlyOnTheInvestedBalanceNotCash() {
+        val entries = listOf(
+            NetWorthEntry("1", "owner", "Brokerage", NetWorthEntryType.INVESTMENT, 10000.0),
+            NetWorthEntry("2", "owner", "Chequing", NetWorthEntryType.BANK, 5000.0)
+        )
+        val scenario = Scenario("s1", "owner", "1%/mo growth", annualMarketGrowthRate = 0.12, investedSavingsFraction = 1.0, recreationalSpendAdjustment = 0.0)
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 10, 21), targetAmount = 1.0)
+
+        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21))
+
+        assertEquals(3, points.size) // Aug, Sep, Oct
+        assertEquals(10000.0, points[0].invested, 0.001)
+        assertEquals(5000.0, points[0].cash, 0.001)
+        assertEquals(10100.0, points[1].invested, 0.01) // 10000 * 1.01
+        assertEquals(5000.0, points[1].cash, 0.001) // cash never grows
+        assertEquals(10201.0, points[2].invested, 0.01) // 10100 * 1.01
+    }
+
+    @Test
+    fun testProjectScenarioSplitsOngoingSavingsBetweenInvestedAndCashByFraction() {
+        val entries = emptyList<NetWorthEntry>()
+        // A single +3000 transaction averaged over the trailing 3-month
+        // window gives a 1000/mo baseline.
+        val transactions = listOf(tx("1", "2026-08-15", 3000.0))
+        val scenario = Scenario("s1", "owner", "40% invested", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.4, recreationalSpendAdjustment = 0.0)
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 10, 1), targetAmount = 1.0)
+
+        val points = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+
+        val last = points.last()
+        assertEquals(800.0, last.invested, 0.01) // 2 months * 1000/mo * 0.4
+        assertEquals(1200.0, last.cash, 0.01) // 2 months * 1000/mo * 0.6
+        assertEquals(2000.0, last.netWorth, 0.01) // matches total savings since growth is 0
+    }
+
+    @Test
+    fun testProjectScenarioAppliesTheRecreationalSpendAdjustmentToMonthlySavings() {
+        val entries = emptyList<NetWorthEntry>()
+        val scenario = Scenario("s1", "owner", "Cut spending", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 200.0)
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 9, 21), targetAmount = 1.0)
+
+        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21))
+
+        assertEquals(200.0, points.last().cash, 0.001) // 0 baseline + 200 redirected
+    }
+
+    @Test
+    fun testProjectScenarioAppliesTheSalaryChangeEventOnlyFromItsDateOnward() {
+        val entries = emptyList<NetWorthEntry>()
+        val scenario = Scenario(
+            "s1", "owner", "Raise", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
+            salaryChangeDate = LocalDate.of(2026, 9, 1), salaryChangeMonthlyDelta = 500.0
+        )
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 10, 1), targetAmount = 1.0)
+
+        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21))
+
+        assertEquals(0.0, points[0].cash, 0.001) // Aug: before the raise
+        assertEquals(500.0, points[1].cash, 0.001) // Sep: raise applies
+        assertEquals(1000.0, points[2].cash, 0.001) // Oct: raise still in effect
+    }
+
+    @Test
+    fun testProjectScenarioNeverAppliesASalaryChangeEventBeforeItsDate() {
+        val entries = emptyList<NetWorthEntry>()
+        val scenario = Scenario(
+            "s1", "owner", "Future raise", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
+            salaryChangeDate = LocalDate.of(2030, 1, 1), salaryChangeMonthlyDelta = 500.0
+        )
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 9, 21), targetAmount = 1.0)
+
+        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21))
+
+        assertEquals(0.0, points.last().cash, 0.001)
     }
 }

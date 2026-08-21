@@ -4,25 +4,40 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 
-// Slice 3 of the Financial Planning Projections feature (see
+// Slices 3-4 of the Financial Planning Projections feature (see
 // .claude/current.md) - the actual projection math. Pure Kotlin, no I/O,
 // no Gemini anywhere in this file: a monthly time-step from today to a
 // goal's target date, starting from the NetWorthEntry baseline
-// (NetWorthStore.kt) and adding a constant monthly rate derived from real
-// transaction history. No scenario parameters yet (salary-change events,
-// market growth, the recreational-spend-vs-savings knob) - that's slice
-// 4; this is deliberately just the "what happens if nothing changes"
-// baseline scenario, with no compounding/growth term at all.
+// (NetWorthStore.kt) and adding a monthly rate derived from real
+// transaction history, optionally perturbed by a Scenario (salary-change
+// events, market growth, the recreational-spend-vs-savings knob -
+// ScenarioStore.kt).
 
 const val BASELINE_TRAILING_MONTHS = 3
 
 // Average monthly net change (income - expense, TRANSFER/INVESTMENT
 // excluded) over the trailing BASELINE_TRAILING_MONTHS calendar months
 // ending with the month containing `asOf` - reuses DashboardPage.kt's own
-// monthlyNetChange (and its analysisEligible exclusions) rather than
-// recomputing the same TRANSFER/INVESTMENT exclusion a second way. This is
-// the one number slice 4's scenarios will perturb (salary changes, the
-// spend-vs-save knob); slice 3 uses it as-is, unadjusted.
+// monthlyNetChange (and its analysisEligible exclusions).
+//
+// INVESTMENT is correctly excluded here, same as TRANSFER - this was
+// re-examined mid-session after a "does this account for RRSP
+// contributions" question raised a false alarm, worth recording so it
+// isn't relitigated: excluding an INVESTMENT-categorized transaction from
+// this sum does NOT erase it from the projection. An RRSP contribution
+// shows up as a negative amount in the bank account, categorized
+// INVESTMENT; since it's excluded (neither added nor subtracted), the sum
+// is just income minus actual spending - which already equals the full
+// amount NOT spent, regardless of whether that amount sits in cash or
+// moved into an investment account. Subtracting the INVESTMENT-categorized
+// outflow (i.e. including it in the sum, sign and all) would actually be
+// the bug: it would double-count the contribution as if it left net worth
+// entirely, when nothing here ever added a matching increase for the
+// investment account it landed in (RRSP/brokerage balances aren't
+// CSV-imported at all, so there's no "+" transaction to offset it). This
+// is the one number a Scenario's salary-change events and
+// recreationalSpendAdjustment perturb (see projectScenario below) -
+// baseline projections (projectGoal) use it as-is, unadjusted.
 fun baselineMonthlySavingsRate(transactions: List<Transaction>, asOf: LocalDate = LocalDate.now()): Double {
     val series = monthlyNetChange(transactions, YearMonth.from(asOf), BASELINE_TRAILING_MONTHS)
     return series.map { it.second }.average()
@@ -33,10 +48,11 @@ data class ProjectionPoint(val date: LocalDate, val netWorth: Double)
 // Projects net worth forward from `startingNetWorth` at `from`, adding
 // `monthlySavingsRate` for every whole calendar month up to (and
 // including) `to` - a straight-line projection, deliberately with no
-// compounding/market-growth term (see the file doc comment above). One
-// point per month, `from`'s own month included as offset 0 so a chart has
-// a starting point to draw from. `to` before `from` (a past-due goal)
-// yields the single starting point rather than projecting backward.
+// compounding/market-growth term (that's what projectScenario below adds
+// on top). One point per month, `from`'s own month included as offset 0
+// so a chart has a starting point to draw from. `to` before `from` (a
+// past-due goal) yields the single starting point rather than projecting
+// backward.
 fun projectNetWorth(startingNetWorth: Double, monthlySavingsRate: Double, from: LocalDate, to: LocalDate): List<ProjectionPoint> {
     val startMonth = YearMonth.from(from)
     val endMonth = YearMonth.from(to)
@@ -58,9 +74,55 @@ data class GoalProjection(val goal: FinancialGoal, val points: List<ProjectionPo
 }
 
 // Ties the baseline rate + starting net worth to one goal's own target
-// date - the thing /planning actually renders per goal.
+// date - the "what happens if nothing changes" line /planning always
+// shows per goal, alongside whichever Scenario lines the household has
+// defined (projectScenario below).
 fun projectGoal(goal: FinancialGoal, entries: List<NetWorthEntry>, transactions: List<Transaction>, today: LocalDate = LocalDate.now()): GoalProjection {
     val monthlySavingsRate = baselineMonthlySavingsRate(transactions, today)
     val points = projectNetWorth(netWorthTotal(entries), monthlySavingsRate, today, goal.targetDate)
     return GoalProjection(goal, points, monthlySavingsRate)
+}
+
+// A scenario tracks net worth as two separate running balances rather
+// than one combined figure, because growth only applies to one of them:
+// `invested` starts from the sum of INVESTMENT-typed NetWorthEntry
+// balances and compounds monthly at the scenario's growth rate; `cash`
+// starts from everything else (bank, real estate, other assets, minus
+// liabilities) and never grows. Each month's savings then splits between
+// the two according to investedSavingsFraction - see Scenario's own doc
+// comments in ScenarioStore.kt for why this split exists (without it,
+// ongoing savings would silently earn 0% forever even in an "aggressive
+// growth" scenario, while only pre-existing investment balances compound).
+data class ScenarioProjectionPoint(val date: LocalDate, val invested: Double, val cash: Double) {
+    val netWorth: Double get() = invested + cash
+}
+
+fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactions: List<Transaction>, goal: FinancialGoal, today: LocalDate = LocalDate.now()): List<ScenarioProjectionPoint> {
+    val startingInvested = entries.filter { it.type == NetWorthEntryType.INVESTMENT }.sumOf { it.value }
+    val startingCash = netWorthTotal(entries) - startingInvested
+    val baselineRate = baselineMonthlySavingsRate(transactions, today)
+    val monthlyGrowthRate = scenario.annualMarketGrowthRate / 12.0
+
+    val startMonth = YearMonth.from(today)
+    val endMonth = YearMonth.from(goal.targetDate)
+    val months = ChronoUnit.MONTHS.between(startMonth, endMonth).coerceAtLeast(0)
+
+    val points = mutableListOf(ScenarioProjectionPoint(startMonth.atDay(1), startingInvested, startingCash))
+    var invested = startingInvested
+    var cash = startingCash
+    for (offset in 1..months) {
+        val monthStart = startMonth.plusMonths(offset).atDay(1)
+        // Salary-change event applies from its own date onward - a
+        // one-time step change to the baseline rate, not a fresh average.
+        val salaryDelta = if (scenario.salaryChangeDate != null && !monthStart.isBefore(scenario.salaryChangeDate)) {
+            scenario.salaryChangeMonthlyDelta ?: 0.0
+        } else {
+            0.0
+        }
+        val monthlySavings = baselineRate + scenario.recreationalSpendAdjustment + salaryDelta
+        invested = invested * (1 + monthlyGrowthRate) + monthlySavings * scenario.investedSavingsFraction
+        cash += monthlySavings * (1 - scenario.investedSavingsFraction)
+        points += ScenarioProjectionPoint(monthStart, invested, cash)
+    }
+    return points
 }

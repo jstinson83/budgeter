@@ -1331,17 +1331,70 @@ itself.
   - Rendered per goal on `/planning` as a plain-SVG line chart
     (`ProjectionChart.kt`'s `projectionChartModel()`) - same "no JS chart
     library" approach `PieChart.kt` already established for the dashboard/
-    analysis pie chart, just a `<polyline>` instead of dashed `<circle>`
-    arcs. The goal's target amount is folded into the same min/max range
-    as the projected points so its dashed horizontal line always renders
-    on-chart even when far above/below the trajectory, rather than
+    analysis pie chart, just `<polyline>`s instead of dashed `<circle>`
+    arcs. As of slice 4 the chart holds one line per series - the
+    always-shown baseline plus one per `Scenario` (see below), sharing one
+    coordinate scale and cycling through the same `--pie-1.."--pie-5`
+    palette so a scenario line is never confused for a pie slice's color
+    meaning something else. The goal's target amount is folded into the
+    same min/max range as every line's own points so its dashed horizontal
+    line always renders on-chart even when far above/below every
+    trajectory, rather than
     clipping outside the viewBox.
-- **Scenarios** (not built) - salary-change events (`{date,
-  newAnnualIncome}`), one blanket market growth rate per scenario
-  (user-set, with historical-benchmark presets - not fetched from any
-  market data API, since the number needed is an assumed *future* rate,
-  not today's price), and a recreational-spend-vs-savings knob. Multiple
-  scenarios run through the same engine, compared side by side.
+- **`Scenario`** (`ScenarioStore.kt`, landed): a named what-if parameter
+  set, CRUD like `NetWorthEntry`/`FinancialGoal`, run through
+  `ProjectionEngine.kt`'s `projectScenario()` and rendered as its own line
+  on every goal's chart (`ProjectionChart.kt`, extended to hold multiple
+  named lines - see below) alongside the always-shown baseline. Fields:
+  - `annualMarketGrowthRate` - one blanket rate, user-set with
+    `MarketGrowthPreset` (Conservative/Moderate/Aggressive) historical
+    benchmarks seeding the add form's default - not fetched from any
+    market data API, since the number needed is an assumed *future* rate,
+    not today's price. A hand-typed custom rate works identically to a
+    preset once saved (the preset only writes into the same numeric field
+    via `planning.ftl`'s script).
+  - `investedSavingsFraction` - what fraction of each month's *ongoing*
+    savings this scenario assumes gets invested (and therefore compounds
+    at the growth rate) vs. sits as cash earning nothing. Added after a
+    maintainer question ("does it assume I just accumulate cash?") caught
+    a real gap: without this, `annualMarketGrowthRate` would only ever
+    compound *today's* existing `INVESTMENT`-typed `NetWorthEntry`
+    balance, while every dollar saved between now and the goal sat at 0%
+    forever. `projectScenario()` tracks net worth as two separate running
+    balances (invested/cash) for exactly this reason - `ScenarioProjectionPoint`
+    instead of the baseline's single `ProjectionPoint`.
+  - `recreationalSpendAdjustment` - flat $/month redirected from
+    discretionary spend into savings (negative = spend more instead) -
+    the "recreational spend vs. savings" knob. Deliberately a flat dollar
+    figure rather than a percentage of a specific spending category:
+    categories are per-owner/user-defined (`CategoryStore.kt`) with no
+    fixed "this one is recreational" tag to key off of.
+  - `salaryChangeDate`/`salaryChangeMonthlyDelta` - at most **one** dated
+    step change to the monthly savings rate (e.g. a raise), effective
+    from its date onward. Deliberately singular rather than a list (the
+    original design's `{date, newAnnualIncome}` plural events) - a
+    dynamic add-row form needs JS this app doesn't use anywhere
+    (analysis.ftl/CLAUDE.md), and a raise is modeled as a net delta to
+    take-home pay rather than a gross income figure, since the engine has
+    no income/expense/tax breakdown to recompute a savings rate from a
+    stated salary. Revisit both simplifications if a household actually
+    needs more.
+  - **Mid-session correction, worth recording so it isn't relitigated**:
+    a maintainer question about RRSP contributions briefly led to
+    "fixing" `baselineMonthlySavingsRate()` to stop excluding
+    `INVESTMENT`-categorized transactions - this was wrong and got
+    reverted before merging. Excluding `INVESTMENT` from the sum doesn't
+    erase an RRSP contribution from the projection; it correctly avoids
+    treating it as *spending*, so the sum (income minus real spending)
+    already equals the full amount not spent, regardless of which
+    account it landed in. *Including* it (subtracting the contribution
+    from the sum) would have double-counted it as lost net worth, since
+    nothing else in the transaction ledger adds back a matching increase
+    for an RRSP/brokerage balance (those accounts aren't CSV-imported at
+    all). See `baselineMonthlySavingsRate()`'s doc comment in
+    `ProjectionEngine.kt` for the full derivation. The *actual*, valid gap
+    from that conversation was the cash-vs-invested question above -
+    `investedSavingsFraction` is what came out of it.
 - **Gemini scenario-parameter suggestions** (not built, last slice) - an
   optional, skippable call that proposes parameter values (e.g. a
   stress-test growth-rate range) from real spending trends via a

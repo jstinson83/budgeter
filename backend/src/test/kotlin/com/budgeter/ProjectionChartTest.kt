@@ -5,26 +5,42 @@ import kotlin.test.*
 
 class ProjectionChartTest {
     @Test
-    fun testProjectionChartModelProducesOnePointPairPerProjectionPoint() {
-        val points = listOf(
+    fun testProjectionChartModelProducesOneLinePerSeriesWithBaselineFirst() {
+        val baseline = listOf(
             ProjectionPoint(LocalDate.of(2026, 8, 1), 100000.0),
-            ProjectionPoint(LocalDate.of(2026, 9, 1), 101000.0),
-            ProjectionPoint(LocalDate.of(2026, 10, 1), 102000.0)
+            ProjectionPoint(LocalDate.of(2026, 9, 1), 101000.0)
         )
-        val chart = projectionChartModel(points, targetAmount = 105000.0)
+        val scenario = listOf(
+            ProjectionPoint(LocalDate.of(2026, 8, 1), 100000.0),
+            ProjectionPoint(LocalDate.of(2026, 9, 1), 103000.0)
+        )
+        val chart = projectionChartModel(baseline, listOf("Aggressive" to scenario), targetAmount = 105000.0)
 
-        assertEquals(3, chart.points.trim().split(" ").size)
+        assertEquals(2, chart.lines.size)
+        assertEquals("Baseline", chart.lines[0].label)
+        assertEquals("projection-chart-line", chart.lines[0].cssClass)
+        assertEquals("Aggressive", chart.lines[1].label)
+        assertEquals("projection-chart-line-scenario-1", chart.lines[1].cssClass)
+    }
+
+    @Test
+    fun testProjectionChartModelWithNoScenariosProducesJustTheBaselineLine() {
+        val baseline = listOf(ProjectionPoint(LocalDate.of(2026, 8, 1), 100000.0))
+        val chart = projectionChartModel(baseline, emptyList(), targetAmount = 105000.0)
+
+        assertEquals(1, chart.lines.size)
+        assertEquals("Baseline", chart.lines[0].label)
     }
 
     @Test
     fun testProjectionChartModelPlacesTheHighestValueNearestTheTopOfTheViewBox() {
-        val points = listOf(
+        val baseline = listOf(
             ProjectionPoint(LocalDate.of(2026, 8, 1), 0.0),
             ProjectionPoint(LocalDate.of(2026, 9, 1), 100.0)
         )
-        val chart = projectionChartModel(points, targetAmount = 100.0)
+        val chart = projectionChartModel(baseline, emptyList(), targetAmount = 100.0)
 
-        val yCoords = chart.points.trim().split(" ").map { it.split(",")[1].toDouble() }
+        val yCoords = chart.lines[0].points.trim().split(" ").map { it.split(",")[1].toDouble() }
         // Higher net worth -> smaller y (SVG y grows downward), so the
         // second point (100.0) should sit above (smaller y than) the first (0.0).
         assertTrue(yCoords[1] < yCoords[0])
@@ -32,28 +48,40 @@ class ProjectionChartTest {
 
     @Test
     fun testProjectionChartModelHandlesAFlatSeriesWithoutDividingByZero() {
-        val points = listOf(
+        val baseline = listOf(
             ProjectionPoint(LocalDate.of(2026, 8, 1), 5000.0),
             ProjectionPoint(LocalDate.of(2026, 9, 1), 5000.0)
         )
-        val chart = projectionChartModel(points, targetAmount = 5000.0)
+        val chart = projectionChartModel(baseline, emptyList(), targetAmount = 5000.0)
 
-        assertFalse(chart.points.contains("NaN"))
+        assertFalse(chart.lines[0].points.contains("NaN"))
         assertFalse(chart.goalY.contains("NaN"))
     }
 
     @Test
-    fun testProjectionChartModelIncludesTheTargetInItsRangeEvenWhenFarAboveThePoints() {
-        val points = listOf(ProjectionPoint(LocalDate.of(2026, 8, 1), 1000.0))
-        val chart = projectionChartModel(points, targetAmount = 1000000.0)
+    fun testProjectionChartModelIncludesTheTargetAndEveryScenarioInItsRange() {
+        val baseline = listOf(ProjectionPoint(LocalDate.of(2026, 8, 1), 1000.0))
+        val scenario = listOf(ProjectionPoint(LocalDate.of(2026, 8, 1), 2000000.0))
+        val chart = projectionChartModel(baseline, listOf("Big scenario" to scenario), targetAmount = 1000000.0)
 
-        assertEquals("1000000.00", chart.maxLabel)
+        assertEquals("2000000.00", chart.maxLabel)
     }
 
     @Test
-    fun testProjectionChartModelRejectsAnEmptyPointsList() {
+    fun testProjectionChartModelRejectsAnEmptyBaselineList() {
         assertFailsWith<IllegalArgumentException> {
-            projectionChartModel(emptyList(), targetAmount = 1000.0)
+            projectionChartModel(emptyList(), emptyList(), targetAmount = 1000.0)
         }
+    }
+
+    @Test
+    fun testProjectionChartModelCyclesScenarioCssClassesPastFive() {
+        val baseline = listOf(ProjectionPoint(LocalDate.of(2026, 8, 1), 0.0))
+        val scenarios = (1..6).map { "Scenario $it" to listOf(ProjectionPoint(LocalDate.of(2026, 8, 1), it.toDouble())) }
+        val chart = projectionChartModel(baseline, scenarios, targetAmount = 0.0)
+
+        assertEquals("projection-chart-line-scenario-1", chart.lines[1].cssClass)
+        assertEquals("projection-chart-line-scenario-5", chart.lines[5].cssClass)
+        assertEquals("projection-chart-line-scenario-1", chart.lines[6].cssClass) // wraps around
     }
 }
