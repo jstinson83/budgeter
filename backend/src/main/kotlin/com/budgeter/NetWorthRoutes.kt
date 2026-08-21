@@ -8,22 +8,30 @@ import io.ktor.server.routing.*
 import java.time.LocalDate
 
 // The /planning page - manual net worth tracking (NetWorthStore.kt, slice
-// 1) plus, as of slice 2, FinancialGoal CRUD (FinancialGoalStore.kt). Both
-// sub-features live in one route file/one page, same "one file per page"
-// shape CategoryRoutes.kt uses for /categories' categories + rules.
-// Entries and goals are never system-derived (no CSV/Transaction linkage)
-// - a household adds/edits/deletes its own rows here, same "you're the
-// source of truth" shape as /categories, just without the built-in seeding
-// since there's no sensible default set of assets/liabilities/goals the
-// way there is for spending categories.
-fun Route.netWorthRoutes(netWorthEntryStore: NetWorthEntryRepository, financialGoalStore: FinancialGoalRepository) {
+// 1), FinancialGoal CRUD (FinancialGoalStore.kt, slice 2), and, as of
+// slice 3, each goal's baseline projection (ProjectionEngine.kt/
+// ProjectionChart.kt - a straight-line "what happens if nothing changes"
+// scenario derived from real transaction history, no Gemini/scenario
+// knobs yet). All three live in one route file/one page, same "one file
+// per page" shape CategoryRoutes.kt uses for /categories' categories +
+// rules. Entries and goals are never system-derived (no CSV/Transaction
+// linkage) - a household adds/edits/deletes its own rows here, same
+// "you're the source of truth" shape as /categories, just without the
+// built-in seeding since there's no sensible default set of
+// assets/liabilities/goals the way there is for spending categories.
+fun Route.netWorthRoutes(
+    netWorthEntryStore: NetWorthEntryRepository,
+    financialGoalStore: FinancialGoalRepository,
+    transactionStore: TransactionRepository
+) {
     get("/planning") {
         val ownerId = call.requireUserId()
         val entries = netWorthEntryStore.all(ownerId)
         val goals = financialGoalStore.all(ownerId)
+        val transactions = transactionStore.all(ownerId)
         val message = call.request.queryParameters["message"]
         val error = call.request.queryParameters["error"]
-        val model = netWorthPageModel(entries, goals, message, error) + call.currentUserModel()
+        val model = netWorthPageModel(entries, goals, transactions, message, error) + call.currentUserModel()
         call.respond(FreeMarkerContent("planning.ftl", model))
     }
 

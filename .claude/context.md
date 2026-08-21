@@ -1314,11 +1314,28 @@ itself.
   for /categories' categories + rules). A goal's type can't be changed
   after creation (the edit form carries it as a hidden field) - not a
   real restriction yet, just nothing has needed switching types.
-- **Projection engine** (not built) - pure Kotlin, no I/O: monthly
-  time-step from today to the goal date, baseline scenario derived from
-  trailing-average income/expense in `Transaction`/`Category` history
-  (same `TRANSFER`/`INVESTMENT`-excluded convention `/analysis` already
-  uses), applied on top of the `NetWorthEntry` baseline above.
+- **Projection engine** (`ProjectionEngine.kt`, landed): pure Kotlin, no
+  I/O, no Gemini. `baselineMonthlySavingsRate()` reuses
+  `DashboardPage.kt`'s own `monthlyNetChange()` (same `TRANSFER`/
+  `INVESTMENT`-excluded convention `/analysis` already uses) averaged over
+  the trailing `BASELINE_TRAILING_MONTHS` (3) months. `projectNetWorth()`
+  steps forward one whole calendar month at a time from the
+  `NetWorthEntry` baseline (`netWorthTotal()`), adding that flat monthly
+  rate each step - deliberately straight-line, no compounding/growth term
+  at all yet (slice 4 adds a market-growth rate, but only on top of
+  investment-typed entries specifically, not as a blanket multiplier
+  here). `projectGoal()` ties this to one `FinancialGoal`'s own
+  `targetDate`/`resolvedTargetAmount()`, exposing `onTrack` and a
+  same-sign-either-way `shortfallOrSurplus` (which one it means is carried
+  by `onTrack`, not the value's sign).
+  - Rendered per goal on `/planning` as a plain-SVG line chart
+    (`ProjectionChart.kt`'s `projectionChartModel()`) - same "no JS chart
+    library" approach `PieChart.kt` already established for the dashboard/
+    analysis pie chart, just a `<polyline>` instead of dashed `<circle>`
+    arcs. The goal's target amount is folded into the same min/max range
+    as the projected points so its dashed horizontal line always renders
+    on-chart even when far above/below the trajectory, rather than
+    clipping outside the viewBox.
 - **Scenarios** (not built) - salary-change events (`{date,
   newAnnualIncome}`), one blanket market growth rate per scenario
   (user-set, with historical-benchmark presets - not fetched from any

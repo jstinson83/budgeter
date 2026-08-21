@@ -1191,6 +1191,45 @@ input[type="file"]::file-selector-button:hover {
   margin-left: 0.3rem;
 }
 
+/* Net worth projection chart (planning.ftl) - same "no JS chart library,
+   plain SVG" approach the pie chart above uses; see ProjectionChart.kt. */
+
+.projection-chart-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.5rem 0;
+}
+
+.projection-chart {
+  width: 100%;
+  height: 7rem;
+  background: var(--surface-soft);
+  border-radius: var(--radius-md);
+}
+
+.projection-chart-line {
+  fill: none;
+  stroke: var(--brass);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.projection-chart-goal-line {
+  stroke: var(--text-dim);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.projection-chart-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  font-family: var(--mono);
+}
+
 /* House Knowledge */
 
 .fact-quote {
