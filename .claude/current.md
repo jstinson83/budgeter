@@ -36,9 +36,11 @@ added as an event" once this lands. Slices 1-4 are done - `NetWorthEntry`
 CRUD, `FinancialGoal` CRUD, the baseline projection engine, and `Scenario`
 CRUD (named what-ifs: a market growth rate, an invested-vs-cash split of
 ongoing savings, a recreational-spend-vs-savings $/mo knob, one optional
-dated salary-change event, and one optional RRSP contribution/refund
-strategy - each scenario rendered as its own line on every goal's chart
-alongside the always-shown baseline), see `context.md`'s Financial
+dated salary-change event, one optional RRSP contribution/refund
+strategy, and optional RRSP room accrual keyed off a household-tagged
+income category (18%/yr, optionally capped) - each scenario rendered as
+its own line on every goal's chart alongside the always-shown baseline),
+see `context.md`'s Financial
 Planning Projections subsystem section. Working in slices, smallest first:
 - [ ] 5. Gemini-suggested marginal tax rate for the RRSP strategy's rate
       field (optional, additive - a "suggest my rate" button using

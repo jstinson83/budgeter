@@ -25,7 +25,8 @@ fun Route.netWorthRoutes(
     netWorthEntryStore: NetWorthEntryRepository,
     financialGoalStore: FinancialGoalRepository,
     scenarioStore: ScenarioRepository,
-    transactionStore: TransactionRepository
+    transactionStore: TransactionRepository,
+    categoryStore: CategoryRepository
 ) {
     get("/planning") {
         val ownerId = call.requireUserId()
@@ -33,9 +34,10 @@ fun Route.netWorthRoutes(
         val goals = financialGoalStore.all(ownerId)
         val scenarios = scenarioStore.all(ownerId)
         val transactions = transactionStore.all(ownerId)
+        val categories = categoryStore.all(ownerId)
         val message = call.request.queryParameters["message"]
         val error = call.request.queryParameters["error"]
-        val model = netWorthPageModel(entries, goals, scenarios, transactions, message, error) + call.currentUserModel()
+        val model = netWorthPageModel(entries, goals, scenarios, transactions, categories, message, error) + call.currentUserModel()
         call.respond(FreeMarkerContent("planning.ftl", model))
     }
 
@@ -103,7 +105,8 @@ fun Route.netWorthRoutes(
         val scenario = scenarioStore.add(
             ownerId, input.name, input.annualMarketGrowthRate, input.investedSavingsFraction,
             input.recreationalSpendAdjustment, input.salaryChangeDate, input.salaryChangeMonthlyDelta,
-            input.rrspMonthlyContribution, input.rrspMarginalTaxRate, input.rrspRoomRemaining, input.rrspReinvestRefund
+            input.rrspMonthlyContribution, input.rrspMarginalTaxRate, input.rrspRoomRemaining, input.rrspReinvestRefund,
+            input.rrspIncomeCategoryId, input.rrspAnnualRoomAccrualCap
         )
         call.respondRedirect("/planning?message=${"Added ${scenario.name}".encodeURLQueryComponent()}")
     }
@@ -117,7 +120,8 @@ fun Route.netWorthRoutes(
         val updated = scenarioStore.update(
             ownerId, id, input.name, input.annualMarketGrowthRate, input.investedSavingsFraction,
             input.recreationalSpendAdjustment, input.salaryChangeDate, input.salaryChangeMonthlyDelta,
-            input.rrspMonthlyContribution, input.rrspMarginalTaxRate, input.rrspRoomRemaining, input.rrspReinvestRefund
+            input.rrspMonthlyContribution, input.rrspMarginalTaxRate, input.rrspRoomRemaining, input.rrspReinvestRefund,
+            input.rrspIncomeCategoryId, input.rrspAnnualRoomAccrualCap
         )
         val message = if (updated != null) "Updated ${updated.name}" else "Scenario not found"
         val param = if (updated != null) "message" else "error"
@@ -190,7 +194,9 @@ private data class ScenarioFormInput(
     val rrspMonthlyContribution: Double?,
     val rrspMarginalTaxRate: Double?,
     val rrspRoomRemaining: Double?,
-    val rrspReinvestRefund: Boolean
+    val rrspReinvestRefund: Boolean,
+    val rrspIncomeCategoryId: String?,
+    val rrspAnnualRoomAccrualCap: Double?
 )
 
 // The salary-change fields are optional as a pair, and the RRSP fields as
@@ -230,6 +236,12 @@ private fun parseScenarioForm(formParams: Parameters): ScenarioFormInput? {
         }
     }
     val rrspReinvestRefund = formParams["rrspReinvestRefund"] != null
+    // Independent of the contribution trio above - a household can track
+    // room accrual without necessarily contributing in this scenario, or
+    // vice versa. "" (the add form's default "no category selected"
+    // option) means no accrual, same as never selecting one.
+    val rrspIncomeCategoryId = formParams["rrspIncomeCategoryId"]?.trim()?.takeIf { it.isNotEmpty() }
+    val rrspAnnualRoomAccrualCap = formParams["rrspAnnualRoomAccrualCap"]?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()?.takeIf { it >= 0 }
 
     return ScenarioFormInput(
         name,
@@ -241,6 +253,8 @@ private fun parseScenarioForm(formParams: Parameters): ScenarioFormInput? {
         rrspMonthlyContribution,
         rrspMarginalTaxRate,
         rrspRoomRemaining,
-        rrspReinvestRefund
+        rrspReinvestRefund,
+        rrspIncomeCategoryId,
+        rrspAnnualRoomAccrualCap
     )
 }

@@ -72,7 +72,22 @@ data class Scenario(
     val rrspMonthlyContribution: Double? = null,
     val rrspMarginalTaxRate: Double? = null,
     val rrspRoomRemaining: Double? = null,
-    val rrspReinvestRefund: Boolean = false
+    val rrspReinvestRefund: Boolean = false,
+    // Optional, independent of the contribution trio above: a household
+    // Category (CategoryStore.kt) tagging their earned-income transactions
+    // (e.g. a "Salary" category), used to accrue *new* RRSP room each year
+    // (18% of that category's trailing-12-month total, same real-world
+    // rule the CRA uses) rather than leaving rrspRoomRemaining as a
+    // fixed, only-ever-decreasing pool. Independent of the contribution
+    // trio because room can accrue whether or not this scenario currently
+    // plans to contribute. rrspAnnualRoomAccrualCap mirrors
+    // rrspMarginalTaxRate's reasoning - the CRA also caps how much room
+    // can accrue per year, but that dollar cap is real tax data that
+    // changes annually, so it's an optional number the household looks up
+    // and enters rather than one this app hardcodes or guesses; left null,
+    // accrual is uncapped.
+    val rrspIncomeCategoryId: String? = null,
+    val rrspAnnualRoomAccrualCap: Double? = null
 )
 
 interface ScenarioRepository {
@@ -88,7 +103,9 @@ interface ScenarioRepository {
         rrspMonthlyContribution: Double?,
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
-        rrspReinvestRefund: Boolean
+        rrspReinvestRefund: Boolean,
+        rrspIncomeCategoryId: String?,
+        rrspAnnualRoomAccrualCap: Double?
     ): Scenario
 
     suspend fun update(
@@ -103,7 +120,9 @@ interface ScenarioRepository {
         rrspMonthlyContribution: Double?,
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
-        rrspReinvestRefund: Boolean
+        rrspReinvestRefund: Boolean,
+        rrspIncomeCategoryId: String?,
+        rrspAnnualRoomAccrualCap: Double?
     ): Scenario?
 
     suspend fun delete(ownerId: String, id: String)
@@ -123,20 +142,22 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         rrspMonthlyContribution: Double?,
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
-        rrspReinvestRefund: Boolean
+        rrspReinvestRefund: Boolean,
+        rrspIncomeCategoryId: String?,
+        rrspAnnualRoomAccrualCap: Double?
     ): Scenario {
         val docRef = collection.document()
         docRef.set(
             scenarioMap(
                 ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment,
                 salaryChangeDate, salaryChangeMonthlyDelta, rrspMonthlyContribution, rrspMarginalTaxRate,
-                rrspRoomRemaining, rrspReinvestRefund
+                rrspRoomRemaining, rrspReinvestRefund, rrspIncomeCategoryId, rrspAnnualRoomAccrualCap
             )
         ).get()
         return Scenario(
             docRef.id, ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment,
             salaryChangeDate, salaryChangeMonthlyDelta, rrspMonthlyContribution, rrspMarginalTaxRate,
-            rrspRoomRemaining, rrspReinvestRefund
+            rrspRoomRemaining, rrspReinvestRefund, rrspIncomeCategoryId, rrspAnnualRoomAccrualCap
         )
     }
 
@@ -160,14 +181,16 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         rrspMonthlyContribution: Double?,
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
-        rrspReinvestRefund: Boolean
+        rrspReinvestRefund: Boolean,
+        rrspIncomeCategoryId: String?,
+        rrspAnnualRoomAccrualCap: Double?
     ): Scenario? {
         val existing = get(ownerId, id) ?: return null
         collection.document(id).set(
             scenarioMap(
                 ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment,
                 salaryChangeDate, salaryChangeMonthlyDelta, rrspMonthlyContribution, rrspMarginalTaxRate,
-                rrspRoomRemaining, rrspReinvestRefund
+                rrspRoomRemaining, rrspReinvestRefund, rrspIncomeCategoryId, rrspAnnualRoomAccrualCap
             )
         ).get()
         return existing.copy(
@@ -180,7 +203,9 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
             rrspMonthlyContribution = rrspMonthlyContribution,
             rrspMarginalTaxRate = rrspMarginalTaxRate,
             rrspRoomRemaining = rrspRoomRemaining,
-            rrspReinvestRefund = rrspReinvestRefund
+            rrspReinvestRefund = rrspReinvestRefund,
+            rrspIncomeCategoryId = rrspIncomeCategoryId,
+            rrspAnnualRoomAccrualCap = rrspAnnualRoomAccrualCap
         )
     }
 
@@ -208,7 +233,9 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         rrspMonthlyContribution: Double?,
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
-        rrspReinvestRefund: Boolean
+        rrspReinvestRefund: Boolean,
+        rrspIncomeCategoryId: String?,
+        rrspAnnualRoomAccrualCap: Double?
     ): Map<String, Any?> = mapOf(
         "ownerId" to ownerId,
         "name" to name,
@@ -220,7 +247,9 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         "rrspMonthlyContribution" to rrspMonthlyContribution,
         "rrspMarginalTaxRate" to rrspMarginalTaxRate,
         "rrspRoomRemaining" to rrspRoomRemaining,
-        "rrspReinvestRefund" to rrspReinvestRefund
+        "rrspReinvestRefund" to rrspReinvestRefund,
+        "rrspIncomeCategoryId" to rrspIncomeCategoryId,
+        "rrspAnnualRoomAccrualCap" to rrspAnnualRoomAccrualCap
     )
 
     private fun toScenario(id: String, data: Map<String, Any?>): Scenario = Scenario(
@@ -235,6 +264,8 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         rrspMonthlyContribution = (data["rrspMonthlyContribution"] as? Number)?.toDouble(),
         rrspMarginalTaxRate = (data["rrspMarginalTaxRate"] as? Number)?.toDouble(),
         rrspRoomRemaining = (data["rrspRoomRemaining"] as? Number)?.toDouble(),
-        rrspReinvestRefund = data["rrspReinvestRefund"] as? Boolean ?: false
+        rrspReinvestRefund = data["rrspReinvestRefund"] as? Boolean ?: false,
+        rrspIncomeCategoryId = data["rrspIncomeCategoryId"] as? String,
+        rrspAnnualRoomAccrualCap = (data["rrspAnnualRoomAccrualCap"] as? Number)?.toDouble()
     )
 }

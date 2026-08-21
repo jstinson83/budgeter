@@ -17,12 +17,15 @@ fun netWorthPageModel(
     goals: List<FinancialGoal>,
     scenarios: List<Scenario>,
     transactions: List<Transaction>,
+    categories: List<Category>,
     message: String?,
     error: String?,
     today: LocalDate = LocalDate.now()
 ): Map<String, Any?> {
     val assets = entries.filter { it.type.isAsset }
     val liabilities = entries.filter { !it.type.isAsset }
+    val activeCategories = categories.filter { it.active }.sortedBy { it.label.lowercase() }
+    val categoryLabelById = categories.associateBy({ it.id }, { it.label })
     return mapOf(
         "assets" to assets.map(::netWorthEntryRowModel),
         "liabilities" to liabilities.map(::netWorthEntryRowModel),
@@ -32,8 +35,12 @@ fun netWorthPageModel(
         "assetTypeOptions" to NetWorthEntryType.entries.filter { it.isAsset }.map { mapOf("name" to it.name, "label" to it.label) },
         "liabilityTypeOptions" to NetWorthEntryType.entries.filter { !it.isAsset }.map { mapOf("name" to it.name, "label" to it.label) },
         "goals" to goals.map { goal -> financialGoalRowModel(goal, entries, scenarios, transactions, today) },
-        "scenarios" to scenarios.map(::scenarioRowModel),
+        "scenarios" to scenarios.map { scenario -> scenarioRowModel(scenario, categoryLabelById) },
         "growthPresets" to MarketGrowthPreset.entries.map { mapOf("name" to it.name, "label" to it.label, "annualRatePercent" to "%.1f".format(it.annualRate * 100)) },
+        // Only active categories are offered for the RRSP income-tagging
+        // selector - same "disabling stops new assignment" rule
+        // /categories uses elsewhere.
+        "incomeCategoryOptions" to activeCategories.map { mapOf("id" to it.id, "label" to it.label) },
         "message" to message,
         "error" to error
     )
@@ -87,7 +94,7 @@ private fun financialGoalRowModel(goal: FinancialGoal, entries: List<NetWorthEnt
     )
 }
 
-private fun scenarioRowModel(scenario: Scenario): Map<String, Any?> = mapOf(
+private fun scenarioRowModel(scenario: Scenario, categoryLabelById: Map<String, String>): Map<String, Any?> = mapOf(
     "id" to scenario.id,
     "name" to scenario.name,
     "annualMarketGrowthRatePercent" to "%.1f".format(scenario.annualMarketGrowthRate * 100),
@@ -100,5 +107,8 @@ private fun scenarioRowModel(scenario: Scenario): Map<String, Any?> = mapOf(
     "rrspMonthlyContribution" to (scenario.rrspMonthlyContribution?.let { "%.2f".format(it) } ?: ""),
     "rrspMarginalTaxRatePercent" to (scenario.rrspMarginalTaxRate?.let { "%.1f".format(it * 100) } ?: ""),
     "rrspRoomRemaining" to (scenario.rrspRoomRemaining?.let { "%.2f".format(it) } ?: ""),
-    "rrspReinvestRefund" to scenario.rrspReinvestRefund
+    "rrspReinvestRefund" to scenario.rrspReinvestRefund,
+    "rrspIncomeCategoryId" to (scenario.rrspIncomeCategoryId ?: ""),
+    "rrspIncomeCategoryLabel" to (scenario.rrspIncomeCategoryId?.let { categoryLabelById[it] ?: it }),
+    "rrspAnnualRoomAccrualCap" to (scenario.rrspAnnualRoomAccrualCap?.let { "%.2f".format(it) } ?: "")
 )

@@ -1407,9 +1407,8 @@ itself.
       is left (`minOf(contribution, roomRemaining)`) and always lands
       100% in the invested bucket, regardless of `investedSavingsFraction`
       - it's earmarked, not subject to the general cash/invested split.
-      No accrual of *new* room during the projection is modeled (that
-      needs an income figure this engine doesn't have) - room only ever
-      goes down.
+      Room only decreases here on its own; it's `rrspIncomeCategoryId`
+      below that lets it grow back.
     - Once every `RRSP_REFUND_INTERVAL_MONTHS` (12, a fixed anniversary of
       the projection's start date - not the real Jan-Dec tax year or
       actual filing/refund timing, a deliberate simplification), that
@@ -1445,6 +1444,36 @@ itself.
       (`contribution × contributor's marginal rate`) - the real spousal
       benefit (lower tax at the *other* spouse's withdrawal) only
       materializes at withdrawal, a phase this engine doesn't model.
+    - **`rrspIncomeCategoryId`/`rrspAnnualRoomAccrualCap`** (landed,
+      independent of the contribution trio above - room can accrue whether
+      or not this scenario is actively contributing): raised by a
+      maintainer scenario (a large existing RRSP room balance, a multi-year
+      $/yr catch-up contribution plan, and still accruing new room every
+      year off a high salary) that the trio alone couldn't represent
+      correctly - without accrual, room only ever depletes, so a catch-up
+      plan would show room running out sooner than it really would.
+      `rrspIncomeCategoryId` points at a household `Category`
+      (`CategoryStore.kt`) - the household tags their own salary/earned-
+      income transactions with it (e.g. a "Salary" category created for
+      this purpose) - and once a year (same `RRSP_REFUND_INTERVAL_MONTHS`
+      anniversary the refund uses) the engine sums that category's
+      trailing-12-month transaction total and adds 18% of it to
+      `rrspRoomRemaining`, real CRA math for how RRSP room accrues.
+      `RRSP_ROOM_ACCRUAL_RATE = 0.18` is hardcoded directly (unlike the
+      marginal tax rate) since it's a stable long-standing rule, not a
+      figure that changes yearly or by jurisdiction. The trailing-12-month
+      income figure is computed once and held constant for the whole
+      projection (same "trailing history repeats" simplification
+      `baselineMonthlySavingsRate` already uses) - the engine has no way to
+      project future income growth, only to read what's already tagged.
+      `rrspAnnualRoomAccrualCap` mirrors the marginal-rate reasoning
+      exactly: CRA also caps how much room can accrue per year, but that
+      dollar figure is real tax data that changes annually, so it's an
+      optional number the household looks up and enters (via `/planning`'s
+      "RRSP room accrual" section) rather than something this app hardcodes
+      or fetches - left blank, accrual is uncapped. `/planning`'s income-
+      category `<select>` only offers active categories, filtered/sorted
+      the same way `/categories`' own rule-target dropdown is.
 - **Gemini scenario-parameter suggestions** (not built) - see plan item 5
   in `current.md`, now scoped first at a "suggest my marginal tax rate"
   helper for the RRSP strategy above (reviewable, never authoritative -

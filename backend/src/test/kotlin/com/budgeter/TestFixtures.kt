@@ -316,11 +316,14 @@ class FakeScenarioRepository : ScenarioRepository {
         rrspMonthlyContribution: Double?,
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
-        rrspReinvestRefund: Boolean
+        rrspReinvestRefund: Boolean,
+        rrspIncomeCategoryId: String?,
+        rrspAnnualRoomAccrualCap: Double?
     ): Scenario {
         val scenario = Scenario(
             "scenario-${nextId++}", ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment,
-            salaryChangeDate, salaryChangeMonthlyDelta, rrspMonthlyContribution, rrspMarginalTaxRate, rrspRoomRemaining, rrspReinvestRefund
+            salaryChangeDate, salaryChangeMonthlyDelta, rrspMonthlyContribution, rrspMarginalTaxRate, rrspRoomRemaining, rrspReinvestRefund,
+            rrspIncomeCategoryId, rrspAnnualRoomAccrualCap
         )
         scenarios += scenario
         return scenario
@@ -338,7 +341,9 @@ class FakeScenarioRepository : ScenarioRepository {
         rrspMonthlyContribution: Double?,
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
-        rrspReinvestRefund: Boolean
+        rrspReinvestRefund: Boolean,
+        rrspIncomeCategoryId: String?,
+        rrspAnnualRoomAccrualCap: Double?
     ): Scenario? {
         val index = scenarios.indexOfFirst { it.id == id && it.ownerId == ownerId }
         if (index == -1) return null
@@ -352,7 +357,9 @@ class FakeScenarioRepository : ScenarioRepository {
             rrspMonthlyContribution = rrspMonthlyContribution,
             rrspMarginalTaxRate = rrspMarginalTaxRate,
             rrspRoomRemaining = rrspRoomRemaining,
-            rrspReinvestRefund = rrspReinvestRefund
+            rrspReinvestRefund = rrspReinvestRefund,
+            rrspIncomeCategoryId = rrspIncomeCategoryId,
+            rrspAnnualRoomAccrualCap = rrspAnnualRoomAccrualCap
         )
         scenarios[index] = updated
         return updated

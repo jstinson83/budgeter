@@ -105,6 +105,15 @@ data class ScenarioProjectionPoint(val date: LocalDate, val invested: Double, va
 // see Scenario's doc comment in ScenarioStore.kt.
 private const val RRSP_REFUND_INTERVAL_MONTHS = 12
 
+// The real CRA rule: RRSP room accrues each year as 18% of earned income
+// (capped at an annual dollar maximum that changes yearly - see
+// Scenario's rrspAnnualRoomAccrualCap doc comment in ScenarioStore.kt for
+// why that cap is a user-entered optional number, not hardcoded here).
+// 18% itself is a stable, long-standing rule (unlike the dollar cap or a
+// tax bracket), so it's safe to encode directly rather than asking the
+// household to type it in.
+private const val RRSP_ROOM_ACCRUAL_RATE = 0.18
+
 // totalRrspRefunds/finalRrspRoomRemaining are 0.0/the starting room
 // respectively for a scenario with no RRSP strategy - always present
 // (rather than nullable) so /planning's page model doesn't need to know
@@ -120,6 +129,15 @@ fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactio
     val startingCash = netWorthTotal(entries) - startingInvested
     val baselineRate = baselineMonthlySavingsRate(transactions, today)
     val monthlyGrowthRate = scenario.annualMarketGrowthRate / 12.0
+
+    // Held constant for the whole projection (the same "trailing history,
+    // assumed to repeat" simplification baselineMonthlySavingsRate already
+    // uses) - the engine has no way to project future income growth, only
+    // to read what a household has already tagged with this category.
+    val annualIncome = scenario.rrspIncomeCategoryId?.let { categoryId ->
+        val start = today.minusMonths(12)
+        transactions.filter { it.category == categoryId && !it.date.isBefore(start) && it.date.isBefore(today) }.sumOf { it.amount }
+    } ?: 0.0
 
     val startMonth = YearMonth.from(today)
     val endMonth = YearMonth.from(goal.targetDate)
@@ -145,9 +163,11 @@ fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactio
         // The RRSP contribution redirects part of this month's savings
         // into a fully-invested, room-limited bucket rather than adding
         // extra money on top - capped by whatever room is left, so the
-        // simulation can't keep contributing once the room is exhausted
-        // (no accrual of new room is modeled either, since that needs an
-        // income figure this engine doesn't have - see ScenarioStore.kt).
+        // simulation can't keep contributing once the room is exhausted.
+        // Room only decreases here unless rrspIncomeCategoryId is set (see
+        // the accrual step below), which is why "resume normal investing
+        // once caught up" falls out of this cap alone with no separate
+        // switch needed.
         val rrspContribution = if (scenario.rrspMonthlyContribution != null) {
             minOf(scenario.rrspMonthlyContribution, rrspRoomRemaining).coerceAtLeast(0.0)
         } else {
@@ -160,11 +180,23 @@ fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactio
         invested = invested * (1 + monthlyGrowthRate) + remainingSavings * scenario.investedSavingsFraction + rrspContribution
         cash += remainingSavings * (1 - scenario.investedSavingsFraction)
 
-        if (scenario.rrspMonthlyContribution != null && offset % RRSP_REFUND_INTERVAL_MONTHS == 0L) {
-            val refund = annualRrspContributions * (scenario.rrspMarginalTaxRate ?: 0.0)
-            if (scenario.rrspReinvestRefund) invested += refund else cash += refund
-            totalRrspRefunds += refund
-            annualRrspContributions = 0.0
+        if (offset % RRSP_REFUND_INTERVAL_MONTHS == 0L) {
+            if (scenario.rrspMonthlyContribution != null) {
+                val refund = annualRrspContributions * (scenario.rrspMarginalTaxRate ?: 0.0)
+                if (scenario.rrspReinvestRefund) invested += refund else cash += refund
+                totalRrspRefunds += refund
+                annualRrspContributions = 0.0
+            }
+            // New room accrues independently of whether this scenario is
+            // actively contributing - a household might track accrual
+            // without a current contribution plan, or (the catch-up case
+            // this was built for) keep accruing a little more room on top
+            // of a large existing pool being drawn down.
+            if (scenario.rrspIncomeCategoryId != null) {
+                val rawAccrual = annualIncome * RRSP_ROOM_ACCRUAL_RATE
+                val accrual = scenario.rrspAnnualRoomAccrualCap?.let { cap -> minOf(rawAccrual, cap) } ?: rawAccrual
+                rrspRoomRemaining += accrual.coerceAtLeast(0.0)
+            }
         }
 
         points += ScenarioProjectionPoint(monthStart, invested, cash)
