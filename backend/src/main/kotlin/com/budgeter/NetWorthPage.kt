@@ -52,7 +52,7 @@ private fun financialGoalRowModel(goal: FinancialGoal, entries: List<NetWorthEnt
     val scenarioProjections = scenarios.map { scenario -> scenario to projectScenario(scenario, entries, transactions, goal, today) }
     val chart = projectionChartModel(
         projection.points,
-        scenarioProjections.map { (scenario, points) -> scenario.name to points.map { ProjectionPoint(it.date, it.netWorth) } },
+        scenarioProjections.map { (scenario, result) -> scenario.name to result.points.map { ProjectionPoint(it.date, it.netWorth) } },
         goal.resolvedTargetAmount()
     )
     return mapOf(
@@ -73,12 +73,15 @@ private fun financialGoalRowModel(goal: FinancialGoal, entries: List<NetWorthEnt
         "chartGoalY" to chart.goalY,
         "chartMinLabel" to chart.minLabel,
         "chartMaxLabel" to chart.maxLabel,
-        "scenarioOutcomes" to scenarioProjections.map { (scenario, points) ->
-            val finalNetWorth = points.last().netWorth
+        "scenarioOutcomes" to scenarioProjections.map { (scenario, result) ->
+            val finalNetWorth = result.points.last().netWorth
             mapOf(
                 "name" to scenario.name,
                 "projectedFinal" to "%.2f".format(finalNetWorth),
-                "onTrack" to (finalNetWorth >= goal.resolvedTargetAmount())
+                "onTrack" to (finalNetWorth >= goal.resolvedTargetAmount()),
+                "hasRrspStrategy" to (scenario.rrspMonthlyContribution != null),
+                "totalRrspRefunds" to "%.2f".format(result.totalRrspRefunds),
+                "finalRrspRoomRemaining" to "%.2f".format(result.finalRrspRoomRemaining)
             )
         }
     )
@@ -92,5 +95,10 @@ private fun scenarioRowModel(scenario: Scenario): Map<String, Any?> = mapOf(
     "recreationalSpendAdjustment" to "%.2f".format(scenario.recreationalSpendAdjustment),
     "hasSalaryChange" to (scenario.salaryChangeDate != null),
     "salaryChangeDate" to (scenario.salaryChangeDate?.toString() ?: ""),
-    "salaryChangeMonthlyDelta" to (scenario.salaryChangeMonthlyDelta?.let { "%.2f".format(it) } ?: "")
+    "salaryChangeMonthlyDelta" to (scenario.salaryChangeMonthlyDelta?.let { "%.2f".format(it) } ?: ""),
+    "hasRrspStrategy" to (scenario.rrspMonthlyContribution != null),
+    "rrspMonthlyContribution" to (scenario.rrspMonthlyContribution?.let { "%.2f".format(it) } ?: ""),
+    "rrspMarginalTaxRatePercent" to (scenario.rrspMarginalTaxRate?.let { "%.1f".format(it * 100) } ?: ""),
+    "rrspRoomRemaining" to (scenario.rrspRoomRemaining?.let { "%.2f".format(it) } ?: ""),
+    "rrspReinvestRefund" to scenario.rrspReinvestRefund
 )

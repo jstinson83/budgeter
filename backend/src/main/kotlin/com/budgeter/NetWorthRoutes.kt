@@ -102,7 +102,8 @@ fun Route.netWorthRoutes(
             ?: return@post call.respondRedirect("/planning?error=${"Invalid scenario".encodeURLQueryComponent()}")
         val scenario = scenarioStore.add(
             ownerId, input.name, input.annualMarketGrowthRate, input.investedSavingsFraction,
-            input.recreationalSpendAdjustment, input.salaryChangeDate, input.salaryChangeMonthlyDelta
+            input.recreationalSpendAdjustment, input.salaryChangeDate, input.salaryChangeMonthlyDelta,
+            input.rrspMonthlyContribution, input.rrspMarginalTaxRate, input.rrspRoomRemaining, input.rrspReinvestRefund
         )
         call.respondRedirect("/planning?message=${"Added ${scenario.name}".encodeURLQueryComponent()}")
     }
@@ -115,7 +116,8 @@ fun Route.netWorthRoutes(
             ?: return@post call.respondRedirect("/planning?error=${"Invalid scenario".encodeURLQueryComponent()}")
         val updated = scenarioStore.update(
             ownerId, id, input.name, input.annualMarketGrowthRate, input.investedSavingsFraction,
-            input.recreationalSpendAdjustment, input.salaryChangeDate, input.salaryChangeMonthlyDelta
+            input.recreationalSpendAdjustment, input.salaryChangeDate, input.salaryChangeMonthlyDelta,
+            input.rrspMonthlyContribution, input.rrspMarginalTaxRate, input.rrspRoomRemaining, input.rrspReinvestRefund
         )
         val message = if (updated != null) "Updated ${updated.name}" else "Scenario not found"
         val param = if (updated != null) "message" else "error"
@@ -184,13 +186,19 @@ private data class ScenarioFormInput(
     val investedSavingsFraction: Double,
     val recreationalSpendAdjustment: Double,
     val salaryChangeDate: LocalDate?,
-    val salaryChangeMonthlyDelta: Double?
+    val salaryChangeMonthlyDelta: Double?,
+    val rrspMonthlyContribution: Double?,
+    val rrspMarginalTaxRate: Double?,
+    val rrspRoomRemaining: Double?,
+    val rrspReinvestRefund: Boolean
 )
 
-// The salary-change fields are optional as a pair - both present or both
-// absent/blank, never just one (a date with no delta, or a delta with no
-// date, isn't a coherent event) - see ScenarioStore.kt's Scenario doc
-// comment for why this is a single optional event rather than a list.
+// The salary-change fields are optional as a pair, and the RRSP fields as
+// a trio - all present or all absent/blank within their own group, never
+// partially filled in (a date with no delta isn't a coherent salary
+// event; a contribution with no room cap isn't a coherent RRSP strategy)
+// - see ScenarioStore.kt's Scenario doc comment for why both are single
+// optional groups rather than lists.
 private fun parseScenarioForm(formParams: Parameters): ScenarioFormInput? {
     val name = formParams["name"]?.trim().orEmpty()
     if (name.isEmpty()) return null
@@ -209,12 +217,30 @@ private fun parseScenarioForm(formParams: Parameters): ScenarioFormInput? {
         }
     }
 
+    val rrspContributionInput = formParams["rrspMonthlyContribution"]?.trim().orEmpty()
+    val rrspTaxRateInput = formParams["rrspMarginalTaxRatePercent"]?.trim().orEmpty()
+    val rrspRoomInput = formParams["rrspRoomRemaining"]?.trim().orEmpty()
+    val (rrspMonthlyContribution, rrspMarginalTaxRate, rrspRoomRemaining) = when {
+        rrspContributionInput.isEmpty() && rrspTaxRateInput.isEmpty() && rrspRoomInput.isEmpty() -> Triple(null, null, null)
+        else -> {
+            val contribution = rrspContributionInput.toDoubleOrNull()?.takeIf { it >= 0 } ?: return null
+            val taxRatePercent = rrspTaxRateInput.toDoubleOrNull()?.takeIf { it in 0.0..100.0 } ?: return null
+            val room = rrspRoomInput.toDoubleOrNull()?.takeIf { it >= 0 } ?: return null
+            Triple(contribution, taxRatePercent / 100.0, room)
+        }
+    }
+    val rrspReinvestRefund = formParams["rrspReinvestRefund"] != null
+
     return ScenarioFormInput(
         name,
         annualMarketGrowthRatePercent / 100.0,
         investedSavingsFractionPercent / 100.0,
         recreationalSpendAdjustment,
         salaryChangeDate,
-        salaryChangeMonthlyDelta
+        salaryChangeMonthlyDelta,
+        rrspMonthlyContribution,
+        rrspMarginalTaxRate,
+        rrspRoomRemaining,
+        rrspReinvestRefund
     )
 }

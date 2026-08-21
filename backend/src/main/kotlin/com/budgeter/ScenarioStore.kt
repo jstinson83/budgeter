@@ -9,7 +9,8 @@ import java.time.LocalDate
 // projectScenario), so a goal's /planning chart can show multiple lines
 // side by side instead of just the always-shown baseline. No Gemini here
 // - a scenario's numbers are typed in directly or picked from a preset;
-// Gemini only *suggests* values in the later, optional slice 5.
+// Gemini only *suggests* values in a later, optional slice, and even then
+// never touches the arithmetic itself.
 
 // Historical-benchmark presets, not fetched from any market data source -
 // see context.md's Financial Planning Projections subsystem section for
@@ -42,13 +43,36 @@ data class Scenario(
     // recreational" tag to key off of.
     val recreationalSpendAdjustment: Double,
     // At most one dated step change to the monthly savings rate (e.g. a
-    // raise), effective from its date onward - deliberately singular for
-    // this slice rather than a list, to avoid a dynamic add-row form in an
-    // app with no JS framework (see analysis.ftl/CLAUDE.md); revisit if a
-    // household actually needs to model more than one change. Both null,
-    // or both set - never just one.
+    // raise, or a negative delta for a deliberate pay cut - e.g. switching
+    // to a lower-stress role), effective from its date onward - deliberately
+    // singular for this slice rather than a list, to avoid a dynamic
+    // add-row form in an app with no JS framework (see analysis.ftl/
+    // CLAUDE.md); revisit if a household actually needs to model more than
+    // one change. Both null, or both set - never just one.
     val salaryChangeDate: LocalDate? = null,
-    val salaryChangeMonthlyDelta: Double? = null
+    val salaryChangeMonthlyDelta: Double? = null,
+    // At most one RRSP contribution strategy - all three null, or all
+    // three set (rrspReinvestRefund always has a value since it's a plain
+    // boolean, but only matters when the other three are set). Modeled as
+    // its own group rather than folded into recreationalSpendAdjustment
+    // because it has effects that plain savings don't: it draws down a
+    // finite pool (rrspRoomRemaining) and triggers a once-a-year tax
+    // refund rather than growing continuously - see
+    // ProjectionEngine.kt's projectScenario for the mechanics.
+    //
+    // rrspMarginalTaxRate is a single flat rate the household provides,
+    // not a real federal+provincial bracket table - see context.md's
+    // Financial Planning Projections subsystem section for why this app
+    // doesn't hardcode tax law (it changes yearly/by province, and this
+    // app has no web-connected Gemini call, only training-data recall -
+    // wrong or stale numbers here have real financial consequences in a
+    // way a growth-rate guess doesn't). A Gemini-suggested starting value
+    // is a later, clearly-labeled-as-an-estimate addition, not a live
+    // lookup.
+    val rrspMonthlyContribution: Double? = null,
+    val rrspMarginalTaxRate: Double? = null,
+    val rrspRoomRemaining: Double? = null,
+    val rrspReinvestRefund: Boolean = false
 )
 
 interface ScenarioRepository {
@@ -60,7 +84,11 @@ interface ScenarioRepository {
         investedSavingsFraction: Double,
         recreationalSpendAdjustment: Double,
         salaryChangeDate: LocalDate?,
-        salaryChangeMonthlyDelta: Double?
+        salaryChangeMonthlyDelta: Double?,
+        rrspMonthlyContribution: Double?,
+        rrspMarginalTaxRate: Double?,
+        rrspRoomRemaining: Double?,
+        rrspReinvestRefund: Boolean
     ): Scenario
 
     suspend fun update(
@@ -71,7 +99,11 @@ interface ScenarioRepository {
         investedSavingsFraction: Double,
         recreationalSpendAdjustment: Double,
         salaryChangeDate: LocalDate?,
-        salaryChangeMonthlyDelta: Double?
+        salaryChangeMonthlyDelta: Double?,
+        rrspMonthlyContribution: Double?,
+        rrspMarginalTaxRate: Double?,
+        rrspRoomRemaining: Double?,
+        rrspReinvestRefund: Boolean
     ): Scenario?
 
     suspend fun delete(ownerId: String, id: String)
@@ -87,11 +119,25 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         investedSavingsFraction: Double,
         recreationalSpendAdjustment: Double,
         salaryChangeDate: LocalDate?,
-        salaryChangeMonthlyDelta: Double?
+        salaryChangeMonthlyDelta: Double?,
+        rrspMonthlyContribution: Double?,
+        rrspMarginalTaxRate: Double?,
+        rrspRoomRemaining: Double?,
+        rrspReinvestRefund: Boolean
     ): Scenario {
         val docRef = collection.document()
-        docRef.set(scenarioMap(ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment, salaryChangeDate, salaryChangeMonthlyDelta)).get()
-        return Scenario(docRef.id, ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment, salaryChangeDate, salaryChangeMonthlyDelta)
+        docRef.set(
+            scenarioMap(
+                ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment,
+                salaryChangeDate, salaryChangeMonthlyDelta, rrspMonthlyContribution, rrspMarginalTaxRate,
+                rrspRoomRemaining, rrspReinvestRefund
+            )
+        ).get()
+        return Scenario(
+            docRef.id, ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment,
+            salaryChangeDate, salaryChangeMonthlyDelta, rrspMonthlyContribution, rrspMarginalTaxRate,
+            rrspRoomRemaining, rrspReinvestRefund
+        )
     }
 
     // Single-field ownerId equality filter, no orderBy - same
@@ -110,17 +156,31 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         investedSavingsFraction: Double,
         recreationalSpendAdjustment: Double,
         salaryChangeDate: LocalDate?,
-        salaryChangeMonthlyDelta: Double?
+        salaryChangeMonthlyDelta: Double?,
+        rrspMonthlyContribution: Double?,
+        rrspMarginalTaxRate: Double?,
+        rrspRoomRemaining: Double?,
+        rrspReinvestRefund: Boolean
     ): Scenario? {
         val existing = get(ownerId, id) ?: return null
-        collection.document(id).set(scenarioMap(ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment, salaryChangeDate, salaryChangeMonthlyDelta)).get()
+        collection.document(id).set(
+            scenarioMap(
+                ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment,
+                salaryChangeDate, salaryChangeMonthlyDelta, rrspMonthlyContribution, rrspMarginalTaxRate,
+                rrspRoomRemaining, rrspReinvestRefund
+            )
+        ).get()
         return existing.copy(
             name = name,
             annualMarketGrowthRate = annualMarketGrowthRate,
             investedSavingsFraction = investedSavingsFraction,
             recreationalSpendAdjustment = recreationalSpendAdjustment,
             salaryChangeDate = salaryChangeDate,
-            salaryChangeMonthlyDelta = salaryChangeMonthlyDelta
+            salaryChangeMonthlyDelta = salaryChangeMonthlyDelta,
+            rrspMonthlyContribution = rrspMonthlyContribution,
+            rrspMarginalTaxRate = rrspMarginalTaxRate,
+            rrspRoomRemaining = rrspRoomRemaining,
+            rrspReinvestRefund = rrspReinvestRefund
         )
     }
 
@@ -144,7 +204,11 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         investedSavingsFraction: Double,
         recreationalSpendAdjustment: Double,
         salaryChangeDate: LocalDate?,
-        salaryChangeMonthlyDelta: Double?
+        salaryChangeMonthlyDelta: Double?,
+        rrspMonthlyContribution: Double?,
+        rrspMarginalTaxRate: Double?,
+        rrspRoomRemaining: Double?,
+        rrspReinvestRefund: Boolean
     ): Map<String, Any?> = mapOf(
         "ownerId" to ownerId,
         "name" to name,
@@ -152,7 +216,11 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         "investedSavingsFraction" to investedSavingsFraction,
         "recreationalSpendAdjustment" to recreationalSpendAdjustment,
         "salaryChangeDate" to salaryChangeDate?.toString(),
-        "salaryChangeMonthlyDelta" to salaryChangeMonthlyDelta
+        "salaryChangeMonthlyDelta" to salaryChangeMonthlyDelta,
+        "rrspMonthlyContribution" to rrspMonthlyContribution,
+        "rrspMarginalTaxRate" to rrspMarginalTaxRate,
+        "rrspRoomRemaining" to rrspRoomRemaining,
+        "rrspReinvestRefund" to rrspReinvestRefund
     )
 
     private fun toScenario(id: String, data: Map<String, Any?>): Scenario = Scenario(
@@ -163,6 +231,10 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         investedSavingsFraction = (data["investedSavingsFraction"] as? Number)?.toDouble() ?: 1.0,
         recreationalSpendAdjustment = (data["recreationalSpendAdjustment"] as? Number)?.toDouble() ?: 0.0,
         salaryChangeDate = (data["salaryChangeDate"] as? String)?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
-        salaryChangeMonthlyDelta = (data["salaryChangeMonthlyDelta"] as? Number)?.toDouble()
+        salaryChangeMonthlyDelta = (data["salaryChangeMonthlyDelta"] as? Number)?.toDouble(),
+        rrspMonthlyContribution = (data["rrspMonthlyContribution"] as? Number)?.toDouble(),
+        rrspMarginalTaxRate = (data["rrspMarginalTaxRate"] as? Number)?.toDouble(),
+        rrspRoomRemaining = (data["rrspRoomRemaining"] as? Number)?.toDouble(),
+        rrspReinvestRefund = data["rrspReinvestRefund"] as? Boolean ?: false
     )
 }
