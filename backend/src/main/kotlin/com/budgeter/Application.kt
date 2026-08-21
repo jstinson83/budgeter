@@ -184,7 +184,7 @@ fun Application.module(
             transactionRoutes(transactionStore)
             analysisRoutes(transactionStore, categorizationRuleStore, categoryStore, categorizationJobManager)
             categoryRoutes(categoryStore, categorizationRuleStore, transactionStore)
-            netWorthRoutes(netWorthEntryStore, financialGoalStore, scenarioStore, transactionStore)
+            netWorthRoutes(netWorthEntryStore, financialGoalStore, scenarioStore, transactionStore, categoryStore)
             houseRoutes(
                 houseDocumentStore,
                 houseFactStore,

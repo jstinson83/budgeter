@@ -490,4 +490,47 @@ class NetWorthRoutesTest {
         assertTrue(page.contains("Plain growth"))
         assertFalse(page.contains("in RRSP refunds"))
     }
+
+    @Test
+    fun testPlanningPageOffersTheHouseholdsActiveCategoriesForRrspRoomAccrual() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        client.get("/categories") // seeds the built-in categories, including INCOME
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("""<option value="INCOME">Income</option>"""))
+    }
+
+    @Test
+    fun testAddingAScenarioWithAnIncomeCategoryPersistsTheSelection() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        client.get("/categories") // seeds the built-in categories
+
+        client.post("/planning/scenarios") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody(
+                "name=Catch-up&annualMarketGrowthRatePercent=7&investedSavingsFractionPercent=100&recreationalSpendAdjustment=0" +
+                    "&rrspIncomeCategoryId=INCOME&rrspAnnualRoomAccrualCap=31560"
+            )
+        }
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("""value="INCOME" selected"""))
+        assertTrue(page.contains("value=\"31560.00\""))
+    }
+
+    @Test
+    fun testAddingAScenarioWithNoIncomeCategorySelectedLeavesItUnset() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        client.post("/planning/scenarios") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=No accrual&annualMarketGrowthRatePercent=7&investedSavingsFractionPercent=100&recreationalSpendAdjustment=0")
+        }
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertFalse(page.contains("selected>Income"))
+    }
 }

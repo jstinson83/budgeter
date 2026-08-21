@@ -231,4 +231,51 @@ class ProjectionEngineTest {
         assertEquals(0.0, result.totalRrspRefunds, 0.001)
         assertEquals(0.0, result.finalRrspRoomRemaining, 0.001)
     }
+
+    @Test
+    fun testProjectScenarioAccruesRrspRoomFromTheTaggedIncomeCategoryOnceAYear() {
+        val entries = emptyList<NetWorthEntry>()
+        // Tagged as the household's income category, within the trailing
+        // 12-month window the accrual is computed from.
+        val transactions = listOf(tx("1", "2026-08-01", 500000.0, "SALARY"))
+        val scenario = Scenario(
+            "s1", "owner", "Catch-up", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
+            rrspRoomRemaining = 0.0, rrspIncomeCategoryId = "SALARY"
+        )
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
+
+        val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+
+        assertEquals(90000.0, result.finalRrspRoomRemaining, 0.01) // 500000 * 18%
+    }
+
+    @Test
+    fun testProjectScenarioCapsRrspRoomAccrualAtTheAnnualCapWhenSet() {
+        val entries = emptyList<NetWorthEntry>()
+        val transactions = listOf(tx("1", "2026-08-01", 500000.0, "SALARY")) // 18% would be 90000, well above the cap
+        val scenario = Scenario(
+            "s1", "owner", "Catch-up", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
+            rrspRoomRemaining = 0.0, rrspIncomeCategoryId = "SALARY", rrspAnnualRoomAccrualCap = 31560.0
+        )
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
+
+        val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+
+        assertEquals(31560.0, result.finalRrspRoomRemaining, 0.01)
+    }
+
+    @Test
+    fun testProjectScenarioWithNoIncomeCategorySetNeverAccruesRoom() {
+        val entries = emptyList<NetWorthEntry>()
+        val transactions = listOf(tx("1", "2026-08-01", 500000.0, "SALARY")) // present, but not tagged in the scenario
+        val scenario = Scenario(
+            "s1", "owner", "No accrual", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
+            rrspRoomRemaining = 5000.0
+        )
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
+
+        val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+
+        assertEquals(5000.0, result.finalRrspRoomRemaining, 0.01) // unchanged - no rrspIncomeCategoryId set
+    }
 }

@@ -212,6 +212,9 @@
       <p class="dashboard-card-note">
         <strong>RRSP strategy</strong> (optional) models diverting part of your savings into an RRSP: it's capped by the contribution room you enter, and once a year it triggers a refund (contributions that year &times; your marginal tax rate), which you can either keep as cash or reinvest. Your marginal rate and RRSP room are numbers you look up and enter yourself - this app never fetches or guesses tax figures.
       </p>
+      <p class="dashboard-card-note">
+        <strong>RRSP room accrual</strong> (optional, independent of the strategy above) grows your remaining room each year instead of leaving it fixed: 18% of whatever category you tag as income, summed over the trailing 12 months. Tag your salary transactions with a category first (on <a href="/categories">Categories</a>), then pick it here. The optional annual cap mirrors the marginal tax rate above - CRA sets one, but it changes yearly, so it's a number you look up and enter rather than one this app assumes.
+      </p>
       <#if (scenarios?size == 0)>
       <p class="empty-state">No scenarios yet.</p>
       <#else>
@@ -265,6 +268,22 @@
               <div class="form-field">
                 <span class="form-field-label">Refund handling</span>
                 <label><input type="checkbox" name="rrspReinvestRefund" <#if scenario.rrspReinvestRefund>checked</#if>> Reinvest into investments</label>
+              </div>
+            </div>
+            <p class="field-label">RRSP room accrual (optional)</p>
+            <div class="form-row">
+              <div class="form-field">
+                <span class="form-field-label">Income category</span>
+                <select name="rrspIncomeCategoryId">
+                  <option value="">None</option>
+                  <#list incomeCategoryOptions as option>
+                  <option value="${option.id}" <#if option.id == scenario.rrspIncomeCategoryId>selected</#if>>${option.label}</option>
+                  </#list>
+                </select>
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">Annual accrual cap ($, optional)</span>
+                <input type="number" name="rrspAnnualRoomAccrualCap" value="${scenario.rrspAnnualRoomAccrualCap}" step="0.01" min="0">
               </div>
             </div>
             <button type="submit" class="button button-small button-save">Save</button>
@@ -334,6 +353,22 @@
           <div class="form-field">
             <span class="form-field-label">Refund handling</span>
             <label><input type="checkbox" name="rrspReinvestRefund"> Reinvest into investments</label>
+          </div>
+        </div>
+        <p class="field-label">RRSP room accrual (optional)</p>
+        <div class="form-row">
+          <div class="form-field">
+            <span class="form-field-label">Income category</span>
+            <select name="rrspIncomeCategoryId">
+              <option value="">None</option>
+              <#list incomeCategoryOptions as option>
+              <option value="${option.id}">${option.label}</option>
+              </#list>
+            </select>
+          </div>
+          <div class="form-field">
+            <span class="form-field-label">Annual accrual cap ($, optional)</span>
+            <input type="number" name="rrspAnnualRoomAccrualCap" step="0.01" min="0">
           </div>
         </div>
         <button type="submit" class="button">Add scenario</button>
