@@ -32,11 +32,11 @@ did - see `CLAUDE.md`'s gotcha writeup on why that was inaccurate) plus a
 proper projection engine need to come first. Explicitly a prerequisite for
 Phase 2 onward below, not a separate feature - "insert a project's cost
 into the goal projection" becomes "run the engine with the project's cost
-added as an event" once this lands. Working in slices, smallest first:
+added as an event" once this lands. Slice 1 (`NetWorthEntry` CRUD - manual
+assets/liabilities, `/planning` page with current net worth) is done -
+see `context.md`'s Financial Planning Projections subsystem section.
+Working in slices, smallest first:
 
-- [ ] 1. `NetWorthEntry` CRUD (manual assets/liabilities: BANK,
-      INVESTMENT, REAL_ESTATE, OTHER_ASSET / CREDIT_CARD, LOC, MORTGAGE,
-      OTHER_LIABILITY) + a page showing current net worth.
 - [ ] 2. `FinancialGoal` CRUD (net worth target by date, or retirement
       target via a withdrawal-rate rule).
 - [ ] 3. Projection engine (pure Kotlin, no I/O) - baseline-only scenario

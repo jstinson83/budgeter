@@ -65,11 +65,19 @@ list doesn't make obvious:
   already attached. Projects also link facts/documents directly and
   accumulate their own note/quote/photo/link feed, independent of whether
   they originated from a recommendation.
+- **Financial Planning Projections** (in progress — see below) is a
+  deterministic net worth projection engine, separate from Transactions &
+  Analysis's per-month category view: a manual net worth baseline plus
+  salary/market-growth/spending scenarios projected forward against a
+  goal (target net worth or retirement). Superseded the plain
+  savings-rate approach the section below originally planned, and is now
+  a prerequisite for it rather than a peer feature.
 - **Financial Goals & Project Feasibility** (planned, not built — see
-  below) is the missing bridge: it will read Transactions & Analysis (for
-  a rolling savings rate) and Projects (for cost/timing) to judge whether
-  a project's cost fits a savings goal. This is the first feature that
-  will connect the financial and project sides of the app.
+  below) is the missing bridge: it will read the projection engine above
+  and Projects (for cost/timing) to judge whether a project's cost still
+  lets a goal get hit — inserting the project's cost as an event into the
+  projection rather than a static cost comparison. This is the first
+  feature that will connect the financial and project sides of the app.
 
 ---
 
@@ -1263,24 +1271,83 @@ its name proximity to House/Projects in the old flat nav.
 
 ---
 
+## Subsystem: Financial Planning Projections (in progress, design 2026-08-21)
+
+Design discussed and agreed 2026-08-21, see `current.md` for the sliced
+plan (slice 1 - `NetWorthEntry` CRUD - is the only slice landed so far).
+A deterministic net worth projection engine, deliberately kept separate
+from Gemini for the actual arithmetic - Gemini's only role anywhere in
+this subsystem is an optional, additive later slice that *suggests*
+scenario parameter values from spending trends, never the projection math
+itself.
+
+- **`NetWorthEntry`** (`NetWorthStore.kt`, landed): a manual, per-owner
+  asset or liability line item - `label`, `NetWorthEntryType` (`BANK`,
+  `INVESTMENT`, `REAL_ESTATE`, `OTHER_ASSET` / `CREDIT_CARD`, `LOC`,
+  `MORTGAGE`, `OTHER_LIABILITY`, each with an `isAsset` flag), `value`.
+  `value` is always entered as a non-negative magnitude regardless of
+  asset/liability - `netWorthTotal()` derives the sign from `type.isAsset`
+  (sum assets, subtract liabilities) rather than relying on a signed input
+  convention. CRUD at `/planning` (`NetWorthRoutes.kt`/`planning.ftl`), a
+  new tab in the Finances tab group alongside Analysis/Transactions/
+  Categories.
+  - Deliberately manual rather than derived from `Transaction` balances -
+    see CLAUDE.md's "Dashboard net position gotcha" for why the earlier
+    balance-summing approach was pulled (silently incomplete for
+    non-CSV-imported accounts like investments/real estate, plus a sign
+    bug from treating an already-negative CSV balance as a positive
+    amount owed). Manual entry with a type-derived sign sidesteps both
+    failure modes at once rather than re-fixing the old approach.
+  - No built-in seeding the way `CategoryRepository` seeds
+    `BUILT_IN_CATEGORIES` - there's no sensible default set of assets/
+    liabilities the way there is for spending categories, so `/planning`
+    starts genuinely empty until the household adds their own.
+- **`FinancialGoal`** (not built) - net worth target by date, or a
+  retirement target via a withdrawal-rate rule (e.g. 4%).
+- **Projection engine** (not built) - pure Kotlin, no I/O: monthly
+  time-step from today to the goal date, baseline scenario derived from
+  trailing-average income/expense in `Transaction`/`Category` history
+  (same `TRANSFER`/`INVESTMENT`-excluded convention `/analysis` already
+  uses), applied on top of the `NetWorthEntry` baseline above.
+- **Scenarios** (not built) - salary-change events (`{date,
+  newAnnualIncome}`), one blanket market growth rate per scenario
+  (user-set, with historical-benchmark presets - not fetched from any
+  market data API, since the number needed is an assumed *future* rate,
+  not today's price), and a recreational-spend-vs-savings knob. Multiple
+  scenarios run through the same engine, compared side by side.
+- **Gemini scenario-parameter suggestions** (not built, last slice) - an
+  optional, skippable call that proposes parameter values (e.g. a
+  stress-test growth-rate range) from real spending trends via a
+  constrained `responseSchema`, same pattern as `GeminiTransactionCategorizer`.
+  Additive only - the feature works completely without it.
+
+This is an explicit prerequisite for the "Financial Goals & Project
+Feasibility" section below, not a peer feature: a `Project`'s cost/timing
+will plug into this engine as an event once it exists, rather than the
+flat savings-rate projection that section originally planned.
+
 ## Subsystem: Financial Goals & Project Feasibility (planned, 2026-08-17)
 
 Not built yet - design discussed 2026-08-17, see `current.md` for the
 chunked plan. Connects the two halves of the app that have so far been
-separate (see "System map" above): Transactions & Analysis (financial) and
-House Projects & Recommendations (`Project`). The core idea: track a
-savings goal (e.g. "save 70k this year"), compute a rolling savings rate
-from actual transaction history, and judge project feasibility by
-projecting that rate forward to the goal's target date with the project's
-cost inserted at its planned timing - not just a static "this project
-costs X" comparison.
+separate (see "System map" above): Financial Planning Projections
+(above) and House Projects & Recommendations (`Project`). The core idea,
+now updated to build on the projection engine above instead of a flat
+savings rate: track a goal (net worth target or retirement, see above),
+and judge project feasibility by running the projection engine with the
+project's cost inserted at its planned timing - not just a static "this
+project costs X" comparison.
 
 Chosen over the simpler static-comparison version specifically because
 timing and recurring costs matter: a project's impact on hitting a
 year-end goal depends on *when* the money leaves and whether it changes
 the ongoing monthly rate, not just its total cost.
 
-Primitives identified:
+Primitives identified (2026-08-17, before the projection-engine
+prerequisite above existed - `SavingsGoal`/"savings rate" below are
+superseded by `FinancialGoal`/the projection engine and are kept here only
+for the still-valid itemized-cost/timing/feasibility reasoning; update the
+first two bullets to match the new primitives once the engine lands):
 
 - **`SavingsGoal`**: target amount + target date + start date, the thing a
   savings rate and a project's cost are ultimately measured against. Not
