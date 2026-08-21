@@ -58,6 +58,7 @@ fun ApplicationTestBuilder.testModule(
     categorizationRuleStore: CategorizationRuleRepository = FakeCategorizationRuleRepository(),
     categoryStore: CategoryRepository = FakeCategoryRepository(),
     netWorthEntryStore: NetWorthEntryRepository = FakeNetWorthEntryRepository(),
+    financialGoalStore: FinancialGoalRepository = FakeFinancialGoalRepository(),
     houseDocumentStore: HouseDocumentRepository = FakeHouseDocumentRepository(),
     houseFactStore: HouseFactRepository = FakeHouseFactRepository(),
     documentBlobStore: DocumentBlobStore = FakeDocumentBlobStore(),
@@ -80,6 +81,7 @@ fun ApplicationTestBuilder.testModule(
             categorizationRuleStore = categorizationRuleStore,
             categoryStore = categoryStore,
             netWorthEntryStore = netWorthEntryStore,
+            financialGoalStore = financialGoalStore,
             houseDocumentStore = houseDocumentStore,
             houseFactStore = houseFactStore,
             documentBlobStore = documentBlobStore,
@@ -237,6 +239,58 @@ class FakeNetWorthEntryRepository : NetWorthEntryRepository {
 
     override suspend fun delete(ownerId: String, id: String) {
         entries.removeAll { it.id == id && it.ownerId == ownerId }
+    }
+}
+
+// In-memory stand-in for FirestoreFinancialGoalStore - mirrors its
+// soonest-target-date-first sort order.
+class FakeFinancialGoalRepository : FinancialGoalRepository {
+    private val goals = mutableListOf<FinancialGoal>()
+    private var nextId = 0
+
+    override suspend fun all(ownerId: String): List<FinancialGoal> =
+        goals.filter { it.ownerId == ownerId }.sortedBy { it.targetDate }
+
+    override suspend fun add(
+        ownerId: String,
+        name: String,
+        type: FinancialGoalType,
+        targetDate: java.time.LocalDate,
+        targetAmount: Double?,
+        annualSpend: Double?,
+        withdrawalRate: Double?
+    ): FinancialGoal {
+        val goal = FinancialGoal("financial-goal-${nextId++}", ownerId, name, type, targetDate, targetAmount, annualSpend, withdrawalRate)
+        goals += goal
+        return goal
+    }
+
+    override suspend fun update(
+        ownerId: String,
+        id: String,
+        name: String,
+        type: FinancialGoalType,
+        targetDate: java.time.LocalDate,
+        targetAmount: Double?,
+        annualSpend: Double?,
+        withdrawalRate: Double?
+    ): FinancialGoal? {
+        val index = goals.indexOfFirst { it.id == id && it.ownerId == ownerId }
+        if (index == -1) return null
+        val updated = goals[index].copy(
+            name = name,
+            type = type,
+            targetDate = targetDate,
+            targetAmount = targetAmount,
+            annualSpend = annualSpend,
+            withdrawalRate = withdrawalRate
+        )
+        goals[index] = updated
+        return updated
+    }
+
+    override suspend fun delete(ownerId: String, id: String) {
+        goals.removeAll { it.id == id && it.ownerId == ownerId }
     }
 }
 
