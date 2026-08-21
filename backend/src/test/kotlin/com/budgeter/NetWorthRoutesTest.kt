@@ -266,4 +266,36 @@ class NetWorthRoutesTest {
         val afterDelete = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
         assertTrue(afterDelete.contains("No goals yet."))
     }
+
+    @Test
+    fun testAGoalAlreadyAboveItsTargetRendersAsOnTrackWithAProjectionChart() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        client.post("/planning/entries") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("label=Chequing&type=BANK&value=100000.00")
+        }
+        client.post("/planning/goals") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Easy goal&type=NET_WORTH_TARGET&targetDate=2026-09-01&targetAmount=50000.00")
+        }
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("class=\"projection-chart\""))
+        assertTrue(page.contains("on track"))
+        assertFalse(page.contains("short by"))
+    }
+
+    @Test
+    fun testAGoalFarBelowItsTargetRendersAsShortBy() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        client.post("/planning/goals") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Hard goal&type=NET_WORTH_TARGET&targetDate=2026-09-01&targetAmount=1000000.00")
+        }
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("short by"))
+    }
 }

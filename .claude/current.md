@@ -32,15 +32,12 @@ did - see `CLAUDE.md`'s gotcha writeup on why that was inaccurate) plus a
 proper projection engine need to come first. Explicitly a prerequisite for
 Phase 2 onward below, not a separate feature - "insert a project's cost
 into the goal projection" becomes "run the engine with the project's cost
-added as an event" once this lands. Slices 1-2 are done - `NetWorthEntry`
-CRUD (manual assets/liabilities) and `FinancialGoal` CRUD (net worth
-target by date, or retirement via a withdrawal-rate rule), both on
-`/planning` - see `context.md`'s Financial Planning Projections subsystem
-section. Working in slices, smallest first:
-- [ ] 3. Projection engine (pure Kotlin, no I/O) - baseline-only scenario
-      derived from transaction history (trailing-average income/expense,
-      TRANSFER/INVESTMENT excluded, same as `/analysis`) - plus a chart of
-      the trajectory against the goal.
+added as an event" once this lands. Slices 1-3 are done - `NetWorthEntry`
+CRUD, `FinancialGoal` CRUD, and the baseline projection engine (pure
+Kotlin, no I/O, no Gemini - trailing-average income/expense, straight-line
+net worth projection, plus a plain-SVG chart per goal on `/planning`), see
+`context.md`'s Financial Planning Projections subsystem section. Working
+in slices, smallest first:
 - [ ] 4. Multiple scenarios (salary-change events, one blanket market
       growth rate per scenario with sensible presets, a
       recreational-spend-vs-savings knob) + comparison view.

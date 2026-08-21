@@ -131,6 +131,27 @@
             <button type="submit" class="button button-small button-save">Save</button>
           </form>
           <span class="dashboard-card-note">Target: ${goal.resolvedTargetAmount} by ${goal.targetDate}</span>
+
+          <div class="projection-chart-wrap">
+            <svg viewBox="0 0 300 120" class="projection-chart" preserveAspectRatio="none">
+              <line x1="6" y1="${goal.chartGoalY}" x2="294" y2="${goal.chartGoalY}" class="projection-chart-goal-line"/>
+              <polyline points="${goal.chartPoints}" class="projection-chart-line"/>
+            </svg>
+            <div class="projection-chart-labels">
+              <span>${goal.chartMinLabel}</span>
+              <span>${goal.chartMaxLabel}</span>
+            </div>
+          </div>
+          <p class="dashboard-card-note">
+            Projected: ${goal.projectedFinal} by ${goal.targetDate}
+            (${goal.monthlySavingsRate}/mo baseline) &mdash;
+            <#if goal.onTrack>
+            <span class="transaction-amount-positive">on track</span>
+            <#else>
+            <span class="transaction-amount-negative">short by ${goal.shortfallOrSurplus}</span>
+            </#if>
+          </p>
+
           <form method="post" action="/planning/goals/${goal.id}/delete">
             <button type="submit" class="button button-small button-danger">Delete</button>
           </form>
