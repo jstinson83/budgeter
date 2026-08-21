@@ -1302,8 +1302,18 @@ itself.
     `BUILT_IN_CATEGORIES` - there's no sensible default set of assets/
     liabilities the way there is for spending categories, so `/planning`
     starts genuinely empty until the household adds their own.
-- **`FinancialGoal`** (not built) - net worth target by date, or a
-  retirement target via a withdrawal-rate rule (e.g. 4%).
+- **`FinancialGoal`** (`FinancialGoalStore.kt`, landed): a goal either
+  type - `NET_WORTH_TARGET` (a plain `targetAmount`) or `RETIREMENT`
+  (`annualSpend` ÷ `withdrawalRate`, defaulting to the "4% rule",
+  `DEFAULT_WITHDRAWAL_RATE`) - both resolve to one comparable number via
+  `resolvedTargetAmount()`, the value a future projection gets checked
+  against. No projection/feasibility logic yet - this slice is CRUD only.
+  Same `/planning` page as `NetWorthEntry` above, one file each for the
+  route/page-model layer (`NetWorthRoutes.kt`/`NetWorthPage.kt` serve both
+  sub-features, same "one file per page" shape `CategoryRoutes.kt` uses
+  for /categories' categories + rules). A goal's type can't be changed
+  after creation (the edit form carries it as a hidden field) - not a
+  real restriction yet, just nothing has needed switching types.
 - **Projection engine** (not built) - pure Kotlin, no I/O: monthly
   time-step from today to the goal date, baseline scenario derived from
   trailing-average income/expense in `Transaction`/`Category` history

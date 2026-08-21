@@ -136,4 +136,134 @@ class NetWorthRoutesTest {
         val afterDelete = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
         assertTrue(afterDelete.contains("No assets yet."))
     }
+
+    @Test
+    fun testPlanningPageShowsNoGoalsEmptyState() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("No goals yet."))
+    }
+
+    @Test
+    fun testAddingANetWorthTargetGoalShowsItsResolvedTargetAmount() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.post("/planning/goals") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=House fund&type=NET_WORTH_TARGET&targetDate=2031-08-21&targetAmount=500000.00")
+        }
+        assertEquals("Added House fund", Url(response.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("House fund"))
+        assertTrue(page.contains("Target: 500000.00 by 2031-08-21"))
+    }
+
+    @Test
+    fun testAddingARetirementGoalDerivesItsTargetAmountFromAnnualSpendAndWithdrawalRate() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.post("/planning/goals") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Retire early&type=RETIREMENT&targetDate=2050-01-01&annualSpend=80000.00&withdrawalRatePercent=4")
+        }
+        assertEquals("Added Retire early", Url(response.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("Target: 2000000.00 by 2050-01-01"))
+    }
+
+    @Test
+    fun testAddingARetirementGoalWithoutAWithdrawalRateFallsBackToTheDefault() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        client.post("/planning/goals") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Retire&type=RETIREMENT&targetDate=2050-01-01&annualSpend=40000.00")
+        }
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("Target: 1000000.00 by 2050-01-01")) // 40000 / 0.04
+    }
+
+    @Test
+    fun testAddingAGoalWithABlankNameIsRejected() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.post("/planning/goals") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=   &type=NET_WORTH_TARGET&targetDate=2031-08-21&targetAmount=500000.00")
+        }
+        assertEquals("Invalid goal", Url(response.headers[HttpHeaders.Location]!!).parameters["error"])
+    }
+
+    @Test
+    fun testAddingANetWorthTargetGoalWithoutATargetAmountIsRejected() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.post("/planning/goals") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=House fund&type=NET_WORTH_TARGET&targetDate=2031-08-21")
+        }
+        assertEquals("Invalid goal", Url(response.headers[HttpHeaders.Location]!!).parameters["error"])
+    }
+
+    @Test
+    fun testEditingAGoalUpdatesItsNameAndTargetAmount() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        client.post("/planning/goals") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=House fund&type=NET_WORTH_TARGET&targetDate=2031-08-21&targetAmount=500000.00")
+        }
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        val goalId = Regex("""/planning/goals/([^"/]+)"""").find(page)!!.groupValues[1]
+
+        val editResponse = client.post("/planning/goals/$goalId") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Bigger house fund&type=NET_WORTH_TARGET&targetDate=2032-01-01&targetAmount=600000.00")
+        }
+        assertEquals("Updated Bigger house fund", Url(editResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val updatedPage = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(updatedPage.contains("Bigger house fund"))
+        assertTrue(updatedPage.contains("Target: 600000.00 by 2032-01-01"))
+    }
+
+    @Test
+    fun testEditingAnUnknownGoalIsReportedAsNotFound() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.post("/planning/goals/not-real") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=X&type=NET_WORTH_TARGET&targetDate=2031-08-21&targetAmount=1.00")
+        }
+        assertEquals("Goal not found", Url(response.headers[HttpHeaders.Location]!!).parameters["error"])
+    }
+
+    @Test
+    fun testDeletingAGoalRemovesItFromThePage() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        client.post("/planning/goals") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=House fund&type=NET_WORTH_TARGET&targetDate=2031-08-21&targetAmount=500000.00")
+        }
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        val goalId = Regex("""/planning/goals/([^"/]+)"""").find(page)!!.groupValues[1]
+
+        val deleteResponse = client.post("/planning/goals/$goalId/delete")
+        assertEquals("Deleted goal", Url(deleteResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val afterDelete = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(afterDelete.contains("No goals yet."))
+    }
 }

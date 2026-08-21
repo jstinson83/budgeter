@@ -109,7 +109,78 @@
         <button type="submit" class="button">Add liability</button>
       </form>
     </div>
+
+    <div class="form-card">
+      <h2>Goals</h2>
+      <#if (goals?size == 0)>
+      <p class="empty-state">No goals yet.</p>
+      <#else>
+      <div class="card-list">
+        <#list goals as goal>
+        <div class="info-card">
+          <form method="post" action="/planning/goals/${goal.id}" class="recategorize-form">
+            <input type="hidden" name="type" value="${goal.typeName}">
+            <input type="text" name="name" value="${goal.name}" required>
+            <input type="date" name="targetDate" value="${goal.targetDate}" required>
+            <#if goal.isRetirement>
+            <input type="number" name="annualSpend" value="${goal.annualSpend}" step="0.01" min="0.01" placeholder="Annual spend">
+            <input type="number" name="withdrawalRatePercent" value="${goal.withdrawalRatePercent}" step="0.1" min="0.1" placeholder="Withdrawal rate %">
+            <#else>
+            <input type="number" name="targetAmount" value="${goal.targetAmount}" step="0.01" min="0.01" placeholder="Target amount">
+            </#if>
+            <button type="submit" class="button button-small button-save">Save</button>
+          </form>
+          <span class="dashboard-card-note">Target: ${goal.resolvedTargetAmount} by ${goal.targetDate}</span>
+          <form method="post" action="/planning/goals/${goal.id}/delete">
+            <button type="submit" class="button button-small button-danger">Delete</button>
+          </form>
+        </div>
+        </#list>
+      </div>
+      </#if>
+
+      <h3>Add goal</h3>
+      <form method="post" action="/planning/goals" class="recategorize-form" id="goal-form">
+        <input type="text" name="name" placeholder="Goal name" required>
+        <div class="segmented-control" role="radiogroup" aria-label="Goal type">
+          <input type="radio" name="type" value="NET_WORTH_TARGET" id="goal-type-networth" checked>
+          <label for="goal-type-networth">Net worth target</label>
+          <input type="radio" name="type" value="RETIREMENT" id="goal-type-retirement">
+          <label for="goal-type-retirement">Retirement</label>
+        </div>
+        <input type="date" name="targetDate" required>
+        <div id="goal-networth-fields">
+          <input type="number" name="targetAmount" placeholder="Target amount" step="0.01" min="0.01">
+        </div>
+        <div id="goal-retirement-fields" hidden>
+          <input type="number" name="annualSpend" placeholder="Annual spend in retirement" step="0.01" min="0.01">
+          <input type="number" name="withdrawalRatePercent" placeholder="Withdrawal rate % (default 4)" step="0.1" min="0.1">
+        </div>
+        <button type="submit" class="button">Add goal</button>
+      </form>
+    </div>
     </main>
   </div>
+
+  <script>
+    // No framework in this app - see analysis.ftl/CLAUDE.md. Toggles which
+    // field group the add-goal form shows based on the selected type; the
+    // fields that stay hidden are also the ones with no "required"
+    // attribute, so submitting never blocks on a field the user can't see.
+    // The server (NetWorthRoutes.kt's parseGoalForm) is what actually
+    // enforces "the right fields for the type" - this is convenience only.
+    (function () {
+      var retirementRadio = document.getElementById('goal-type-retirement');
+      var netWorthFields = document.getElementById('goal-networth-fields');
+      var retirementFields = document.getElementById('goal-retirement-fields');
+      document.querySelectorAll('#goal-form input[name="type"]').forEach(function (radio) {
+        radio.addEventListener('change', function () {
+          var isRetirement = retirementRadio.checked;
+          netWorthFields.hidden = isRetirement;
+          retirementFields.hidden = !isRetirement;
+        });
+      });
+    })();
+  </script>
 </body>
 </html>

@@ -121,6 +121,7 @@ fun Application.module(
     categorizationRuleStore: CategorizationRuleRepository = FirestoreCategorizationRuleStore(firestoreClient),
     categoryStore: CategoryRepository = FirestoreCategoryStore(firestoreClient),
     netWorthEntryStore: NetWorthEntryRepository = FirestoreNetWorthEntryStore(firestoreClient),
+    financialGoalStore: FinancialGoalRepository = FirestoreFinancialGoalStore(firestoreClient),
     categorizationJobManager: CategorizationJobManager = CategorizationJobManager(
         CoroutineScope(SupervisorJob() + Dispatchers.Default),
         transactionStore,
@@ -182,7 +183,7 @@ fun Application.module(
             transactionRoutes(transactionStore)
             analysisRoutes(transactionStore, categorizationRuleStore, categoryStore, categorizationJobManager)
             categoryRoutes(categoryStore, categorizationRuleStore, transactionStore)
-            netWorthRoutes(netWorthEntryStore)
+            netWorthRoutes(netWorthEntryStore, financialGoalStore)
             houseRoutes(
                 houseDocumentStore,
                 houseFactStore,
