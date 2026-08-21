@@ -202,20 +202,41 @@
 
     <div class="form-card">
       <h2>Scenarios</h2>
-      <p class="dashboard-card-note">Each scenario adds its own line to every goal's chart above, alongside the always-shown baseline.</p>
+      <p class="dashboard-card-note">Each scenario adds its own line to every goal's chart above, alongside the always-shown baseline (which always assumes today's real savings rate, no growth, and no changes).</p>
+      <p class="dashboard-card-note">
+        <strong>Growth rate</strong> compounds today's existing investments plus whatever share of each month's new savings you mark as <strong>% of new savings invested</strong> - the rest sits as cash and never grows. <strong>Recreational spend adjustment</strong> redirects $/mo from spending into savings (negative = spend more instead). <strong>Salary change</strong> is optional, one-time, and takes effect from its date onward.
+      </p>
       <#if (scenarios?size == 0)>
       <p class="empty-state">No scenarios yet.</p>
       <#else>
       <div class="card-list">
         <#list scenarios as scenario>
         <div class="info-card">
-          <form method="post" action="/planning/scenarios/${scenario.id}" class="recategorize-form">
-            <input type="text" name="name" value="${scenario.name}" required>
-            <input type="number" name="annualMarketGrowthRatePercent" value="${scenario.annualMarketGrowthRatePercent}" step="0.1" placeholder="Growth rate %">
-            <input type="number" name="investedSavingsFractionPercent" value="${scenario.investedSavingsFractionPercent}" step="1" min="0" max="100" placeholder="% of savings invested">
-            <input type="number" name="recreationalSpendAdjustment" value="${scenario.recreationalSpendAdjustment}" step="0.01" placeholder="Recreational spend adjustment $/mo">
-            <input type="date" name="salaryChangeDate" value="${scenario.salaryChangeDate}" placeholder="Salary change date">
-            <input type="number" name="salaryChangeMonthlyDelta" value="${scenario.salaryChangeMonthlyDelta}" step="0.01" placeholder="Salary change $/mo">
+          <form method="post" action="/planning/scenarios/${scenario.id}" class="form-row">
+            <div class="form-field form-field-wide">
+              <span class="form-field-label">Name</span>
+              <input type="text" name="name" value="${scenario.name}" required>
+            </div>
+            <div class="form-field">
+              <span class="form-field-label">Growth rate (%/yr)</span>
+              <input type="number" name="annualMarketGrowthRatePercent" value="${scenario.annualMarketGrowthRatePercent}" step="0.1">
+            </div>
+            <div class="form-field">
+              <span class="form-field-label">% of new savings invested</span>
+              <input type="number" name="investedSavingsFractionPercent" value="${scenario.investedSavingsFractionPercent}" step="1" min="0" max="100">
+            </div>
+            <div class="form-field">
+              <span class="form-field-label">Recreational spend adj. ($/mo)</span>
+              <input type="number" name="recreationalSpendAdjustment" value="${scenario.recreationalSpendAdjustment}" step="0.01">
+            </div>
+            <div class="form-field">
+              <span class="form-field-label">Salary change date (optional)</span>
+              <input type="date" name="salaryChangeDate" value="${scenario.salaryChangeDate}">
+            </div>
+            <div class="form-field">
+              <span class="form-field-label">Salary change ($/mo)</span>
+              <input type="number" name="salaryChangeMonthlyDelta" value="${scenario.salaryChangeMonthlyDelta}" step="0.01">
+            </div>
             <button type="submit" class="button button-small button-save">Save</button>
           </form>
           <form method="post" action="/planning/scenarios/${scenario.id}/delete">
@@ -227,19 +248,40 @@
       </#if>
 
       <h3>Add scenario</h3>
-      <form method="post" action="/planning/scenarios" class="recategorize-form" id="scenario-form">
-        <input type="text" name="name" placeholder="Scenario name, e.g. Aggressive growth" required>
-        <select id="scenario-growth-preset">
-          <#list growthPresets as preset>
-          <option value="${preset.annualRatePercent}"<#if preset.name == "MODERATE"> selected</#if>>${preset.label}</option>
-          </#list>
-          <option value="">Custom</option>
-        </select>
-        <input type="number" name="annualMarketGrowthRatePercent" id="scenario-growth-rate" value="7.0" step="0.1" placeholder="Growth rate %" required>
-        <input type="number" name="investedSavingsFractionPercent" value="100" step="1" min="0" max="100" placeholder="% of savings invested" required>
-        <input type="number" name="recreationalSpendAdjustment" value="0" step="0.01" placeholder="Recreational spend adjustment $/mo" required>
-        <input type="date" name="salaryChangeDate" placeholder="Salary change date (optional)">
-        <input type="number" name="salaryChangeMonthlyDelta" step="0.01" placeholder="Salary change $/mo (optional)">
+      <form method="post" action="/planning/scenarios" class="form-row" id="scenario-form">
+        <div class="form-field form-field-wide">
+          <span class="form-field-label">Name</span>
+          <input type="text" name="name" placeholder="e.g. Aggressive growth" required>
+        </div>
+        <div class="form-field">
+          <span class="form-field-label">Growth rate preset</span>
+          <select id="scenario-growth-preset">
+            <#list growthPresets as preset>
+            <option value="${preset.annualRatePercent}"<#if preset.name == "MODERATE"> selected</#if>>${preset.label}</option>
+            </#list>
+            <option value="">Custom</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <span class="form-field-label">Growth rate (%/yr)</span>
+          <input type="number" name="annualMarketGrowthRatePercent" id="scenario-growth-rate" value="7.0" step="0.1" required>
+        </div>
+        <div class="form-field">
+          <span class="form-field-label">% of new savings invested</span>
+          <input type="number" name="investedSavingsFractionPercent" value="100" step="1" min="0" max="100" required>
+        </div>
+        <div class="form-field">
+          <span class="form-field-label">Recreational spend adj. ($/mo)</span>
+          <input type="number" name="recreationalSpendAdjustment" value="0" step="0.01" required>
+        </div>
+        <div class="form-field">
+          <span class="form-field-label">Salary change date (optional)</span>
+          <input type="date" name="salaryChangeDate">
+        </div>
+        <div class="form-field">
+          <span class="form-field-label">Salary change ($/mo)</span>
+          <input type="number" name="salaryChangeMonthlyDelta" step="0.01">
+        </div>
         <button type="submit" class="button">Add scenario</button>
       </form>
     </div>
