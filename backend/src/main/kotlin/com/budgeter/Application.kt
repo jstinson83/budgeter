@@ -120,6 +120,7 @@ fun Application.module(
     transactionCategorizer: TransactionCategorizer = geminiCategorizer,
     categorizationRuleStore: CategorizationRuleRepository = FirestoreCategorizationRuleStore(firestoreClient),
     categoryStore: CategoryRepository = FirestoreCategoryStore(firestoreClient),
+    netWorthEntryStore: NetWorthEntryRepository = FirestoreNetWorthEntryStore(firestoreClient),
     categorizationJobManager: CategorizationJobManager = CategorizationJobManager(
         CoroutineScope(SupervisorJob() + Dispatchers.Default),
         transactionStore,
@@ -181,6 +182,7 @@ fun Application.module(
             transactionRoutes(transactionStore)
             analysisRoutes(transactionStore, categorizationRuleStore, categoryStore, categorizationJobManager)
             categoryRoutes(categoryStore, categorizationRuleStore, transactionStore)
+            netWorthRoutes(netWorthEntryStore)
             houseRoutes(
                 houseDocumentStore,
                 houseFactStore,

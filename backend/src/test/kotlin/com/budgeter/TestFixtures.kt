@@ -57,6 +57,7 @@ fun ApplicationTestBuilder.testModule(
     transactionCategorizer: TransactionCategorizer = FakeTransactionCategorizer(),
     categorizationRuleStore: CategorizationRuleRepository = FakeCategorizationRuleRepository(),
     categoryStore: CategoryRepository = FakeCategoryRepository(),
+    netWorthEntryStore: NetWorthEntryRepository = FakeNetWorthEntryRepository(),
     houseDocumentStore: HouseDocumentRepository = FakeHouseDocumentRepository(),
     houseFactStore: HouseFactRepository = FakeHouseFactRepository(),
     documentBlobStore: DocumentBlobStore = FakeDocumentBlobStore(),
@@ -78,6 +79,7 @@ fun ApplicationTestBuilder.testModule(
             transactionCategorizer = transactionCategorizer,
             categorizationRuleStore = categorizationRuleStore,
             categoryStore = categoryStore,
+            netWorthEntryStore = netWorthEntryStore,
             houseDocumentStore = houseDocumentStore,
             houseFactStore = houseFactStore,
             documentBlobStore = documentBlobStore,
@@ -205,6 +207,36 @@ class FakeCategoryRepository : CategoryRepository {
         all(ownerId) // ensures seeding has happened before the lookup below
         val index = categories.indexOfFirst { it.ownerId == ownerId && it.id == id }
         if (index != -1) categories[index] = categories[index].copy(active = active)
+    }
+}
+
+// In-memory stand-in for FirestoreNetWorthEntryStore - mirrors its
+// assets-before-liabilities-then-label sort order so tests exercise the
+// same grouping /planning.ftl relies on.
+class FakeNetWorthEntryRepository : NetWorthEntryRepository {
+    private val entries = mutableListOf<NetWorthEntry>()
+    private var nextId = 0
+
+    override suspend fun all(ownerId: String): List<NetWorthEntry> =
+        entries.filter { it.ownerId == ownerId }
+            .sortedWith(compareByDescending<NetWorthEntry> { it.type.isAsset }.thenBy { it.label.lowercase() })
+
+    override suspend fun add(ownerId: String, label: String, type: NetWorthEntryType, value: Double): NetWorthEntry {
+        val entry = NetWorthEntry("net-worth-entry-${nextId++}", ownerId, label, type, value)
+        entries += entry
+        return entry
+    }
+
+    override suspend fun update(ownerId: String, id: String, label: String, type: NetWorthEntryType, value: Double): NetWorthEntry? {
+        val index = entries.indexOfFirst { it.id == id && it.ownerId == ownerId }
+        if (index == -1) return null
+        val updated = entries[index].copy(label = label, type = type, value = value)
+        entries[index] = updated
+        return updated
+    }
+
+    override suspend fun delete(ownerId: String, id: String) {
+        entries.removeAll { it.id == id && it.ownerId == ownerId }
     }
 }
 

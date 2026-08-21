@@ -19,25 +19,41 @@ end.
 into one multi-component project - decided to keep `Project` single-tag
 and revisit merging as its own follow-up feature if it comes up again.
 
-## Active task: Financial Goals & Project Feasibility
+## Active task: Financial Planning Projections (net worth + scenarios)
 
-Connect the financial side (transactions/analysis) to the project side
-(`Project`/`Recommendation`) - track a savings goal, compute a rolling
-savings rate, and judge project feasibility as a forward projection rather
-than a static cost comparison. Design discussed and agreed 2026-08-17 -
-see `context.md`'s Financial Goals & Project Feasibility subsystem section
-for the full primitive list and reasoning this builds on. Working in chunks, smallest first:
+A deterministic net worth projection engine (no Gemini in the math) that
+goals are checked against - net worth target or retirement, not just a
+flat savings-rate target. Design discussed and agreed 2026-08-21.
+Supersedes Phase 1 below (`SavingsGoal` + flat savings-rate projection):
+the maintainer's real goals are net-worth-shaped, so a real starting net
+worth (manual asset/liability entry, chosen over deriving bank/CC/LOC
+balances from transactions the way the pulled "net position" dashboard
+did - see `CLAUDE.md`'s gotcha writeup on why that was inaccurate) plus a
+proper projection engine need to come first. Explicitly a prerequisite for
+Phase 2 onward below, not a separate feature - "insert a project's cost
+into the goal projection" becomes "run the engine with the project's cost
+added as an event" once this lands. Slice 1 (`NetWorthEntry` CRUD - manual
+assets/liabilities, `/planning` page with current net worth) is done -
+see `context.md`'s Financial Planning Projections subsystem section.
+Working in slices, smallest first:
 
-**Phase 1 - goal & rate (no project linkage yet)**
-- [ ] **1. `SavingsGoal` entity** - name, target amount, target date, start
-      date + Firestore store + minimal create/view UI.
-- [ ] **2. Savings rate calculation** - reuse `DashboardPage.kt`'s
-      `monthlyNetChange` aggregation, split into income vs. expense per
-      month, compute a 3-month rolling savings rate.
-- [ ] **3. Goal progress view** - given the rate + amount saved since the
-      goal's start date, project forward to the target date -> "on track /
-      behind by $X / ahead by $X". Useful standalone before any project
-      logic exists.
+- [ ] 2. `FinancialGoal` CRUD (net worth target by date, or retirement
+      target via a withdrawal-rate rule).
+- [ ] 3. Projection engine (pure Kotlin, no I/O) - baseline-only scenario
+      derived from transaction history (trailing-average income/expense,
+      TRANSFER/INVESTMENT excluded, same as `/analysis`) - plus a chart of
+      the trajectory against the goal.
+- [ ] 4. Multiple scenarios (salary-change events, one blanket market
+      growth rate per scenario with sensible presets, a
+      recreational-spend-vs-savings knob) + comparison view.
+- [ ] 5. Gemini scenario-parameter suggestions (optional, additive, last -
+      suggests parameter values from spending trends via a constrained
+      schema, never touches the engine's arithmetic).
+
+**Phase 2 onward below now builds on the engine above instead of the old
+Phase 1** (a project's cost/timing gets inserted into the new engine's
+projection instead of a flat-rate one) - update the "SavingsGoal"/"goal
+projection" wording in those items to match once slice 3 lands.
 
 **Phase 2 - project cost estimation**
 - [ ] **4. Single cost estimate on `Project`** - `estimatedCost` (amount +
