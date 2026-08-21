@@ -6,14 +6,16 @@ import java.time.LocalDate
 // pre-formats everything /planning.ftl needs: the asset/liability entries
 // split into two lists (already sorted assets-then-liabilities by
 // NetWorthEntryRepository.all), the running totals, the type options for
-// the add/edit form's dropdown, and the household's FinancialGoal rows -
-// same "one page model per page" convention CategoriesPage.kt uses for its
-// own two sub-features (categories + rules). As of slice 3, each goal also
-// carries its ProjectionEngine.kt projection (baseline scenario only, no
-// Gemini/scenario knobs yet) and a ProjectionChart.kt-ready chart.
+// the add/edit form's dropdown, the household's FinancialGoal rows, and
+// (as of slice 4) its Scenario rows - same "one page model per page"
+// convention CategoriesPage.kt uses for its own two sub-features
+// (categories + rules). Each goal carries its baseline projection
+// (ProjectionEngine.kt, no Gemini/scenario knobs) plus one projected line
+// per Scenario, all sharing one chart (ProjectionChart.kt).
 fun netWorthPageModel(
     entries: List<NetWorthEntry>,
     goals: List<FinancialGoal>,
+    scenarios: List<Scenario>,
     transactions: List<Transaction>,
     message: String?,
     error: String?,
@@ -29,7 +31,9 @@ fun netWorthPageModel(
         "netWorth" to "%.2f".format(netWorthTotal(entries)),
         "assetTypeOptions" to NetWorthEntryType.entries.filter { it.isAsset }.map { mapOf("name" to it.name, "label" to it.label) },
         "liabilityTypeOptions" to NetWorthEntryType.entries.filter { !it.isAsset }.map { mapOf("name" to it.name, "label" to it.label) },
-        "goals" to goals.map { goal -> financialGoalRowModel(goal, entries, transactions, today) },
+        "goals" to goals.map { goal -> financialGoalRowModel(goal, entries, scenarios, transactions, today) },
+        "scenarios" to scenarios.map(::scenarioRowModel),
+        "growthPresets" to MarketGrowthPreset.entries.map { mapOf("name" to it.name, "label" to it.label, "annualRatePercent" to "%.1f".format(it.annualRate * 100)) },
         "message" to message,
         "error" to error
     )
@@ -43,9 +47,14 @@ private fun netWorthEntryRowModel(entry: NetWorthEntry): Map<String, Any?> = map
     "value" to "%.2f".format(entry.value)
 )
 
-private fun financialGoalRowModel(goal: FinancialGoal, entries: List<NetWorthEntry>, transactions: List<Transaction>, today: LocalDate): Map<String, Any?> {
+private fun financialGoalRowModel(goal: FinancialGoal, entries: List<NetWorthEntry>, scenarios: List<Scenario>, transactions: List<Transaction>, today: LocalDate): Map<String, Any?> {
     val projection = projectGoal(goal, entries, transactions, today)
-    val chart = projectionChartModel(projection.points, goal.resolvedTargetAmount())
+    val scenarioProjections = scenarios.map { scenario -> scenario to projectScenario(scenario, entries, transactions, goal, today) }
+    val chart = projectionChartModel(
+        projection.points,
+        scenarioProjections.map { (scenario, points) -> scenario.name to points.map { ProjectionPoint(it.date, it.netWorth) } },
+        goal.resolvedTargetAmount()
+    )
     return mapOf(
         "id" to goal.id,
         "name" to goal.name,
@@ -60,9 +69,28 @@ private fun financialGoalRowModel(goal: FinancialGoal, entries: List<NetWorthEnt
         "projectedFinal" to "%.2f".format(projection.finalNetWorth),
         "onTrack" to projection.onTrack,
         "shortfallOrSurplus" to "%.2f".format(projection.shortfallOrSurplus),
-        "chartPoints" to chart.points,
+        "chartLines" to chart.lines.map { mapOf("label" to it.label, "cssClass" to it.cssClass, "points" to it.points) },
         "chartGoalY" to chart.goalY,
         "chartMinLabel" to chart.minLabel,
-        "chartMaxLabel" to chart.maxLabel
+        "chartMaxLabel" to chart.maxLabel,
+        "scenarioOutcomes" to scenarioProjections.map { (scenario, points) ->
+            val finalNetWorth = points.last().netWorth
+            mapOf(
+                "name" to scenario.name,
+                "projectedFinal" to "%.2f".format(finalNetWorth),
+                "onTrack" to (finalNetWorth >= goal.resolvedTargetAmount())
+            )
+        }
     )
 }
+
+private fun scenarioRowModel(scenario: Scenario): Map<String, Any?> = mapOf(
+    "id" to scenario.id,
+    "name" to scenario.name,
+    "annualMarketGrowthRatePercent" to "%.1f".format(scenario.annualMarketGrowthRate * 100),
+    "investedSavingsFractionPercent" to "%.0f".format(scenario.investedSavingsFraction * 100),
+    "recreationalSpendAdjustment" to "%.2f".format(scenario.recreationalSpendAdjustment),
+    "hasSalaryChange" to (scenario.salaryChangeDate != null),
+    "salaryChangeDate" to (scenario.salaryChangeDate?.toString() ?: ""),
+    "salaryChangeMonthlyDelta" to (scenario.salaryChangeMonthlyDelta?.let { "%.2f".format(it) } ?: "")
+)

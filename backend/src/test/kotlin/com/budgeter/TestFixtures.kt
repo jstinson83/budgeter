@@ -59,6 +59,7 @@ fun ApplicationTestBuilder.testModule(
     categoryStore: CategoryRepository = FakeCategoryRepository(),
     netWorthEntryStore: NetWorthEntryRepository = FakeNetWorthEntryRepository(),
     financialGoalStore: FinancialGoalRepository = FakeFinancialGoalRepository(),
+    scenarioStore: ScenarioRepository = FakeScenarioRepository(),
     houseDocumentStore: HouseDocumentRepository = FakeHouseDocumentRepository(),
     houseFactStore: HouseFactRepository = FakeHouseFactRepository(),
     documentBlobStore: DocumentBlobStore = FakeDocumentBlobStore(),
@@ -82,6 +83,7 @@ fun ApplicationTestBuilder.testModule(
             categoryStore = categoryStore,
             netWorthEntryStore = netWorthEntryStore,
             financialGoalStore = financialGoalStore,
+            scenarioStore = scenarioStore,
             houseDocumentStore = houseDocumentStore,
             houseFactStore = houseFactStore,
             documentBlobStore = documentBlobStore,
@@ -291,6 +293,58 @@ class FakeFinancialGoalRepository : FinancialGoalRepository {
 
     override suspend fun delete(ownerId: String, id: String) {
         goals.removeAll { it.id == id && it.ownerId == ownerId }
+    }
+}
+
+// In-memory stand-in for FirestoreScenarioStore - mirrors its
+// name-sorted order.
+class FakeScenarioRepository : ScenarioRepository {
+    private val scenarios = mutableListOf<Scenario>()
+    private var nextId = 0
+
+    override suspend fun all(ownerId: String): List<Scenario> =
+        scenarios.filter { it.ownerId == ownerId }.sortedBy { it.name.lowercase() }
+
+    override suspend fun add(
+        ownerId: String,
+        name: String,
+        annualMarketGrowthRate: Double,
+        investedSavingsFraction: Double,
+        recreationalSpendAdjustment: Double,
+        salaryChangeDate: java.time.LocalDate?,
+        salaryChangeMonthlyDelta: Double?
+    ): Scenario {
+        val scenario = Scenario("scenario-${nextId++}", ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment, salaryChangeDate, salaryChangeMonthlyDelta)
+        scenarios += scenario
+        return scenario
+    }
+
+    override suspend fun update(
+        ownerId: String,
+        id: String,
+        name: String,
+        annualMarketGrowthRate: Double,
+        investedSavingsFraction: Double,
+        recreationalSpendAdjustment: Double,
+        salaryChangeDate: java.time.LocalDate?,
+        salaryChangeMonthlyDelta: Double?
+    ): Scenario? {
+        val index = scenarios.indexOfFirst { it.id == id && it.ownerId == ownerId }
+        if (index == -1) return null
+        val updated = scenarios[index].copy(
+            name = name,
+            annualMarketGrowthRate = annualMarketGrowthRate,
+            investedSavingsFraction = investedSavingsFraction,
+            recreationalSpendAdjustment = recreationalSpendAdjustment,
+            salaryChangeDate = salaryChangeDate,
+            salaryChangeMonthlyDelta = salaryChangeMonthlyDelta
+        )
+        scenarios[index] = updated
+        return updated
+    }
+
+    override suspend fun delete(ownerId: String, id: String) {
+        scenarios.removeAll { it.id == id && it.ownerId == ownerId }
     }
 }
 

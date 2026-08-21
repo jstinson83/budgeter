@@ -298,4 +298,124 @@ class NetWorthRoutesTest {
         val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
         assertTrue(page.contains("short by"))
     }
+
+    @Test
+    fun testPlanningPageShowsNoScenariosEmptyState() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("No scenarios yet."))
+    }
+
+    @Test
+    fun testAddingAScenarioMakesItAppearAndAddsALineToEveryGoalsChart() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        client.post("/planning/goals") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Goal&type=NET_WORTH_TARGET&targetDate=2027-08-21&targetAmount=50000.00")
+        }
+
+        val response = client.post("/planning/scenarios") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Aggressive growth&annualMarketGrowthRatePercent=10&investedSavingsFractionPercent=100&recreationalSpendAdjustment=0")
+        }
+        assertEquals("Added Aggressive growth", Url(response.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("Aggressive growth"))
+        assertTrue(page.contains("class=\"projection-chart-legend\""))
+        assertTrue(page.contains("projection-chart-line-scenario-1"))
+    }
+
+    @Test
+    fun testAddingAScenarioWithASalaryChangeEventPersistsBothFields() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        client.post("/planning/scenarios") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Raise in 2027&annualMarketGrowthRatePercent=7&investedSavingsFractionPercent=50&recreationalSpendAdjustment=0&salaryChangeDate=2027-01-01&salaryChangeMonthlyDelta=500")
+        }
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("value=\"2027-01-01\""))
+        assertTrue(page.contains("value=\"500.00\""))
+    }
+
+    @Test
+    fun testAddingAScenarioWithABlankNameIsRejected() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.post("/planning/scenarios") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=   &annualMarketGrowthRatePercent=7&investedSavingsFractionPercent=100&recreationalSpendAdjustment=0")
+        }
+        assertEquals("Invalid scenario", Url(response.headers[HttpHeaders.Location]!!).parameters["error"])
+    }
+
+    @Test
+    fun testAddingAScenarioWithAnInvestedFractionOutOfRangeIsRejected() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.post("/planning/scenarios") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Bad&annualMarketGrowthRatePercent=7&investedSavingsFractionPercent=150&recreationalSpendAdjustment=0")
+        }
+        assertEquals("Invalid scenario", Url(response.headers[HttpHeaders.Location]!!).parameters["error"])
+    }
+
+    @Test
+    fun testEditingAScenarioUpdatesItsFields() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        client.post("/planning/scenarios") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Growth&annualMarketGrowthRatePercent=7&investedSavingsFractionPercent=100&recreationalSpendAdjustment=0")
+        }
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        val scenarioId = Regex("""/planning/scenarios/([^"/]+)"""").find(page)!!.groupValues[1]
+
+        val editResponse = client.post("/planning/scenarios/$scenarioId") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Faster growth&annualMarketGrowthRatePercent=10&investedSavingsFractionPercent=100&recreationalSpendAdjustment=0")
+        }
+        assertEquals("Updated Faster growth", Url(editResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val updatedPage = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(updatedPage.contains("Faster growth"))
+    }
+
+    @Test
+    fun testEditingAnUnknownScenarioIsReportedAsNotFound() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.post("/planning/scenarios/not-real") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=X&annualMarketGrowthRatePercent=7&investedSavingsFractionPercent=100&recreationalSpendAdjustment=0")
+        }
+        assertEquals("Scenario not found", Url(response.headers[HttpHeaders.Location]!!).parameters["error"])
+    }
+
+    @Test
+    fun testDeletingAScenarioRemovesItFromThePage() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        client.post("/planning/scenarios") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("name=Growth&annualMarketGrowthRatePercent=7&investedSavingsFractionPercent=100&recreationalSpendAdjustment=0")
+        }
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        val scenarioId = Regex("""/planning/scenarios/([^"/]+)"""").find(page)!!.groupValues[1]
+
+        val deleteResponse = client.post("/planning/scenarios/$scenarioId/delete")
+        assertEquals("Deleted scenario", Url(deleteResponse.headers[HttpHeaders.Location]!!).parameters["message"])
+
+        val afterDelete = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(afterDelete.contains("No scenarios yet."))
+    }
 }

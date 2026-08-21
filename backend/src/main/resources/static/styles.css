@@ -1230,6 +1230,58 @@ input[type="file"]::file-selector-button:hover {
   font-family: var(--mono);
 }
 
+/* Scenario lines (slice 4) - one per Scenario row, cycling through the
+   same categorical palette the pie chart uses (ProjectionChart.kt assigns
+   these by position). */
+.projection-chart-line-scenario-1,
+.projection-chart-line-scenario-2,
+.projection-chart-line-scenario-3,
+.projection-chart-line-scenario-4,
+.projection-chart-line-scenario-5 {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.projection-chart-line-scenario-1 { stroke: var(--pie-1); }
+.projection-chart-line-scenario-2 { stroke: var(--pie-2); }
+.projection-chart-line-scenario-3 { stroke: var(--pie-3); }
+.projection-chart-line-scenario-4 { stroke: var(--pie-4); }
+.projection-chart-line-scenario-5 { stroke: var(--pie-5); }
+
+.projection-chart-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.projection-chart-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.projection-chart-legend-swatch {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.15rem;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.projection-chart-legend-swatch.projection-chart-line { background: var(--brass); }
+.projection-chart-legend-swatch.projection-chart-line-scenario-1 { background: var(--pie-1); }
+.projection-chart-legend-swatch.projection-chart-line-scenario-2 { background: var(--pie-2); }
+.projection-chart-legend-swatch.projection-chart-line-scenario-3 { background: var(--pie-3); }
+.projection-chart-legend-swatch.projection-chart-line-scenario-4 { background: var(--pie-4); }
+.projection-chart-legend-swatch.projection-chart-line-scenario-5 { background: var(--pie-5); }
+
 /* House Knowledge */
 
 .fact-quote {

@@ -135,22 +135,41 @@
           <div class="projection-chart-wrap">
             <svg viewBox="0 0 300 120" class="projection-chart" preserveAspectRatio="none">
               <line x1="6" y1="${goal.chartGoalY}" x2="294" y2="${goal.chartGoalY}" class="projection-chart-goal-line"/>
-              <polyline points="${goal.chartPoints}" class="projection-chart-line"/>
+              <#list goal.chartLines as line>
+              <polyline points="${line.points}" class="${line.cssClass}"/>
+              </#list>
             </svg>
             <div class="projection-chart-labels">
               <span>${goal.chartMinLabel}</span>
               <span>${goal.chartMaxLabel}</span>
             </div>
+            <#if (goal.chartLines?size gt 1)>
+            <ul class="projection-chart-legend">
+              <#list goal.chartLines as line>
+              <li><span class="projection-chart-legend-swatch ${line.cssClass}"></span>${line.label}</li>
+              </#list>
+            </ul>
+            </#if>
           </div>
           <p class="dashboard-card-note">
-            Projected: ${goal.projectedFinal} by ${goal.targetDate}
-            (${goal.monthlySavingsRate}/mo baseline) &mdash;
+            Baseline projected: ${goal.projectedFinal} by ${goal.targetDate}
+            (${goal.monthlySavingsRate}/mo) &mdash;
             <#if goal.onTrack>
             <span class="transaction-amount-positive">on track</span>
             <#else>
             <span class="transaction-amount-negative">short by ${goal.shortfallOrSurplus}</span>
             </#if>
           </p>
+          <#list goal.scenarioOutcomes as outcome>
+          <p class="dashboard-card-note">
+            ${outcome.name}: ${outcome.projectedFinal} &mdash;
+            <#if outcome.onTrack>
+            <span class="transaction-amount-positive">on track</span>
+            <#else>
+            <span class="transaction-amount-negative">off track</span>
+            </#if>
+          </p>
+          </#list>
 
           <form method="post" action="/planning/goals/${goal.id}/delete">
             <button type="submit" class="button button-small button-danger">Delete</button>
@@ -180,6 +199,50 @@
         <button type="submit" class="button">Add goal</button>
       </form>
     </div>
+
+    <div class="form-card">
+      <h2>Scenarios</h2>
+      <p class="dashboard-card-note">Each scenario adds its own line to every goal's chart above, alongside the always-shown baseline.</p>
+      <#if (scenarios?size == 0)>
+      <p class="empty-state">No scenarios yet.</p>
+      <#else>
+      <div class="card-list">
+        <#list scenarios as scenario>
+        <div class="info-card">
+          <form method="post" action="/planning/scenarios/${scenario.id}" class="recategorize-form">
+            <input type="text" name="name" value="${scenario.name}" required>
+            <input type="number" name="annualMarketGrowthRatePercent" value="${scenario.annualMarketGrowthRatePercent}" step="0.1" placeholder="Growth rate %">
+            <input type="number" name="investedSavingsFractionPercent" value="${scenario.investedSavingsFractionPercent}" step="1" min="0" max="100" placeholder="% of savings invested">
+            <input type="number" name="recreationalSpendAdjustment" value="${scenario.recreationalSpendAdjustment}" step="0.01" placeholder="Recreational spend adjustment $/mo">
+            <input type="date" name="salaryChangeDate" value="${scenario.salaryChangeDate}" placeholder="Salary change date">
+            <input type="number" name="salaryChangeMonthlyDelta" value="${scenario.salaryChangeMonthlyDelta}" step="0.01" placeholder="Salary change $/mo">
+            <button type="submit" class="button button-small button-save">Save</button>
+          </form>
+          <form method="post" action="/planning/scenarios/${scenario.id}/delete">
+            <button type="submit" class="button button-small button-danger">Delete</button>
+          </form>
+        </div>
+        </#list>
+      </div>
+      </#if>
+
+      <h3>Add scenario</h3>
+      <form method="post" action="/planning/scenarios" class="recategorize-form" id="scenario-form">
+        <input type="text" name="name" placeholder="Scenario name, e.g. Aggressive growth" required>
+        <select id="scenario-growth-preset">
+          <#list growthPresets as preset>
+          <option value="${preset.annualRatePercent}"<#if preset.name == "MODERATE"> selected</#if>>${preset.label}</option>
+          </#list>
+          <option value="">Custom</option>
+        </select>
+        <input type="number" name="annualMarketGrowthRatePercent" id="scenario-growth-rate" value="7.0" step="0.1" placeholder="Growth rate %" required>
+        <input type="number" name="investedSavingsFractionPercent" value="100" step="1" min="0" max="100" placeholder="% of savings invested" required>
+        <input type="number" name="recreationalSpendAdjustment" value="0" step="0.01" placeholder="Recreational spend adjustment $/mo" required>
+        <input type="date" name="salaryChangeDate" placeholder="Salary change date (optional)">
+        <input type="number" name="salaryChangeMonthlyDelta" step="0.01" placeholder="Salary change $/mo (optional)">
+        <button type="submit" class="button">Add scenario</button>
+      </form>
+    </div>
     </main>
   </div>
 
@@ -200,6 +263,20 @@
           netWorthFields.hidden = isRetirement;
           retirementFields.hidden = !isRetirement;
         });
+      });
+    })();
+
+    // Picking a preset fills in the actual submitted rate field; picking
+    // "Custom" just leaves whatever's already typed there alone. The
+    // number input (not the select) is what's actually named/submitted,
+    // so a hand-typed rate works identically to a preset once saved - see
+    // ScenarioStore.kt's MarketGrowthPreset doc comment.
+    (function () {
+      var preset = document.getElementById('scenario-growth-preset');
+      var rateInput = document.getElementById('scenario-growth-rate');
+      if (!preset || !rateInput) return;
+      preset.addEventListener('change', function () {
+        if (preset.value !== '') rateInput.value = preset.value;
       });
     })();
   </script>

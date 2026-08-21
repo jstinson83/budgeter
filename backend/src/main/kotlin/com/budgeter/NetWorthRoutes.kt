@@ -8,30 +8,34 @@ import io.ktor.server.routing.*
 import java.time.LocalDate
 
 // The /planning page - manual net worth tracking (NetWorthStore.kt, slice
-// 1), FinancialGoal CRUD (FinancialGoalStore.kt, slice 2), and, as of
-// slice 3, each goal's baseline projection (ProjectionEngine.kt/
-// ProjectionChart.kt - a straight-line "what happens if nothing changes"
-// scenario derived from real transaction history, no Gemini/scenario
-// knobs yet). All three live in one route file/one page, same "one file
-// per page" shape CategoryRoutes.kt uses for /categories' categories +
-// rules. Entries and goals are never system-derived (no CSV/Transaction
-// linkage) - a household adds/edits/deletes its own rows here, same
-// "you're the source of truth" shape as /categories, just without the
-// built-in seeding since there's no sensible default set of
-// assets/liabilities/goals the way there is for spending categories.
+// 1), FinancialGoal CRUD (FinancialGoalStore.kt, slice 2), each goal's
+// baseline projection (ProjectionEngine.kt/ProjectionChart.kt, slice 3 -
+// a straight-line "what happens if nothing changes" scenario derived from
+// real transaction history), and, as of slice 4, Scenario CRUD
+// (ScenarioStore.kt) - named "what if" parameter sets that add their own
+// line to every goal's chart. All four live in one route file/one page,
+// same "one file per page" shape CategoryRoutes.kt uses for /categories'
+// categories + rules. Entries/goals/scenarios are never system-derived (no
+// CSV/Transaction linkage) - a household adds/edits/deletes its own rows
+// here, same "you're the source of truth" shape as /categories, just
+// without the built-in seeding since there's no sensible default set of
+// assets/liabilities/goals/scenarios the way there is for spending
+// categories.
 fun Route.netWorthRoutes(
     netWorthEntryStore: NetWorthEntryRepository,
     financialGoalStore: FinancialGoalRepository,
+    scenarioStore: ScenarioRepository,
     transactionStore: TransactionRepository
 ) {
     get("/planning") {
         val ownerId = call.requireUserId()
         val entries = netWorthEntryStore.all(ownerId)
         val goals = financialGoalStore.all(ownerId)
+        val scenarios = scenarioStore.all(ownerId)
         val transactions = transactionStore.all(ownerId)
         val message = call.request.queryParameters["message"]
         val error = call.request.queryParameters["error"]
-        val model = netWorthPageModel(entries, goals, transactions, message, error) + call.currentUserModel()
+        val model = netWorthPageModel(entries, goals, scenarios, transactions, message, error) + call.currentUserModel()
         call.respond(FreeMarkerContent("planning.ftl", model))
     }
 
@@ -90,6 +94,40 @@ fun Route.netWorthRoutes(
         financialGoalStore.delete(ownerId, id)
         call.respondRedirect("/planning?message=${"Deleted goal".encodeURLQueryComponent()}")
     }
+
+    post("/planning/scenarios") {
+        val ownerId = call.requireUserId()
+        val formParams = call.receiveParameters()
+        val input = parseScenarioForm(formParams)
+            ?: return@post call.respondRedirect("/planning?error=${"Invalid scenario".encodeURLQueryComponent()}")
+        val scenario = scenarioStore.add(
+            ownerId, input.name, input.annualMarketGrowthRate, input.investedSavingsFraction,
+            input.recreationalSpendAdjustment, input.salaryChangeDate, input.salaryChangeMonthlyDelta
+        )
+        call.respondRedirect("/planning?message=${"Added ${scenario.name}".encodeURLQueryComponent()}")
+    }
+
+    post("/planning/scenarios/{id}") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        val formParams = call.receiveParameters()
+        val input = parseScenarioForm(formParams)
+            ?: return@post call.respondRedirect("/planning?error=${"Invalid scenario".encodeURLQueryComponent()}")
+        val updated = scenarioStore.update(
+            ownerId, id, input.name, input.annualMarketGrowthRate, input.investedSavingsFraction,
+            input.recreationalSpendAdjustment, input.salaryChangeDate, input.salaryChangeMonthlyDelta
+        )
+        val message = if (updated != null) "Updated ${updated.name}" else "Scenario not found"
+        val param = if (updated != null) "message" else "error"
+        call.respondRedirect("/planning?$param=${message.encodeURLQueryComponent()}")
+    }
+
+    post("/planning/scenarios/{id}/delete") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        scenarioStore.delete(ownerId, id)
+        call.respondRedirect("/planning?message=${"Deleted scenario".encodeURLQueryComponent()}")
+    }
 }
 
 private data class EntryFormInput(val label: String, val type: NetWorthEntryType, val value: Double)
@@ -138,4 +176,45 @@ private fun parseGoalForm(formParams: Parameters): GoalFormInput? {
             GoalFormInput(name, type, targetDate, null, annualSpend, withdrawalRatePercent?.let { it / 100.0 })
         }
     }
+}
+
+private data class ScenarioFormInput(
+    val name: String,
+    val annualMarketGrowthRate: Double,
+    val investedSavingsFraction: Double,
+    val recreationalSpendAdjustment: Double,
+    val salaryChangeDate: LocalDate?,
+    val salaryChangeMonthlyDelta: Double?
+)
+
+// The salary-change fields are optional as a pair - both present or both
+// absent/blank, never just one (a date with no delta, or a delta with no
+// date, isn't a coherent event) - see ScenarioStore.kt's Scenario doc
+// comment for why this is a single optional event rather than a list.
+private fun parseScenarioForm(formParams: Parameters): ScenarioFormInput? {
+    val name = formParams["name"]?.trim().orEmpty()
+    if (name.isEmpty()) return null
+    val annualMarketGrowthRatePercent = formParams["annualMarketGrowthRatePercent"]?.toDoubleOrNull() ?: return null
+    val investedSavingsFractionPercent = formParams["investedSavingsFractionPercent"]?.toDoubleOrNull()?.takeIf { it in 0.0..100.0 } ?: return null
+    val recreationalSpendAdjustment = formParams["recreationalSpendAdjustment"]?.toDoubleOrNull() ?: return null
+
+    val salaryChangeDateInput = formParams["salaryChangeDate"]?.trim().orEmpty()
+    val salaryChangeDeltaInput = formParams["salaryChangeMonthlyDelta"]?.trim().orEmpty()
+    val (salaryChangeDate, salaryChangeMonthlyDelta) = when {
+        salaryChangeDateInput.isEmpty() && salaryChangeDeltaInput.isEmpty() -> null to null
+        else -> {
+            val date = runCatching { LocalDate.parse(salaryChangeDateInput) }.getOrNull() ?: return null
+            val delta = salaryChangeDeltaInput.toDoubleOrNull() ?: return null
+            date to delta
+        }
+    }
+
+    return ScenarioFormInput(
+        name,
+        annualMarketGrowthRatePercent / 100.0,
+        investedSavingsFractionPercent / 100.0,
+        recreationalSpendAdjustment,
+        salaryChangeDate,
+        salaryChangeMonthlyDelta
+    )
 }
