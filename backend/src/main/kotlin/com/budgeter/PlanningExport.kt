@@ -98,16 +98,25 @@ private fun summaryCsv(entries: List<NetWorthEntry>, exportTransactions: List<Tr
 // Value is always entered as a positive magnitude regardless of asset vs.
 // liability - see NetWorthStore.kt's doc comment. AssetOrLiability is
 // exported alongside Type so a verifier doesn't need to know this app's enum
-// (NetWorthEntryType) to tell which way each row counts.
+// (NetWorthEntryType) to tell which way each row counts. The three trailing
+// columns are blank unless the entry actually amortizes/appreciates
+// (NetWorthEntry.isAmortizingMortgage/isAppreciatingRealEstate) - included
+// so a verifier can reproduce projections.csv's mortgage-paydown/
+// appreciation numbers from this file alone, same "verify without app
+// access" goal the rest of this export exists for.
 private fun netWorthCsv(entries: List<NetWorthEntry>): String {
     val writer = StringWriter()
     CSVFormat.DEFAULT.builder()
-        .setHeader("Label", "Type", "AssetOrLiability", "Value")
+        .setHeader("Label", "Type", "AssetOrLiability", "Value", "AnnualInterestRatePercent", "MonthlyPayment", "AnnualAppreciationRatePercent")
         .build()
         .print(writer)
         .use { printer ->
             entries.forEach { entry ->
-                printer.printRecord(entry.label, entry.type.label, if (entry.type.isAsset) "Asset" else "Liability", entry.value)
+                printer.printRecord(
+                    entry.label, entry.type.label, if (entry.type.isAsset) "Asset" else "Liability", entry.value,
+                    entry.annualInterestRate?.let { it * 100 } ?: "", entry.monthlyPayment ?: "",
+                    entry.annualAppreciationRate?.let { it * 100 } ?: ""
+                )
             }
         }
     return writer.toString()
