@@ -37,86 +37,22 @@
       <span class="transaction-amount month-summary-amount <#if netWorth?number gte 0>transaction-amount-positive<#else>transaction-amount-negative</#if>">${netWorth}</span>
     </div>
 
-    <div class="form-card">
-      <h2>Assets <span class="category-count">${totalAssets}</span></h2>
-      <#if (assets?size == 0)>
-      <p class="empty-state">No assets yet.</p>
-      <#else>
-      <div class="card-list">
-        <#list assets as entry>
-        <div class="info-card">
-          <form method="post" action="/planning/entries/${entry.id}" class="recategorize-form">
-            <input type="text" name="label" value="${entry.label}" required>
-            <select name="type">
-              <#list assetTypeOptions as option>
-              <option value="${option.name}" <#if option.name == entry.typeName>selected</#if>>${option.label}</option>
-              </#list>
-            </select>
-            <input type="number" name="value" value="${entry.value}" step="0.01" min="0" required>
-            <button type="submit" class="button button-small button-save">Save</button>
-          </form>
-          <form method="post" action="/planning/entries/${entry.id}/delete">
-            <button type="submit" class="button button-small button-danger">Delete</button>
-          </form>
-        </div>
-        </#list>
-      </div>
-      </#if>
-
-      <h3>Add asset</h3>
-      <form method="post" action="/planning/entries" class="recategorize-form">
-        <input type="text" name="label" placeholder="e.g. Brokerage account" required>
-        <select name="type" required>
-          <#list assetTypeOptions as option>
-          <option value="${option.name}">${option.label}</option>
-          </#list>
-        </select>
-        <input type="number" name="value" placeholder="Value" step="0.01" min="0" required>
-        <button type="submit" class="button">Add asset</button>
-      </form>
-    </div>
-
-    <div class="form-card">
-      <h2>Liabilities <span class="category-count">${totalLiabilities}</span></h2>
-      <#if (liabilities?size == 0)>
-      <p class="empty-state">No liabilities yet.</p>
-      <#else>
-      <div class="card-list">
-        <#list liabilities as entry>
-        <div class="info-card">
-          <form method="post" action="/planning/entries/${entry.id}" class="recategorize-form">
-            <input type="text" name="label" value="${entry.label}" required>
-            <select name="type">
-              <#list liabilityTypeOptions as option>
-              <option value="${option.name}" <#if option.name == entry.typeName>selected</#if>>${option.label}</option>
-              </#list>
-            </select>
-            <input type="number" name="value" value="${entry.value}" step="0.01" min="0" required>
-            <button type="submit" class="button button-small button-save">Save</button>
-          </form>
-          <form method="post" action="/planning/entries/${entry.id}/delete">
-            <button type="submit" class="button button-small button-danger">Delete</button>
-          </form>
-        </div>
-        </#list>
-      </div>
-      </#if>
-
-      <h3>Add liability</h3>
-      <form method="post" action="/planning/entries" class="recategorize-form">
-        <input type="text" name="label" placeholder="e.g. Mortgage" required>
-        <select name="type" required>
-          <#list liabilityTypeOptions as option>
-          <option value="${option.name}">${option.label}</option>
-          </#list>
-        </select>
-        <input type="number" name="value" placeholder="Amount owed" step="0.01" min="0" required>
-        <button type="submit" class="button">Add liability</button>
-      </form>
-    </div>
-
-    <div class="form-card">
+    <div class="form-card" id="goals-card">
       <h2>Goals</h2>
+      <#if (goals?size gt 0)>
+      <div class="chip-row">
+        <label class="chip">
+          <input type="checkbox" id="scenario-chip-baseline" checked>
+          <span class="chip-dot"></span>Baseline
+        </label>
+        <#list scenarios as scenario>
+        <label class="chip">
+          <input type="checkbox" id="scenario-chip-scenario-${scenario.chartColorIndex}" checked>
+          <span class="chip-dot chip-dot-scenario-${scenario.chartColorIndex}"></span>${scenario.name}
+        </label>
+        </#list>
+      </div>
+      </#if>
       <#if (goals?size == 0)>
       <p class="empty-state">No goals yet.</p>
       <#else>
@@ -148,13 +84,6 @@
               <span>${goal.chartMinLabel}</span>
               <span>${goal.chartMaxLabel}</span>
             </div>
-            <#if (goal.chartLines?size gt 1)>
-            <ul class="projection-chart-legend">
-              <#list goal.chartLines as line>
-              <li><span class="projection-chart-legend-swatch ${line.cssClass}"></span>${line.label}</li>
-              </#list>
-            </ul>
-            </#if>
           </div>
           <p class="dashboard-card-note">
             Baseline projected: ${goal.projectedFinal} by ${goal.targetDate}
@@ -210,7 +139,7 @@
 
     <div class="form-card">
       <h2>Scenarios</h2>
-      <p class="dashboard-card-note">Each scenario adds its own line to every goal's chart above, alongside the always-shown baseline (which always assumes today's real savings rate, no growth, and no changes).</p>
+      <p class="dashboard-card-note">Each scenario adds its own line to every goal's chart above, alongside the always-shown baseline (which always assumes today's real savings rate, no growth, and no changes). Use the chips above the goals to show or hide a line.</p>
       <p class="dashboard-card-note">
         <strong>Growth rate</strong> compounds today's existing investments plus whatever share of each month's new savings you mark as <strong>% of new savings invested</strong> - the rest sits as cash and never grows. <strong>Recreational spend adjustment</strong> redirects $/mo from spending into savings (negative = spend more instead). <strong>Salary change</strong> is optional, one-time, and takes effect from its date onward - a negative amount models a deliberate pay cut (e.g. switching to a less demanding role), not just a raise.
       </p>
@@ -225,7 +154,21 @@
       <#else>
       <div class="card-list">
         <#list scenarios as scenario>
-        <div class="info-card">
+        <details class="acc">
+          <summary>
+            <span class="acc-summary-head">
+              <span class="acc-summary-name">${scenario.name}</span>
+              <span class="acc-summary-tags">
+                <span class="tag">${scenario.annualMarketGrowthRatePercent}%/yr</span>
+                <span class="tag">${scenario.investedSavingsFractionPercent}% invested</span>
+                <#if scenario.recreationalSpendAdjustment != "0.00"><span class="tag">${scenario.recreationalSpendAdjustment}/mo spend adj.</span></#if>
+                <#if scenario.hasSalaryChange><span class="tag">salary change ${scenario.salaryChangeDate}</span></#if>
+                <#if scenario.hasRrspStrategy><span class="tag">${scenario.rrspMonthlyContribution}/mo RRSP, ${scenario.rrspRoomRemaining} room left</span></#if>
+                <#if scenario.rrspIncomeCategoryId != ""><span class="tag">room accrual: ${scenario.rrspIncomeCategoryLabel}</span></#if>
+              </span>
+            </span>
+          </summary>
+          <div class="acc-body">
           <form method="post" action="/planning/scenarios/${scenario.id}">
             <div class="form-row">
               <div class="form-field form-field-wide">
@@ -296,7 +239,8 @@
           <form method="post" action="/planning/scenarios/${scenario.id}/delete">
             <button type="submit" class="button button-small button-danger">Delete</button>
           </form>
-        </div>
+          </div>
+        </details>
         </#list>
       </div>
       </#if>
@@ -378,6 +322,84 @@
         </div>
         <button type="submit" class="button">Add scenario</button>
       </form>
+    </div>
+
+    <div class="form-card">
+      <h2>Net worth breakdown <span class="category-count">${totalAssets} in assets, ${totalLiabilities} in liabilities</span></h2>
+      <#if (assets?size == 0 && liabilities?size == 0)>
+      <p class="empty-state">No assets or liabilities yet.</p>
+      <#else>
+      <details class="acc">
+        <summary>${assets?size} asset<#if assets?size != 1>s</#if> &middot; ${liabilities?size} liabilit<#if liabilities?size != 1>ies<#else>y</#if></summary>
+        <div class="acc-body">
+          <div class="card-list">
+            <#list assets as entry>
+            <div class="info-card">
+              <form method="post" action="/planning/entries/${entry.id}" class="recategorize-form">
+                <input type="text" name="label" value="${entry.label}" required>
+                <select name="type">
+                  <#list assetTypeOptions as option>
+                  <option value="${option.name}" <#if option.name == entry.typeName>selected</#if>>${option.label}</option>
+                  </#list>
+                </select>
+                <input type="number" name="value" value="${entry.value}" step="0.01" min="0" required>
+                <button type="submit" class="button button-small button-save">Save</button>
+              </form>
+              <form method="post" action="/planning/entries/${entry.id}/delete">
+                <button type="submit" class="button button-small button-danger">Delete</button>
+              </form>
+            </div>
+            </#list>
+            <#list liabilities as entry>
+            <div class="info-card">
+              <form method="post" action="/planning/entries/${entry.id}" class="recategorize-form">
+                <input type="text" name="label" value="${entry.label}" required>
+                <select name="type">
+                  <#list liabilityTypeOptions as option>
+                  <option value="${option.name}" <#if option.name == entry.typeName>selected</#if>>${option.label}</option>
+                  </#list>
+                </select>
+                <input type="number" name="value" value="${entry.value}" step="0.01" min="0" required>
+                <button type="submit" class="button button-small button-save">Save</button>
+              </form>
+              <form method="post" action="/planning/entries/${entry.id}/delete">
+                <button type="submit" class="button button-small button-danger">Delete</button>
+              </form>
+            </div>
+            </#list>
+          </div>
+        </div>
+      </details>
+      </#if>
+
+      <div class="two-col-forms">
+        <div>
+          <h3>Add asset</h3>
+          <form method="post" action="/planning/entries" class="recategorize-form">
+            <input type="text" name="label" placeholder="e.g. Brokerage account" required>
+            <select name="type" required>
+              <#list assetTypeOptions as option>
+              <option value="${option.name}">${option.label}</option>
+              </#list>
+            </select>
+            <input type="number" name="value" placeholder="Value" step="0.01" min="0" required>
+            <button type="submit" class="button">Add asset</button>
+          </form>
+        </div>
+        <div>
+          <h3>Add liability</h3>
+          <form method="post" action="/planning/entries" class="recategorize-form">
+            <input type="text" name="label" placeholder="e.g. Mortgage" required>
+            <select name="type" required>
+              <#list liabilityTypeOptions as option>
+              <option value="${option.name}">${option.label}</option>
+              </#list>
+            </select>
+            <input type="number" name="value" placeholder="Amount owed" step="0.01" min="0" required>
+            <button type="submit" class="button">Add liability</button>
+          </form>
+        </div>
+      </div>
     </div>
     </main>
   </div>
