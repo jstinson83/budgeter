@@ -4,6 +4,7 @@ import org.apache.commons.csv.CSVFormat
 import java.io.ByteArrayOutputStream
 import java.io.StringWriter
 import java.time.LocalDate
+import java.time.YearMonth
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -16,6 +17,15 @@ import java.util.zip.ZipOutputStream
 // projectGoal/projectScenario directly (the same functions NetWorthPage.kt
 // calls for the /planning chart) rather than recomputing anything, so the
 // export can't drift from what the page itself shows.
+//
+// Deliberately no per-transaction detail (raw description/merchant text) -
+// the projection math itself only ever consumes a monthly net number
+// (ProjectionEngine.kt's baselineMonthlySavingsRate sums income minus
+// expense per month, transfers/investments excluded), never an individual
+// row, so a month+category rollup (categoryTotalsCsv below) gives a
+// verifier everything the numbers are built from without exposing where
+// specific money was spent - the earlier per-row transactions.csv did that
+// unnecessarily.
 const val EXPORT_TRAILING_MONTHS = 6L
 
 fun planningExportZip(
@@ -45,8 +55,8 @@ fun planningExportZip(
         zip.write(netWorthCsv(entries).toByteArray())
         zip.closeEntry()
 
-        zip.putNextEntry(ZipEntry("transactions.csv"))
-        zip.write(transactionsToCsv(exportTransactions, categories).toByteArray())
+        zip.putNextEntry(ZipEntry("monthly_category_totals.csv"))
+        zip.write(categoryTotalsCsv(exportTransactions, categories).toByteArray())
         zip.closeEntry()
 
         zip.putNextEntry(ZipEntry("goals.csv"))
@@ -98,6 +108,35 @@ private fun netWorthCsv(entries: List<NetWorthEntry>): String {
         .use { printer ->
             entries.forEach { entry ->
                 printer.printRecord(entry.label, entry.type.label, if (entry.type.isAsset) "Asset" else "Liability", entry.value)
+            }
+        }
+    return writer.toString()
+}
+
+// Same category-label resolution as transactionsToCsv (TransactionExport.kt)
+// - TRANSFER isn't a real Category row (CategoryStore.kt), so it's
+// special-cased to read "Transfer" rather than a raw id or a blank cell.
+// Grouped by calendar month + category rather than emitted as a running
+// total, so a verifier can see the trend shape as well as recompute
+// baselineMonthlySavingsRate's trailing-month average from these rows.
+private fun categoryTotalsCsv(transactions: List<Transaction>, categories: List<Category>): String {
+    val labelById = categories.associateBy({ it.id }, { it.label })
+    val writer = StringWriter()
+    CSVFormat.DEFAULT.builder()
+        .setHeader("Month", "Category", "TotalAmount", "TransactionCount")
+        .build()
+        .print(writer)
+        .use { printer ->
+            transactions.groupBy { transaction ->
+                val category = when (transaction.category) {
+                    null -> "Uncategorized"
+                    TRANSFER_CATEGORY_ID -> "Transfer"
+                    else -> labelById[transaction.category] ?: transaction.category
+                }
+                YearMonth.from(transaction.date) to category
+            }.toSortedMap(compareBy({ it.first }, { it.second })).forEach { (key, group) ->
+                val (month, category) = key
+                printer.printRecord(month, category, group.sumOf { it.amount }, group.size)
             }
         }
     return writer.toString()
