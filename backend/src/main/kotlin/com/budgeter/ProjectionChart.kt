@@ -21,8 +21,11 @@ private const val CHART_PADDING = 6.0
 // (styles.css's --pie-1.."--pie-5) so a scenario line and a pie slice
 // never fight over what a given hue means - assigned by position (first
 // scenario added, second, ...) rather than a stable per-scenario color
-// map, same reasoning PieChart.kt gives for category colors.
-private val SCENARIO_LINE_CSS_CLASSES = listOf(
+// map, same reasoning PieChart.kt gives for category colors. Not private -
+// NetWorthPage.kt's scenarioRowModel() reuses this same position -> class
+// mapping to give planning.ftl's scenario visibility chips a CSS class to
+// target, so a chip and the chart lines it toggles never drift out of sync.
+val SCENARIO_LINE_CSS_CLASSES = listOf(
     "projection-chart-line-scenario-1",
     "projection-chart-line-scenario-2",
     "projection-chart-line-scenario-3",

@@ -1341,6 +1341,27 @@ itself.
     line always renders on-chart even when far above/below every
     trajectory, rather than
     clipping outside the viewBox.
+  - **`/planning` layout (reordered 2026-08-22):** Goals+chart sit at the
+    top (changed most often, the page's actual point), Scenarios below
+    them, and a merged "Net worth breakdown" (Assets+Liabilities combined,
+    collapsed behind a `<details>` by default) at the bottom (changed
+    least often). Each goal's chart no longer renders its own legend -
+    replaced by one shared row of visibility chips above the Goals list
+    (`#goals-card`'s `.chip-row`) that toggles every goal's chart lines at
+    once via CSS `:has()`, no JS: each chip's checkbox carries a stable id
+    (`scenario-chip-baseline`, `scenario-chip-scenario-N`) matching the
+    `projection-chart-line`/`projection-chart-line-scenario-N` class the
+    line already has, and `#goals-card:has(#chip-id:not(:checked)) .class
+    { opacity: ... }` dims it everywhere inside the card. `N` is
+    `scenarioRowModel()`'s `chartColorIndex` (`NetWorthPage.kt`) - the same
+    position-in-`SCENARIO_LINE_CSS_CLASSES` (`ProjectionChart.kt`, made
+    non-`private` for this) the chart itself uses, so a chip can never
+    drift out of sync with the line it controls, including the >5-scenario
+    case where the class (and therefore the chip) is already shared by
+    more than one scenario. Scenario rows collapse to a one-line
+    `<details>` summary (name + growth/invested/RRSP tags) with the full
+    edit form as the expandable body - the "Add scenario" form itself
+    stays always-expanded, unlike existing rows.
 - **`Scenario`** (`ScenarioStore.kt`, landed): a named what-if parameter
   set, CRUD like `NetWorthEntry`/`FinancialGoal`, run through
   `ProjectionEngine.kt`'s `projectScenario()` and rendered as its own line

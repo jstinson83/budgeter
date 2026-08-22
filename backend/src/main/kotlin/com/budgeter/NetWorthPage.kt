@@ -35,7 +35,7 @@ fun netWorthPageModel(
         "assetTypeOptions" to NetWorthEntryType.entries.filter { it.isAsset }.map { mapOf("name" to it.name, "label" to it.label) },
         "liabilityTypeOptions" to NetWorthEntryType.entries.filter { !it.isAsset }.map { mapOf("name" to it.name, "label" to it.label) },
         "goals" to goals.map { goal -> financialGoalRowModel(goal, entries, scenarios, transactions, today) },
-        "scenarios" to scenarios.map { scenario -> scenarioRowModel(scenario, categoryLabelById) },
+        "scenarios" to scenarios.mapIndexed { index, scenario -> scenarioRowModel(scenario, categoryLabelById, index) },
         "growthPresets" to MarketGrowthPreset.entries.map { mapOf("name" to it.name, "label" to it.label, "annualRatePercent" to "%.1f".format(it.annualRate * 100)) },
         // Only active categories are offered for the RRSP income-tagging
         // selector - same "disabling stops new assignment" rule
@@ -94,9 +94,14 @@ private fun financialGoalRowModel(goal: FinancialGoal, entries: List<NetWorthEnt
     )
 }
 
-private fun scenarioRowModel(scenario: Scenario, categoryLabelById: Map<String, String>): Map<String, Any?> = mapOf(
+private fun scenarioRowModel(scenario: Scenario, categoryLabelById: Map<String, String>, index: Int): Map<String, Any?> = mapOf(
     "id" to scenario.id,
     "name" to scenario.name,
+    // 1-based position within SCENARIO_LINE_CSS_CLASSES (ProjectionChart.kt) -
+    // lets the scenario visibility chip planning.ftl renders for this row
+    // target the exact same chart-line class the goal charts use, without
+    // duplicating the cycling-by-position logic in the template itself.
+    "chartColorIndex" to (index % SCENARIO_LINE_CSS_CLASSES.size) + 1,
     "annualMarketGrowthRatePercent" to "%.1f".format(scenario.annualMarketGrowthRate * 100),
     "investedSavingsFractionPercent" to "%.0f".format(scenario.investedSavingsFraction * 100),
     "recreationalSpendAdjustment" to "%.2f".format(scenario.recreationalSpendAdjustment),

@@ -22,8 +22,7 @@ class NetWorthRoutesTest {
 
         val response = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }
         val body = response.bodyAsText()
-        assertTrue(body.contains("No assets yet."))
-        assertTrue(body.contains("No liabilities yet."))
+        assertTrue(body.contains("No assets or liabilities yet."))
         assertTrue(body.contains("0.00"))
     }
 
@@ -134,7 +133,7 @@ class NetWorthRoutesTest {
         assertEquals("Deleted entry", Url(deleteResponse.headers[HttpHeaders.Location]!!).parameters["message"])
 
         val afterDelete = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        assertTrue(afterDelete.contains("No assets yet."))
+        assertTrue(afterDelete.contains("No assets or liabilities yet."))
     }
 
     @Test
@@ -325,7 +324,7 @@ class NetWorthRoutesTest {
 
         val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
         assertTrue(page.contains("Aggressive growth"))
-        assertTrue(page.contains("class=\"projection-chart-legend\""))
+        assertTrue(page.contains("id=\"scenario-chip-scenario-1\""))
         assertTrue(page.contains("projection-chart-line-scenario-1"))
     }
 

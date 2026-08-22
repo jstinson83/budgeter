@@ -1250,37 +1250,160 @@ input[type="file"]::file-selector-button:hover {
 .projection-chart-line-scenario-4 { stroke: var(--pie-4); }
 .projection-chart-line-scenario-5 { stroke: var(--pie-5); }
 
-.projection-chart-legend {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* Scenario visibility chips (planning.ftl) - one shared row above the
+   Goals list toggles which lines render across every goal's chart at
+   once, replacing a legend that used to repeat under each chart. Pure
+   CSS via :has(): a chip's checkbox and the chart lines it controls both
+   live under #goals-card, so unchecking one dims the matching class
+   everywhere inside it, no JS required. */
+.chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6rem;
-  font-size: 0.75rem;
-  color: var(--text-dim);
+  gap: 0.4rem;
+  margin: 0.5rem 0 1.25rem;
 }
 
-.projection-chart-legend li {
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem 0.35rem 0.6rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.chip input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chip:has(input:checked) {
+  color: var(--text);
+  border-color: transparent;
+  background: var(--surface);
+  box-shadow: var(--shadow-card-sm);
+}
+
+.chip-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--brass);
+}
+
+.chip-dot-scenario-1 { background: var(--pie-1); }
+.chip-dot-scenario-2 { background: var(--pie-2); }
+.chip-dot-scenario-3 { background: var(--pie-3); }
+.chip-dot-scenario-4 { background: var(--pie-4); }
+.chip-dot-scenario-5 { background: var(--pie-5); }
+
+#goals-card:has(#scenario-chip-baseline:not(:checked)) .projection-chart-line {
+  opacity: 0.15;
+}
+
+#goals-card:has(#scenario-chip-scenario-1:not(:checked)) .projection-chart-line-scenario-1,
+#goals-card:has(#scenario-chip-scenario-2:not(:checked)) .projection-chart-line-scenario-2,
+#goals-card:has(#scenario-chip-scenario-3:not(:checked)) .projection-chart-line-scenario-3,
+#goals-card:has(#scenario-chip-scenario-4:not(:checked)) .projection-chart-line-scenario-4,
+#goals-card:has(#scenario-chip-scenario-5:not(:checked)) .projection-chart-line-scenario-5 {
+  opacity: 0.15;
+}
+
+/* Collapsible sub-lists (planning.ftl) - Scenarios' existing rows and the
+   combined Net worth breakdown both default to closed so the page doesn't
+   force a scroll past rarely-touched detail to reach the goals/chart up
+   top. */
+.acc {
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  overflow: hidden;
+}
+
+.acc[open] {
+  background: transparent;
+}
+
+.acc summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.85rem 1rem;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.88rem;
+}
+
+.acc summary::-webkit-details-marker {
+  display: none;
+}
+
+.acc summary::after {
+  content: "Show \25BE";
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--brass);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.acc[open] summary::after {
+  content: "Hide \25B4";
+}
+
+.acc-body {
+  padding: 0 1rem 1rem;
+}
+
+.acc-summary-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.acc-summary-name {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.acc-summary-tags {
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.35rem;
 }
 
-.projection-chart-legend-swatch {
-  display: inline-block;
-  width: 0.6rem;
-  height: 0.15rem;
-  border-radius: 1px;
-  background: currentColor;
+.tag {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 0.18rem 0.55rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.projection-chart-legend-swatch.projection-chart-line { background: var(--brass); }
-.projection-chart-legend-swatch.projection-chart-line-scenario-1 { background: var(--pie-1); }
-.projection-chart-legend-swatch.projection-chart-line-scenario-2 { background: var(--pie-2); }
-.projection-chart-legend-swatch.projection-chart-line-scenario-3 { background: var(--pie-3); }
-.projection-chart-legend-swatch.projection-chart-line-scenario-4 { background: var(--pie-4); }
-.projection-chart-legend-swatch.projection-chart-line-scenario-5 { background: var(--pie-5); }
+/* Net worth breakdown's side-by-side add-asset/add-liability forms. */
+.two-col-forms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1.25rem;
+}
 
 /* House Knowledge */
 
