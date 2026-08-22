@@ -225,16 +225,36 @@ class FakeNetWorthEntryRepository : NetWorthEntryRepository {
         entries.filter { it.ownerId == ownerId }
             .sortedWith(compareByDescending<NetWorthEntry> { it.type.isAsset }.thenBy { it.label.lowercase() })
 
-    override suspend fun add(ownerId: String, label: String, type: NetWorthEntryType, value: Double): NetWorthEntry {
-        val entry = NetWorthEntry("net-worth-entry-${nextId++}", ownerId, label, type, value)
+    override suspend fun add(
+        ownerId: String,
+        label: String,
+        type: NetWorthEntryType,
+        value: Double,
+        annualInterestRate: Double?,
+        monthlyPayment: Double?,
+        annualAppreciationRate: Double?
+    ): NetWorthEntry {
+        val entry = NetWorthEntry("net-worth-entry-${nextId++}", ownerId, label, type, value, annualInterestRate, monthlyPayment, annualAppreciationRate)
         entries += entry
         return entry
     }
 
-    override suspend fun update(ownerId: String, id: String, label: String, type: NetWorthEntryType, value: Double): NetWorthEntry? {
+    override suspend fun update(
+        ownerId: String,
+        id: String,
+        label: String,
+        type: NetWorthEntryType,
+        value: Double,
+        annualInterestRate: Double?,
+        monthlyPayment: Double?,
+        annualAppreciationRate: Double?
+    ): NetWorthEntry? {
         val index = entries.indexOfFirst { it.id == id && it.ownerId == ownerId }
         if (index == -1) return null
-        val updated = entries[index].copy(label = label, type = type, value = value)
+        val updated = entries[index].copy(
+            label = label, type = type, value = value,
+            annualInterestRate = annualInterestRate, monthlyPayment = monthlyPayment, annualAppreciationRate = annualAppreciationRate
+        )
         entries[index] = updated
         return updated
     }

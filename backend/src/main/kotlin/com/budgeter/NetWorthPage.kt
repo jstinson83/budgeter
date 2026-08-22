@@ -51,7 +51,10 @@ private fun netWorthEntryRowModel(entry: NetWorthEntry): Map<String, Any?> = map
     "label" to entry.label,
     "typeName" to entry.type.name,
     "typeLabel" to entry.type.label,
-    "value" to "%.2f".format(entry.value)
+    "value" to "%.2f".format(entry.value),
+    "annualInterestRatePercent" to (entry.annualInterestRate?.let { "%.2f".format(it * 100) } ?: ""),
+    "monthlyPayment" to (entry.monthlyPayment?.let { "%.2f".format(it) } ?: ""),
+    "annualAppreciationRatePercent" to (entry.annualAppreciationRate?.let { "%.2f".format(it * 100) } ?: "")
 )
 
 private fun financialGoalRowModel(goal: FinancialGoal, entries: List<NetWorthEntry>, scenarios: List<Scenario>, transactions: List<Transaction>, today: LocalDate): Map<String, Any?> {

@@ -36,30 +36,93 @@ data class NetWorthEntry(
     val ownerId: String,
     val label: String,
     val type: NetWorthEntryType,
-    val value: Double
+    val value: Double,
+    // Mortgage amortization inputs, meaningful on MORTGAGE entries only -
+    // both set together or both left null, same "coherent group" pattern
+    // Scenario's salary-change pair uses (a rate with no payment, or vice
+    // versa, isn't a runnable amortization schedule). Left null, the entry
+    // stays frozen at `value` for the whole projection - the behavior every
+    // entry had before this existed. See ProjectionEngine.kt's
+    // DynamicEntrySchedules for how these actually get used, and
+    // CLAUDE.md/current.md's "Fix 1" writeup for why this was added (a
+    // reviewed projection export showed home equity pinned at one constant
+    // value for the entire horizon - the projection loop updated the
+    // invested balance every month but never touched a MORTGAGE or
+    // REAL_ESTATE entry).
+    val annualInterestRate: Double? = null,
+    val monthlyPayment: Double? = null,
+    // Real estate appreciation, meaningful on REAL_ESTATE entries only -
+    // independent of the mortgage pair above (a paid-off property can
+    // appreciate with no MORTGAGE entry at all, and a mortgage amortizes
+    // the same way regardless of whether its property's appreciation rate
+    // is set). Its own field rather than reusing a Scenario's
+    // annualMarketGrowthRate - real estate and equities shouldn't be forced
+    // to move together in the model.
+    val annualAppreciationRate: Double? = null
 )
 
 // Sum(asset values) - sum(liability values) - the one place this
 // calculation lives, reused by the projection engine (slice 3) as the
 // baseline it projects forward from and by the planning page for the
-// current-net-worth summary.
+// current-net-worth summary. Always uses each entry's own static `value` -
+// the current, as-of-today snapshot - never the amortized/appreciated
+// schedule ProjectionEngine.kt projects forward; that's a distinct concern
+// from "what's true right now."
 fun netWorthTotal(entries: List<NetWorthEntry>): Double =
     entries.sumOf { if (it.type.isAsset) it.value else -it.value }
 
+// Whether this entry has a full mortgage amortization schedule to run
+// (see ProjectionEngine.kt's DynamicEntrySchedules) rather than sitting
+// frozen at `value` - both annualInterestRate and monthlyPayment set, on an
+// entry actually typed as a mortgage.
+val NetWorthEntry.isAmortizingMortgage: Boolean
+    get() = type == NetWorthEntryType.MORTGAGE && annualInterestRate != null && monthlyPayment != null
+
+// Whether this entry appreciates over the projection instead of sitting
+// frozen at `value` - annualAppreciationRate set, on an entry actually
+// typed as real estate.
+val NetWorthEntry.isAppreciatingRealEstate: Boolean
+    get() = type == NetWorthEntryType.REAL_ESTATE && annualAppreciationRate != null
+
 interface NetWorthEntryRepository {
     suspend fun all(ownerId: String): List<NetWorthEntry>
-    suspend fun add(ownerId: String, label: String, type: NetWorthEntryType, value: Double): NetWorthEntry
-    suspend fun update(ownerId: String, id: String, label: String, type: NetWorthEntryType, value: Double): NetWorthEntry?
+    suspend fun add(
+        ownerId: String,
+        label: String,
+        type: NetWorthEntryType,
+        value: Double,
+        annualInterestRate: Double? = null,
+        monthlyPayment: Double? = null,
+        annualAppreciationRate: Double? = null
+    ): NetWorthEntry
+    suspend fun update(
+        ownerId: String,
+        id: String,
+        label: String,
+        type: NetWorthEntryType,
+        value: Double,
+        annualInterestRate: Double? = null,
+        monthlyPayment: Double? = null,
+        annualAppreciationRate: Double? = null
+    ): NetWorthEntry?
     suspend fun delete(ownerId: String, id: String)
 }
 
 class FirestoreNetWorthEntryStore(private val firestore: Firestore) : NetWorthEntryRepository {
     private val collection = firestore.collection("netWorthEntries")
 
-    override suspend fun add(ownerId: String, label: String, type: NetWorthEntryType, value: Double): NetWorthEntry {
+    override suspend fun add(
+        ownerId: String,
+        label: String,
+        type: NetWorthEntryType,
+        value: Double,
+        annualInterestRate: Double?,
+        monthlyPayment: Double?,
+        annualAppreciationRate: Double?
+    ): NetWorthEntry {
         val docRef = collection.document()
-        docRef.set(entryMap(ownerId, label, type, value)).get()
-        return NetWorthEntry(docRef.id, ownerId, label, type, value)
+        docRef.set(entryMap(ownerId, label, type, value, annualInterestRate, monthlyPayment, annualAppreciationRate)).get()
+        return NetWorthEntry(docRef.id, ownerId, label, type, value, annualInterestRate, monthlyPayment, annualAppreciationRate)
     }
 
     // Single-field ownerId equality filter, no orderBy - same
@@ -72,10 +135,22 @@ class FirestoreNetWorthEntryStore(private val firestore: Firestore) : NetWorthEn
             .sortedWith(compareByDescending<NetWorthEntry> { it.type.isAsset }.thenBy { it.label.lowercase() })
     }
 
-    override suspend fun update(ownerId: String, id: String, label: String, type: NetWorthEntryType, value: Double): NetWorthEntry? {
+    override suspend fun update(
+        ownerId: String,
+        id: String,
+        label: String,
+        type: NetWorthEntryType,
+        value: Double,
+        annualInterestRate: Double?,
+        monthlyPayment: Double?,
+        annualAppreciationRate: Double?
+    ): NetWorthEntry? {
         val existing = get(ownerId, id) ?: return null
-        collection.document(id).set(entryMap(ownerId, label, type, value)).get()
-        return existing.copy(label = label, type = type, value = value)
+        collection.document(id).set(entryMap(ownerId, label, type, value, annualInterestRate, monthlyPayment, annualAppreciationRate)).get()
+        return existing.copy(
+            label = label, type = type, value = value,
+            annualInterestRate = annualInterestRate, monthlyPayment = monthlyPayment, annualAppreciationRate = annualAppreciationRate
+        )
     }
 
     override suspend fun delete(ownerId: String, id: String) {
@@ -91,11 +166,22 @@ class FirestoreNetWorthEntryStore(private val firestore: Firestore) : NetWorthEn
         return toEntry(snapshot.id, data)
     }
 
-    private fun entryMap(ownerId: String, label: String, type: NetWorthEntryType, value: Double): Map<String, Any?> = mapOf(
+    private fun entryMap(
+        ownerId: String,
+        label: String,
+        type: NetWorthEntryType,
+        value: Double,
+        annualInterestRate: Double?,
+        monthlyPayment: Double?,
+        annualAppreciationRate: Double?
+    ): Map<String, Any?> = mapOf(
         "ownerId" to ownerId,
         "label" to label,
         "type" to type.name,
-        "value" to value
+        "value" to value,
+        "annualInterestRate" to annualInterestRate,
+        "monthlyPayment" to monthlyPayment,
+        "annualAppreciationRate" to annualAppreciationRate
     )
 
     private fun toEntry(id: String, data: Map<String, Any?>): NetWorthEntry = NetWorthEntry(
@@ -103,6 +189,9 @@ class FirestoreNetWorthEntryStore(private val firestore: Firestore) : NetWorthEn
         ownerId = data["ownerId"] as? String ?: "",
         label = data["label"] as? String ?: "",
         type = (data["type"] as? String)?.let { runCatching { NetWorthEntryType.valueOf(it) }.getOrNull() } ?: NetWorthEntryType.OTHER_ASSET,
-        value = (data["value"] as? Number)?.toDouble() ?: 0.0
+        value = (data["value"] as? Number)?.toDouble() ?: 0.0,
+        annualInterestRate = (data["annualInterestRate"] as? Number)?.toDouble(),
+        monthlyPayment = (data["monthlyPayment"] as? Number)?.toDouble(),
+        annualAppreciationRate = (data["annualAppreciationRate"] as? Number)?.toDouble()
     )
 }

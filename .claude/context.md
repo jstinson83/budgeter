@@ -1495,6 +1495,57 @@ itself.
       or fetches - left blank, accrual is uncapped. `/planning`'s income-
       category `<select>` only offers active categories, filtered/sorted
       the same way `/categories`' own rule-target dropdown is.
+- **Mortgage amortization + real estate appreciation** (landed
+  2026-08-22, "Fix 1" from a maintainer review of a projections export):
+  before this, a `MORTGAGE`/`REAL_ESTATE` `NetWorthEntry` sat frozen at its
+  own `value` for the entire projection horizon - the engine updated the
+  invested balance every month but never touched these two entry types, so
+  a reviewed export showed home equity pinned at one constant figure across
+  all 125 exported months (with `investedSavingsFraction = 1.0`, the "cash"
+  bucket containing house+mortgage+bank+CC never grew at all, making the
+  bug maximally visible). `NetWorthEntry` gained three optional fields:
+  `annualInterestRate`/`monthlyPayment` (a coherent pair, same "both or
+  neither" rule as `Scenario`'s salary-change fields - meaningful on
+  `MORTGAGE` entries only) and `annualAppreciationRate` (independent, its
+  own field rather than reusing a scenario's market growth rate - real
+  estate and equities shouldn't be forced to move together in the model;
+  meaningful on `REAL_ESTATE` entries only). Left null (every entry's
+  default, and every entry that predates this feature), an entry is
+  unaffected - byte-for-byte the same frozen behavior as before.
+  - `ProjectionEngine.kt`'s private `DynamicEntrySchedules` class
+    precomputes a month-by-month balance/value schedule for every opted-in
+    entry - real interest/principal amortization (not a closed-form
+    estimate, since principal accelerates as the balance shrinks) and
+    monthly-compounding appreciation (same convention `annualMarketGrowthRate`
+    already uses) - and is shared by both `projectNetWorth` (the baseline,
+    previously a single flat-rate number with no per-entry breakdown at
+    all - its signature changed from `startingNetWorth: Double` to
+    `entries: List<NetWorthEntry>` to make this possible) and
+    `projectScenario` (whose `cash` bucket now carries the same dynamic
+    delta on top of ordinary ongoing-savings growth). A mortgage and its
+    property amortize/appreciate identically regardless of which (if any)
+    Scenario is being projected - only the ongoing savings rate/split
+    differs between the two callers, so the schedule computation itself
+    isn't duplicated.
+  - **Mortgage payoff**: once a mortgage's amortization schedule hits
+    zero, its `monthlyPayment` stops being subtracted and instead counts as
+    extra ongoing savings from the following month onward, rather than
+    vanishing from the model - the maintainer's notes were explicit about
+    this ("ideally that payment amount starts flowing into savings instead
+    of vanishing"). The payoff month itself doesn't count as "freed" (that
+    month's payment still went toward retiring the last of the balance).
+  - `/planning`'s entry rows/add forms gained matching optional inputs
+    (`annualInterestRatePercent`/`monthlyPayment` on liability rows,
+    `annualAppreciationRatePercent` on asset rows) - shown unconditionally
+    per row rather than toggled by `type` (same posture already used for
+    `Scenario`'s RRSP fields, since this app has no JS framework for
+    dynamic field toggling - a stray value on the wrong entry type is
+    simply never read, not a validation error).
+  - `PlanningExport.kt`'s `net_worth.csv` gained the same three columns
+    (blank when unset) so a third-party verifier can reproduce
+    `projections.csv`'s mortgage-paydown/appreciation numbers from the
+    export alone, matching the export's whole "verify without app access"
+    purpose.
 - **Gemini scenario-parameter suggestions** (not built) - see plan item 5
   in `current.md`, now scoped first at a "suggest my marginal tax rate"
   helper for the RRSP strategy above (reviewable, never authoritative -
