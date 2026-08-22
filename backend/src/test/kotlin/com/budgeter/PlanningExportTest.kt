@@ -2,6 +2,7 @@ package com.budgeter
 
 import java.io.ByteArrayInputStream
 import java.time.LocalDate
+import java.time.YearMonth
 import java.util.zip.ZipInputStream
 import kotlin.test.*
 
@@ -11,8 +12,8 @@ class PlanningExportTest {
     private fun entry(label: String, type: NetWorthEntryType, value: Double): NetWorthEntry =
         NetWorthEntry("e-$label", "owner", label, type, value)
 
-    private fun tx(id: String, date: LocalDate, amount: Double, category: String? = null): Transaction =
-        Transaction(id, "owner", AccountType.BANK, date, "Transaction $id", amount, category)
+    private fun tx(id: String, date: LocalDate, amount: Double, category: String? = null, description: String = "Transaction $id"): Transaction =
+        Transaction(id, "owner", AccountType.BANK, date, description, amount, category)
 
     private fun goal(name: String, targetAmount: Double, targetDate: LocalDate): FinancialGoal =
         FinancialGoal("g-$name", "owner", name, FinancialGoalType.NET_WORTH_TARGET, targetDate, targetAmount = targetAmount)
@@ -38,22 +39,39 @@ class PlanningExportTest {
         val files = readZip(bytes)
 
         assertEquals(
-            setOf("summary.csv", "net_worth.csv", "transactions.csv", "goals.csv", "scenarios.csv", "projections.csv", "outcomes.csv"),
+            setOf("summary.csv", "net_worth.csv", "monthly_category_totals.csv", "goals.csv", "scenarios.csv", "projections.csv", "outcomes.csv"),
             files.keys
         )
     }
 
     @Test
-    fun testTransactionsCsvOnlyIncludesTrailingSixMonths() {
+    fun testCategoryTotalsCsvOnlyIncludesTrailingSixMonthsRolledUpByMonthAndCategory() {
         val transactions = listOf(
-            tx("in-range", date = today.minusMonths(1), amount = -10.0),
-            tx("too-old", date = today.minusMonths(7), amount = -20.0)
+            tx("in-1", date = today.minusMonths(1), amount = -10.0, category = "GROCERIES"),
+            tx("in-2", date = today.minusMonths(1), amount = -15.0, category = "GROCERIES"),
+            tx("too-old", date = today.minusMonths(7), amount = -20.0, category = "GROCERIES")
+        )
+        val categories = listOf(Category("GROCERIES", "owner", "Groceries"))
+        val bytes = planningExportZip(emptyList(), emptyList(), emptyList(), transactions, categories, today)
+        val csv = readZip(bytes)["monthly_category_totals.csv"]!!
+        val lines = csv.trim().lines()
+
+        assertEquals("Month,Category,TotalAmount,TransactionCount", lines[0])
+        assertEquals(listOf("${YearMonth.from(today.minusMonths(1))},Groceries,-25.0,2"), lines.drop(1))
+    }
+
+    // The whole point of this rollup - a third party gets the numbers the
+    // projection math is built from, never merchant-level detail.
+    @Test
+    fun testCategoryTotalsCsvNeverLeaksTransactionDescriptionsOrIds() {
+        val transactions = listOf(
+            tx("secret-id", date = today.minusMonths(1), amount = -10.0, description = "Planned Parenthood")
         )
         val bytes = planningExportZip(emptyList(), emptyList(), emptyList(), transactions, emptyList(), today)
-        val csv = readZip(bytes)["transactions.csv"]!!
+        val csv = readZip(bytes)["monthly_category_totals.csv"]!!
 
-        assertTrue(csv.contains("in-range"))
-        assertFalse(csv.contains("too-old"))
+        assertFalse(csv.contains("Planned Parenthood"))
+        assertFalse(csv.contains("secret-id"))
     }
 
     @Test

@@ -29,7 +29,7 @@
 
     <p class="dashboard-card-note">
       <a href="/planning/export" class="button button-small">Download verification export (.zip)</a>
-      &mdash; transactions, net worth, goals, scenarios, and projections as plain CSVs, for sharing with someone (accountant, lender) you don't want to give app access to.
+      &mdash; monthly category totals, net worth, goals, scenarios, and projections as plain CSVs, for sharing with someone (accountant, lender) you don't want to give app access to. No individual transaction descriptions are included.
     </p>
 
     <div class="month-summary">
