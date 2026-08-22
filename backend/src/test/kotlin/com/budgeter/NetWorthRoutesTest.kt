@@ -28,6 +28,30 @@ class NetWorthRoutesTest {
     }
 
     @Test
+    fun testPlanningExportRequiresSignIn() = testApplication {
+        testModule()
+
+        val response = client.get("/planning/export")
+        assertEquals(HttpStatusCode.Unauthorized, response.status)
+    }
+
+    @Test
+    fun testPlanningExportReturnsAZipAttachment() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+        client.post("/planning/entries") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("label=Brokerage&type=INVESTMENT&value=20000.00")
+        }
+
+        val response = client.get("/planning/export")
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals(ContentType.Application.Zip, response.contentType()?.withoutParameters())
+        assertTrue(response.headers[HttpHeaders.ContentDisposition]!!.contains("planning-export-"))
+        assertTrue(response.headers[HttpHeaders.ContentDisposition]!!.contains(".zip"))
+    }
+
+    @Test
     fun testAddingAnAssetMakesItAppearAndUpdatesNetWorth() = testApplication {
         testModule()
         val client = signInFakeUser()

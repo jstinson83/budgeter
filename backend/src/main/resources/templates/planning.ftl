@@ -27,6 +27,11 @@
 
     <h1>Planning</h1>
 
+    <p class="dashboard-card-note">
+      <a href="/planning/export" class="button button-small">Download verification export (.zip)</a>
+      &mdash; transactions, net worth, goals, scenarios, and projections as plain CSVs, for sharing with someone (accountant, lender) you don't want to give app access to.
+    </p>
+
     <div class="month-summary">
       <span class="month-summary-label">Net worth</span>
       <span class="transaction-amount month-summary-amount <#if netWorth?number gte 0>transaction-amount-positive<#else>transaction-amount-negative</#if>">${netWorth}</span>

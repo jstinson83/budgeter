@@ -41,6 +41,24 @@ fun Route.netWorthRoutes(
         call.respond(FreeMarkerContent("planning.ftl", model))
     }
 
+    // Zip of plain CSVs for a third party to verify without app access - see
+    // PlanningExport.kt. Reuses the same stores as the page above.
+    get("/planning/export") {
+        val ownerId = call.requireUserId()
+        val entries = netWorthEntryStore.all(ownerId)
+        val goals = financialGoalStore.all(ownerId)
+        val scenarios = scenarioStore.all(ownerId)
+        val transactions = transactionStore.all(ownerId)
+        val categories = categoryStore.all(ownerId)
+        val today = LocalDate.now()
+        val zipBytes = planningExportZip(entries, goals, scenarios, transactions, categories, today)
+        call.response.header(
+            HttpHeaders.ContentDisposition,
+            ContentDisposition.Attachment.withParameter(ContentDisposition.Parameters.FileName, "planning-export-$today.zip").toString()
+        )
+        call.respondBytes(zipBytes, ContentType.Application.Zip)
+    }
+
     post("/planning/entries") {
         val ownerId = call.requireUserId()
         val formParams = call.receiveParameters()
