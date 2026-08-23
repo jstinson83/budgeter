@@ -103,6 +103,47 @@ Planning Projections subsystem section. Working in slices, smallest first:
 - [ ] 6. Real estate/leverage scenario (borrow against net worth at a
       rate, invest the proceeds, service via monthly interest) - raised as
       an idea, not yet scoped into concrete fields.
+- [ ] 7. **Income-change event** (discussed 2026-08-23): a dated $/mo delta
+      to projected savings, with an *optional end date* - generalizes the
+      existing single `salaryChangeDate`/`salaryChangeMonthlyDelta` step,
+      which is permanent-from-its-date-onward with no way to say "reverts
+      on this date" (needed for "I'll earn less for N months," not just
+      "I got a raise"). Bespoke UI (not shared with item 8 below): the add
+      form explicitly asks whether the event also changes the scenario's
+      RRSP monthly contribution / RRSP room accrual base or cap / marginal
+      tax rate - each defaults to "no change" so a plain pay-change event
+      stays a one-field action, but the fields are shown up front (not
+      behind an "advanced" toggle) so the household has to consciously
+      decide rather than those numbers silently drifting out of sync with
+      a changed income. Deliberately never auto-derived - this app doesn't
+      model tax brackets (see `context.md`'s RRSP marginal-rate reasoning)
+      and isn't going to start inferring one from an income delta.
+- [ ] 8. **Project-payment event**: N payments on specific dates. Same idea
+      as Phase 2 item 6 ("recurring cost delta") + Phase 3 item 7 ("planned
+      spend timing") below, generalized from one recurring delta to an
+      arbitrary payment schedule - reconcile into one mechanism when this
+      is actually built rather than shipping two that do almost the same
+      thing.
+
+**Deferred event ideas, raised 2026-08-23 alongside the two above, not
+scoped - revisit only if they come up:**
+- One-time lump sum in/out (bonus, inheritance, tax refund, asset sale) -
+  technically N=1 of item 8's payment shape, but common enough it might
+  deserve its own quick-entry UI rather than "a project with one payment."
+- A purchase financed by new debt (e.g. a car loan) rather than paid from
+  savings - mechanically different from either event above: doesn't touch
+  cash immediately, instead creates a new liability + recurring payment
+  starting at a future date.
+- Retirement/decumulation phase transition - the projection engine has no
+  withdrawal-phase modeling at all today; a "stop earning, start spending
+  down" event needs that groundwork first, not just a new event type.
+
+**Phase 4/5 below talk about "goal status"/"the goal projection" - stale
+wording now that goals are hidden from `/planning`'s UI (see the
+2026-08-23 note at the top of this section).** Not rewritten yet since
+that work isn't active; revisit the wording (and whether feasibility even
+makes sense without a goal to compare against) if/when Phase 4 actually
+starts.
 
 **Phase 2 onward below now builds on the engine above instead of the old
 Phase 1** (a project's cost/timing gets inserted into the new engine's
