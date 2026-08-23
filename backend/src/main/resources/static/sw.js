@@ -10,7 +10,7 @@
 // Bump CACHE_NAME on any change to PRECACHE_URLS or their contents - the
 // activate handler drops any cache whose name doesn't match, which is the
 // only invalidation mechanism here.
-const CACHE_NAME = "home-os-v1";
+const CACHE_NAME = "home-os-v2";
 const OFFLINE_URL = "/offline.html";
 const PRECACHE_URLS = [
   "/styles.css",
