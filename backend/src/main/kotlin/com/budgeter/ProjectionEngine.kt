@@ -305,12 +305,22 @@ fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactio
     var totalRrspRefunds = 0.0
     for (offset in 1..months) {
         val monthStart = startMonth.plusMonths(offset.toLong()).atDay(1)
-        // Salary-change event applies from its own date onward - a
-        // one-time step change to the baseline rate, not a fresh average.
-        val salaryDelta = if (scenario.salaryChangeDate != null && !monthStart.isBefore(scenario.salaryChangeDate)) {
-            scenario.salaryChangeMonthlyDelta ?: 0.0
+        // Salary-change event: active for months in
+        // [salaryChangeDate, salaryChangeEndDate) - a null end date means
+        // permanent (the original behavior, unchanged when the event isn't
+        // used). While active, it's a step change to the baseline rate,
+        // not a fresh average, and it can also swap in the three RRSP
+        // overrides below (Scenario.kt's doc comment) - each independently
+        // optional, each falling back to the scenario's own steady-state
+        // number when unset or the event isn't active this month.
+        val salaryChangeActive = scenario.salaryChangeDate != null &&
+            !monthStart.isBefore(scenario.salaryChangeDate) &&
+            (scenario.salaryChangeEndDate == null || monthStart.isBefore(scenario.salaryChangeEndDate))
+        val salaryDelta = if (salaryChangeActive) scenario.salaryChangeMonthlyDelta ?: 0.0 else 0.0
+        val effectiveRrspMonthlyContribution = if (salaryChangeActive) {
+            scenario.salaryChangeRrspContributionOverride ?: scenario.rrspMonthlyContribution
         } else {
-            0.0
+            scenario.rrspMonthlyContribution
         }
         // A mortgage that's finished amortizing frees up its payment as
         // extra ongoing savings from the month after payoff onward, rather
@@ -327,8 +337,8 @@ fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactio
         // the accrual step below), which is why "resume normal investing
         // once caught up" falls out of this cap alone with no separate
         // switch needed.
-        val rrspContribution = if (scenario.rrspMonthlyContribution != null) {
-            minOf(scenario.rrspMonthlyContribution, rrspRoomRemaining).coerceAtLeast(0.0)
+        val rrspContribution = if (effectiveRrspMonthlyContribution != null) {
+            minOf(effectiveRrspMonthlyContribution, rrspRoomRemaining).coerceAtLeast(0.0)
         } else {
             0.0
         }
@@ -341,7 +351,17 @@ fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactio
 
         if (offset % RRSP_REFUND_INTERVAL_MONTHS == 0) {
             if (scenario.rrspMonthlyContribution != null) {
-                val refund = annualRrspContributions * (scenario.rrspMarginalTaxRate ?: 0.0)
+                // Whatever marginal rate is in effect at the anniversary
+                // itself applies to the whole year's contributions - same
+                // "fixed anniversary, not the real tax year" simplification
+                // RRSP_REFUND_INTERVAL_MONTHS already makes, rather than
+                // trying to prorate across a rate that changed mid-year.
+                val effectiveMarginalTaxRate = if (salaryChangeActive) {
+                    scenario.salaryChangeMarginalTaxRateOverride ?: scenario.rrspMarginalTaxRate
+                } else {
+                    scenario.rrspMarginalTaxRate
+                }
+                val refund = annualRrspContributions * (effectiveMarginalTaxRate ?: 0.0)
                 if (scenario.rrspReinvestRefund) invested += refund else cash += refund
                 totalRrspRefunds += refund
                 annualRrspContributions = 0.0
@@ -353,7 +373,12 @@ fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactio
             // of a large existing pool being drawn down.
             if (scenario.rrspIncomeCategoryId != null) {
                 val rawAccrual = annualIncome * RRSP_ROOM_ACCRUAL_RATE
-                val accrual = scenario.rrspAnnualRoomAccrualCap?.let { cap -> minOf(rawAccrual, cap) } ?: rawAccrual
+                val computedAccrual = scenario.rrspAnnualRoomAccrualCap?.let { cap -> minOf(rawAccrual, cap) } ?: rawAccrual
+                val accrual = if (salaryChangeActive && scenario.salaryChangeRoomAccrualOverride != null) {
+                    scenario.salaryChangeRoomAccrualOverride
+                } else {
+                    computedAccrual
+                }
                 rrspRoomRemaining += accrual.coerceAtLeast(0.0)
             }
         }

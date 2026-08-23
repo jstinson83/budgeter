@@ -51,6 +51,41 @@ data class Scenario(
     // one change. Both null, or both set - never just one.
     val salaryChangeDate: LocalDate? = null,
     val salaryChangeMonthlyDelta: Double? = null,
+    // Optional - null means the change is permanent (today's original
+    // behavior). Set means it reverts starting this date: the event is
+    // active for months in [salaryChangeDate, salaryChangeEndDate), so the
+    // end-date month itself is already back to normal - the natural
+    // reading of "reverts on this date." Meaningless without
+    // salaryChangeDate also set, same "inert on the wrong field" posture
+    // as the RRSP fields below.
+    val salaryChangeEndDate: LocalDate? = null,
+    // Discussed 2026-08-23: a salary change often isn't *just* a cash-flow
+    // change - a pay cut can mean contributing less to an RRSP, and both a
+    // pay cut/raise can shift which marginal-rate bracket applies. This
+    // app deliberately never auto-derives those (no tax-bracket table, no
+    // "your income changed so we recomputed your rate" - see
+    // rrspMarginalTaxRate's own doc comment below for why); instead these
+    // three replace the scenario's own rrspMonthlyContribution/
+    // rrspMarginalTaxRate/room-accrual-per-year figures while the salary
+    // change event above is active, each defaulting to null ("no
+    // change" - keep using the scenario's steady-state numbers throughout).
+    // Each only takes effect if the scenario already has the mechanism it
+    // modifies configured (the RRSP contribution trio / rrspIncomeCategoryId
+    // respectively) - the event adjusts an existing strategy's numbers for
+    // its duration, it doesn't let a salary-change event conjure a
+    // contribution or accrual plan that isn't otherwise there. See
+    // ProjectionEngine.kt's projectScenario for exactly where each is read.
+    val salaryChangeRrspContributionOverride: Double? = null,
+    val salaryChangeMarginalTaxRateOverride: Double? = null,
+    // A flat $ figure for that year's RRSP room accrual, replacing the
+    // normally-computed 18%-of-trailing-income figure while the event is
+    // active - not an override of rrspAnnualRoomAccrualCap (a real,
+    // income-independent CRA dollar limit that has no reason to move just
+    // because one household's income did), but of the actual accrued
+    // amount, since that's the number a salary change actually affects and
+    // the app has no way to project a hypothetical future income through
+    // the normal 18%-of-real-trailing-transactions derivation.
+    val salaryChangeRoomAccrualOverride: Double? = null,
     // At most one RRSP contribution strategy - all three null, or all
     // three set (rrspReinvestRefund always has a value since it's a plain
     // boolean, but only matters when the other three are set). Modeled as
@@ -100,6 +135,10 @@ interface ScenarioRepository {
         recreationalSpendAdjustment: Double,
         salaryChangeDate: LocalDate?,
         salaryChangeMonthlyDelta: Double?,
+        salaryChangeEndDate: LocalDate?,
+        salaryChangeRrspContributionOverride: Double?,
+        salaryChangeMarginalTaxRateOverride: Double?,
+        salaryChangeRoomAccrualOverride: Double?,
         rrspMonthlyContribution: Double?,
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
@@ -117,6 +156,10 @@ interface ScenarioRepository {
         recreationalSpendAdjustment: Double,
         salaryChangeDate: LocalDate?,
         salaryChangeMonthlyDelta: Double?,
+        salaryChangeEndDate: LocalDate?,
+        salaryChangeRrspContributionOverride: Double?,
+        salaryChangeMarginalTaxRateOverride: Double?,
+        salaryChangeRoomAccrualOverride: Double?,
         rrspMonthlyContribution: Double?,
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
@@ -139,6 +182,10 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         recreationalSpendAdjustment: Double,
         salaryChangeDate: LocalDate?,
         salaryChangeMonthlyDelta: Double?,
+        salaryChangeEndDate: LocalDate?,
+        salaryChangeRrspContributionOverride: Double?,
+        salaryChangeMarginalTaxRateOverride: Double?,
+        salaryChangeRoomAccrualOverride: Double?,
         rrspMonthlyContribution: Double?,
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
@@ -150,13 +197,15 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         docRef.set(
             scenarioMap(
                 ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment,
-                salaryChangeDate, salaryChangeMonthlyDelta, rrspMonthlyContribution, rrspMarginalTaxRate,
+                salaryChangeDate, salaryChangeMonthlyDelta, salaryChangeEndDate, salaryChangeRrspContributionOverride,
+                salaryChangeMarginalTaxRateOverride, salaryChangeRoomAccrualOverride, rrspMonthlyContribution, rrspMarginalTaxRate,
                 rrspRoomRemaining, rrspReinvestRefund, rrspIncomeCategoryId, rrspAnnualRoomAccrualCap
             )
         ).get()
         return Scenario(
             docRef.id, ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment,
-            salaryChangeDate, salaryChangeMonthlyDelta, rrspMonthlyContribution, rrspMarginalTaxRate,
+            salaryChangeDate, salaryChangeMonthlyDelta, salaryChangeEndDate, salaryChangeRrspContributionOverride,
+            salaryChangeMarginalTaxRateOverride, salaryChangeRoomAccrualOverride, rrspMonthlyContribution, rrspMarginalTaxRate,
             rrspRoomRemaining, rrspReinvestRefund, rrspIncomeCategoryId, rrspAnnualRoomAccrualCap
         )
     }
@@ -178,6 +227,10 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         recreationalSpendAdjustment: Double,
         salaryChangeDate: LocalDate?,
         salaryChangeMonthlyDelta: Double?,
+        salaryChangeEndDate: LocalDate?,
+        salaryChangeRrspContributionOverride: Double?,
+        salaryChangeMarginalTaxRateOverride: Double?,
+        salaryChangeRoomAccrualOverride: Double?,
         rrspMonthlyContribution: Double?,
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
@@ -189,7 +242,8 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         collection.document(id).set(
             scenarioMap(
                 ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment,
-                salaryChangeDate, salaryChangeMonthlyDelta, rrspMonthlyContribution, rrspMarginalTaxRate,
+                salaryChangeDate, salaryChangeMonthlyDelta, salaryChangeEndDate, salaryChangeRrspContributionOverride,
+                salaryChangeMarginalTaxRateOverride, salaryChangeRoomAccrualOverride, rrspMonthlyContribution, rrspMarginalTaxRate,
                 rrspRoomRemaining, rrspReinvestRefund, rrspIncomeCategoryId, rrspAnnualRoomAccrualCap
             )
         ).get()
@@ -200,6 +254,10 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
             recreationalSpendAdjustment = recreationalSpendAdjustment,
             salaryChangeDate = salaryChangeDate,
             salaryChangeMonthlyDelta = salaryChangeMonthlyDelta,
+            salaryChangeEndDate = salaryChangeEndDate,
+            salaryChangeRrspContributionOverride = salaryChangeRrspContributionOverride,
+            salaryChangeMarginalTaxRateOverride = salaryChangeMarginalTaxRateOverride,
+            salaryChangeRoomAccrualOverride = salaryChangeRoomAccrualOverride,
             rrspMonthlyContribution = rrspMonthlyContribution,
             rrspMarginalTaxRate = rrspMarginalTaxRate,
             rrspRoomRemaining = rrspRoomRemaining,
@@ -230,6 +288,10 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         recreationalSpendAdjustment: Double,
         salaryChangeDate: LocalDate?,
         salaryChangeMonthlyDelta: Double?,
+        salaryChangeEndDate: LocalDate?,
+        salaryChangeRrspContributionOverride: Double?,
+        salaryChangeMarginalTaxRateOverride: Double?,
+        salaryChangeRoomAccrualOverride: Double?,
         rrspMonthlyContribution: Double?,
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
@@ -244,6 +306,10 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         "recreationalSpendAdjustment" to recreationalSpendAdjustment,
         "salaryChangeDate" to salaryChangeDate?.toString(),
         "salaryChangeMonthlyDelta" to salaryChangeMonthlyDelta,
+        "salaryChangeEndDate" to salaryChangeEndDate?.toString(),
+        "salaryChangeRrspContributionOverride" to salaryChangeRrspContributionOverride,
+        "salaryChangeMarginalTaxRateOverride" to salaryChangeMarginalTaxRateOverride,
+        "salaryChangeRoomAccrualOverride" to salaryChangeRoomAccrualOverride,
         "rrspMonthlyContribution" to rrspMonthlyContribution,
         "rrspMarginalTaxRate" to rrspMarginalTaxRate,
         "rrspRoomRemaining" to rrspRoomRemaining,
@@ -261,6 +327,10 @@ class FirestoreScenarioStore(private val firestore: Firestore) : ScenarioReposit
         recreationalSpendAdjustment = (data["recreationalSpendAdjustment"] as? Number)?.toDouble() ?: 0.0,
         salaryChangeDate = (data["salaryChangeDate"] as? String)?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
         salaryChangeMonthlyDelta = (data["salaryChangeMonthlyDelta"] as? Number)?.toDouble(),
+        salaryChangeEndDate = (data["salaryChangeEndDate"] as? String)?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
+        salaryChangeRrspContributionOverride = (data["salaryChangeRrspContributionOverride"] as? Number)?.toDouble(),
+        salaryChangeMarginalTaxRateOverride = (data["salaryChangeMarginalTaxRateOverride"] as? Number)?.toDouble(),
+        salaryChangeRoomAccrualOverride = (data["salaryChangeRoomAccrualOverride"] as? Number)?.toDouble(),
         rrspMonthlyContribution = (data["rrspMonthlyContribution"] as? Number)?.toDouble(),
         rrspMarginalTaxRate = (data["rrspMarginalTaxRate"] as? Number)?.toDouble(),
         rrspRoomRemaining = (data["rrspRoomRemaining"] as? Number)?.toDouble(),

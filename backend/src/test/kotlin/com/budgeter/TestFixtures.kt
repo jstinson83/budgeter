@@ -333,6 +333,10 @@ class FakeScenarioRepository : ScenarioRepository {
         recreationalSpendAdjustment: Double,
         salaryChangeDate: java.time.LocalDate?,
         salaryChangeMonthlyDelta: Double?,
+        salaryChangeEndDate: java.time.LocalDate?,
+        salaryChangeRrspContributionOverride: Double?,
+        salaryChangeMarginalTaxRateOverride: Double?,
+        salaryChangeRoomAccrualOverride: Double?,
         rrspMonthlyContribution: Double?,
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
@@ -342,8 +346,9 @@ class FakeScenarioRepository : ScenarioRepository {
     ): Scenario {
         val scenario = Scenario(
             "scenario-${nextId++}", ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment,
-            salaryChangeDate, salaryChangeMonthlyDelta, rrspMonthlyContribution, rrspMarginalTaxRate, rrspRoomRemaining, rrspReinvestRefund,
-            rrspIncomeCategoryId, rrspAnnualRoomAccrualCap
+            salaryChangeDate, salaryChangeMonthlyDelta, salaryChangeEndDate, salaryChangeRrspContributionOverride,
+            salaryChangeMarginalTaxRateOverride, salaryChangeRoomAccrualOverride, rrspMonthlyContribution, rrspMarginalTaxRate,
+            rrspRoomRemaining, rrspReinvestRefund, rrspIncomeCategoryId, rrspAnnualRoomAccrualCap
         )
         scenarios += scenario
         return scenario
@@ -358,6 +363,10 @@ class FakeScenarioRepository : ScenarioRepository {
         recreationalSpendAdjustment: Double,
         salaryChangeDate: java.time.LocalDate?,
         salaryChangeMonthlyDelta: Double?,
+        salaryChangeEndDate: java.time.LocalDate?,
+        salaryChangeRrspContributionOverride: Double?,
+        salaryChangeMarginalTaxRateOverride: Double?,
+        salaryChangeRoomAccrualOverride: Double?,
         rrspMonthlyContribution: Double?,
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
@@ -374,6 +383,10 @@ class FakeScenarioRepository : ScenarioRepository {
             recreationalSpendAdjustment = recreationalSpendAdjustment,
             salaryChangeDate = salaryChangeDate,
             salaryChangeMonthlyDelta = salaryChangeMonthlyDelta,
+            salaryChangeEndDate = salaryChangeEndDate,
+            salaryChangeRrspContributionOverride = salaryChangeRrspContributionOverride,
+            salaryChangeMarginalTaxRateOverride = salaryChangeMarginalTaxRateOverride,
+            salaryChangeRoomAccrualOverride = salaryChangeRoomAccrualOverride,
             rrspMonthlyContribution = rrspMonthlyContribution,
             rrspMarginalTaxRate = rrspMarginalTaxRate,
             rrspRoomRemaining = rrspRoomRemaining,

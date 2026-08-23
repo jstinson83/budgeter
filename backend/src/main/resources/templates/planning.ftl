@@ -94,7 +94,11 @@
                 <span class="tag">${scenario.annualMarketGrowthRatePercent}%/yr</span>
                 <span class="tag">${scenario.investedSavingsFractionPercent}% invested</span>
                 <#if scenario.recreationalSpendAdjustment != "0.00"><span class="tag">${scenario.recreationalSpendAdjustment}/mo spend adj.</span></#if>
-                <#if scenario.hasSalaryChange><span class="tag">salary change ${scenario.salaryChangeDate}</span></#if>
+                <#if scenario.hasSalaryChange>
+                <span class="tag">
+                  salary change ${scenario.salaryChangeDate}<#if scenario.salaryChangeEndDate != ""> &rarr; ${scenario.salaryChangeEndDate}</#if>
+                </span>
+                </#if>
                 <#if scenario.hasRrspStrategy><span class="tag">${scenario.rrspMonthlyContribution}/mo RRSP, ${scenario.rrspRoomRemaining} room left</span></#if>
                 <#if scenario.rrspIncomeCategoryId != ""><span class="tag">room accrual: ${scenario.rrspIncomeCategoryLabel}</span></#if>
               </span>
@@ -129,6 +133,27 @@
               <div class="form-field">
                 <span class="form-field-label">Amount ($/mo)</span>
                 <input type="number" name="salaryChangeMonthlyDelta" value="${scenario.salaryChangeMonthlyDelta}" step="0.01">
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">Reverts on (optional)</span>
+                <input type="date" name="salaryChangeEndDate" value="${scenario.salaryChangeEndDate}">
+              </div>
+            </div>
+            <p class="dashboard-card-note">
+              A raise or pay cut can also mean contributing differently to RRSP or landing in a different tax bracket while it's in effect - the three fields below replace the RRSP strategy's own numbers only for the duration of this change. Leave any of them blank to keep using the RRSP strategy's normal numbers throughout.
+            </p>
+            <div class="form-row">
+              <div class="form-field">
+                <span class="form-field-label">RRSP contribution while in effect ($/mo, optional)</span>
+                <input type="number" name="salaryChangeRrspContributionOverride" value="${scenario.salaryChangeRrspContributionOverride}" step="0.01" min="0">
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">Marginal tax rate while in effect (%, optional)</span>
+                <input type="number" name="salaryChangeMarginalTaxRateOverridePercent" value="${scenario.salaryChangeMarginalTaxRateOverridePercent}" step="0.1" min="0" max="100">
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">RRSP room accrued/yr while in effect ($, optional)</span>
+                <input type="number" name="salaryChangeRoomAccrualOverride" value="${scenario.salaryChangeRoomAccrualOverride}" step="0.01" min="0">
               </div>
             </div>
             <p class="field-label">RRSP strategy (optional)</p>
@@ -215,6 +240,27 @@
           <div class="form-field">
             <span class="form-field-label">Amount ($/mo)</span>
             <input type="number" name="salaryChangeMonthlyDelta" step="0.01">
+          </div>
+          <div class="form-field">
+            <span class="form-field-label">Reverts on (optional)</span>
+            <input type="date" name="salaryChangeEndDate">
+          </div>
+        </div>
+        <p class="dashboard-card-note">
+          A raise or pay cut can also mean contributing differently to RRSP or landing in a different tax bracket while it's in effect - the three fields below replace the RRSP strategy's own numbers only for the duration of this change. Leave any of them blank to keep using the RRSP strategy's normal numbers throughout.
+        </p>
+        <div class="form-row">
+          <div class="form-field">
+            <span class="form-field-label">RRSP contribution while in effect ($/mo, optional)</span>
+            <input type="number" name="salaryChangeRrspContributionOverride" step="0.01" min="0">
+          </div>
+          <div class="form-field">
+            <span class="form-field-label">Marginal tax rate while in effect (%, optional)</span>
+            <input type="number" name="salaryChangeMarginalTaxRateOverridePercent" step="0.1" min="0" max="100">
+          </div>
+          <div class="form-field">
+            <span class="form-field-label">RRSP room accrued/yr while in effect ($, optional)</span>
+            <input type="number" name="salaryChangeRoomAccrualOverride" step="0.01" min="0">
           </div>
         </div>
         <p class="field-label">RRSP strategy (optional)</p>

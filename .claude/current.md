@@ -103,21 +103,37 @@ Planning Projections subsystem section. Working in slices, smallest first:
 - [ ] 6. Real estate/leverage scenario (borrow against net worth at a
       rate, invest the proceeds, service via monthly interest) - raised as
       an idea, not yet scoped into concrete fields.
-- [ ] 7. **Income-change event** (discussed 2026-08-23): a dated $/mo delta
-      to projected savings, with an *optional end date* - generalizes the
-      existing single `salaryChangeDate`/`salaryChangeMonthlyDelta` step,
-      which is permanent-from-its-date-onward with no way to say "reverts
-      on this date" (needed for "I'll earn less for N months," not just
-      "I got a raise"). Bespoke UI (not shared with item 8 below): the add
-      form explicitly asks whether the event also changes the scenario's
-      RRSP monthly contribution / RRSP room accrual base or cap / marginal
-      tax rate - each defaults to "no change" so a plain pay-change event
-      stays a one-field action, but the fields are shown up front (not
-      behind an "advanced" toggle) so the household has to consciously
-      decide rather than those numbers silently drifting out of sync with
-      a changed income. Deliberately never auto-derived - this app doesn't
-      model tax brackets (see `context.md`'s RRSP marginal-rate reasoning)
-      and isn't going to start inferring one from an income delta.
+- [x] 7. **Income-change event** (discussed 2026-08-23, landed same day):
+      `Scenario` gained `salaryChangeEndDate` (optional - null stays
+      permanent, the original behavior; set means the event is active for
+      `[salaryChangeDate, salaryChangeEndDate)`, so the end-date month
+      itself is already back to normal) plus three independently-optional
+      overrides that only take effect while the event is active:
+      `salaryChangeRrspContributionOverride`, `salaryChangeMarginalTaxRateOverride`,
+      `salaryChangeRoomAccrualOverride` (a flat $/yr figure replacing the
+      normally-computed 18%-of-trailing-income accrual, not an override of
+      `rrspAnnualRoomAccrualCap` - see `ScenarioStore.kt`'s doc comment for
+      why the cap itself, a real CRA dollar limit, has no reason to move
+      with one household's income). Each defaults to null ("no change" -
+      keep the scenario's steady-state numbers) and is only meaningful if
+      the scenario already has the RRSP mechanism it modifies configured -
+      the event adjusts an existing strategy's numbers for its duration,
+      it doesn't let an income event conjure a contribution/accrual plan
+      from nothing. `/planning`'s Scenario forms show all three fields up
+      front (not behind an "advanced" toggle) right below the salary-change
+      date/amount/end-date fields, per the maintainer's "force you to think
+      about it, default to no effect, editable" framing. Simplifications
+      worth remembering: the marginal-rate override (like the base rate)
+      applies to a whole year's contributions using whichever rate is in
+      effect *at* the 12-month refund anniversary, not prorated across a
+      rate that changed mid-year - same "fixed anniversary, not the real
+      tax year" simplification `RRSP_REFUND_INTERVAL_MONTHS` already makes.
+      Deliberately never auto-derived from the salary delta itself - this
+      app doesn't model tax brackets (see `context.md`'s RRSP
+      marginal-rate reasoning) and isn't going to start inferring one from
+      an income change; the household types in whatever new numbers apply.
+      See `ProjectionEngine.kt`'s `projectScenario` for exactly where each
+      override is read.
 - [ ] 8. **Project-payment event**: N payments on specific dates. Same idea
       as Phase 2 item 6 ("recurring cost delta") + Phase 3 item 7 ("planned
       spend timing") below, generalized from one recurring delta to an
