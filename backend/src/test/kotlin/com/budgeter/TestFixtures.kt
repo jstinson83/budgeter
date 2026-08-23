@@ -231,10 +231,10 @@ class FakeNetWorthEntryRepository : NetWorthEntryRepository {
         type: NetWorthEntryType,
         value: Double,
         annualInterestRate: Double?,
-        monthlyPayment: Double?,
+        mortgagePaymentCategoryId: String?,
         annualAppreciationRate: Double?
     ): NetWorthEntry {
-        val entry = NetWorthEntry("net-worth-entry-${nextId++}", ownerId, label, type, value, annualInterestRate, monthlyPayment, annualAppreciationRate)
+        val entry = NetWorthEntry("net-worth-entry-${nextId++}", ownerId, label, type, value, annualInterestRate, mortgagePaymentCategoryId, annualAppreciationRate)
         entries += entry
         return entry
     }
@@ -246,14 +246,14 @@ class FakeNetWorthEntryRepository : NetWorthEntryRepository {
         type: NetWorthEntryType,
         value: Double,
         annualInterestRate: Double?,
-        monthlyPayment: Double?,
+        mortgagePaymentCategoryId: String?,
         annualAppreciationRate: Double?
     ): NetWorthEntry? {
         val index = entries.indexOfFirst { it.id == id && it.ownerId == ownerId }
         if (index == -1) return null
         val updated = entries[index].copy(
             label = label, type = type, value = value,
-            annualInterestRate = annualInterestRate, monthlyPayment = monthlyPayment, annualAppreciationRate = annualAppreciationRate
+            annualInterestRate = annualInterestRate, mortgagePaymentCategoryId = mortgagePaymentCategoryId, annualAppreciationRate = annualAppreciationRate
         )
         entries[index] = updated
         return updated

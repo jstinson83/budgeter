@@ -224,7 +224,7 @@
                 <span class="form-field-label">Income category</span>
                 <select name="rrspIncomeCategoryId">
                   <option value="">None</option>
-                  <#list incomeCategoryOptions as option>
+                  <#list categoryOptions as option>
                   <option value="${option.id}" <#if option.id == scenario.rrspIncomeCategoryId>selected</#if>>${option.label}</option>
                   </#list>
                 </select>
@@ -310,7 +310,7 @@
             <span class="form-field-label">Income category</span>
             <select name="rrspIncomeCategoryId">
               <option value="">None</option>
-              <#list incomeCategoryOptions as option>
+              <#list categoryOptions as option>
               <option value="${option.id}">${option.label}</option>
               </#list>
             </select>
@@ -362,7 +362,12 @@
                 </select>
                 <input type="number" name="value" value="${entry.value}" step="0.01" min="0" required>
                 <input type="number" name="annualInterestRatePercent" value="${entry.annualInterestRatePercent}" step="0.01" min="0" placeholder="Interest rate %/yr (mortgage)">
-                <input type="number" name="monthlyPayment" value="${entry.monthlyPayment}" step="0.01" min="0" placeholder="Monthly payment (mortgage)">
+                <select name="mortgagePaymentCategoryId">
+                  <option value="">Payment category (mortgage)</option>
+                  <#list categoryOptions as option>
+                  <option value="${option.id}" <#if option.id == entry.mortgagePaymentCategoryId>selected</#if>>${option.label}</option>
+                  </#list>
+                </select>
                 <button type="submit" class="button button-small button-save">Save</button>
               </form>
               <form method="post" action="/planning/entries/${entry.id}/delete">
@@ -401,7 +406,12 @@
             </select>
             <input type="number" name="value" placeholder="Amount owed" step="0.01" min="0" required>
             <input type="number" name="annualInterestRatePercent" placeholder="Interest rate %/yr (mortgage)" step="0.01" min="0">
-            <input type="number" name="monthlyPayment" placeholder="Monthly payment (mortgage)" step="0.01" min="0">
+            <select name="mortgagePaymentCategoryId">
+              <option value="">Payment category (mortgage)</option>
+              <#list categoryOptions as option>
+              <option value="${option.id}" <#if option.id == defaultMortgagePaymentCategoryId>selected</#if>>${option.label}</option>
+              </#list>
+            </select>
             <button type="submit" class="button">Add liability</button>
           </form>
         </div>

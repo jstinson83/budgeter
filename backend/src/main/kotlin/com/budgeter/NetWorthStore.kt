@@ -39,18 +39,29 @@ data class NetWorthEntry(
     val value: Double,
     // Mortgage amortization inputs, meaningful on MORTGAGE entries only -
     // both set together or both left null, same "coherent group" pattern
-    // Scenario's salary-change pair uses (a rate with no payment, or vice
-    // versa, isn't a runnable amortization schedule). Left null, the entry
-    // stays frozen at `value` for the whole projection - the behavior every
-    // entry had before this existed. See ProjectionEngine.kt's
+    // Scenario's salary-change pair uses (a rate with no payment category,
+    // or vice versa, isn't a runnable amortization schedule). Left null, the
+    // entry stays frozen at `value` for the whole projection - the behavior
+    // every entry had before this existed. See ProjectionEngine.kt's
     // DynamicEntrySchedules for how these actually get used, and
     // CLAUDE.md/current.md's "Fix 1" writeup for why this was added (a
     // reviewed projection export showed home equity pinned at one constant
     // value for the entire horizon - the projection loop updated the
     // invested balance every month but never touched a MORTGAGE or
     // REAL_ESTATE entry).
+    //
+    // annualInterestRate is manually entered - a mortgage statement states
+    // it outright, there's no transaction history to derive it from.
+    // monthlyPayment is deliberately *not* a manually-typed field, though:
+    // the payment is already sitting in tracked transaction history under a
+    // category tag (mortgagePaymentCategoryId points at a household
+    // Category, same as Scenario.rrspIncomeCategoryId - "we already do this
+    // for the RRSP income category, find the amount the same way" rather
+    // than asking the household to type a number in by hand). See
+    // ProjectionEngine.kt's resolvedMonthlyMortgagePayment for how the
+    // actual payment figure gets derived from it.
     val annualInterestRate: Double? = null,
-    val monthlyPayment: Double? = null,
+    val mortgagePaymentCategoryId: String? = null,
     // Real estate appreciation, meaningful on REAL_ESTATE entries only -
     // independent of the mortgage pair above (a paid-off property can
     // appreciate with no MORTGAGE entry at all, and a mortgage amortizes
@@ -73,10 +84,13 @@ fun netWorthTotal(entries: List<NetWorthEntry>): Double =
 
 // Whether this entry has a full mortgage amortization schedule to run
 // (see ProjectionEngine.kt's DynamicEntrySchedules) rather than sitting
-// frozen at `value` - both annualInterestRate and monthlyPayment set, on an
-// entry actually typed as a mortgage.
+// frozen at `value` - both annualInterestRate and mortgagePaymentCategoryId
+// set, on an entry actually typed as a mortgage. Doesn't guarantee a
+// resolvable payment amount (the tagged category might have no trailing
+// transaction history yet) - ProjectionEngine.kt's
+// resolvedMonthlyMortgagePayment is what actually decides that.
 val NetWorthEntry.isAmortizingMortgage: Boolean
-    get() = type == NetWorthEntryType.MORTGAGE && annualInterestRate != null && monthlyPayment != null
+    get() = type == NetWorthEntryType.MORTGAGE && annualInterestRate != null && mortgagePaymentCategoryId != null
 
 // Whether this entry appreciates over the projection instead of sitting
 // frozen at `value` - annualAppreciationRate set, on an entry actually
@@ -92,7 +106,7 @@ interface NetWorthEntryRepository {
         type: NetWorthEntryType,
         value: Double,
         annualInterestRate: Double? = null,
-        monthlyPayment: Double? = null,
+        mortgagePaymentCategoryId: String? = null,
         annualAppreciationRate: Double? = null
     ): NetWorthEntry
     suspend fun update(
@@ -102,7 +116,7 @@ interface NetWorthEntryRepository {
         type: NetWorthEntryType,
         value: Double,
         annualInterestRate: Double? = null,
-        monthlyPayment: Double? = null,
+        mortgagePaymentCategoryId: String? = null,
         annualAppreciationRate: Double? = null
     ): NetWorthEntry?
     suspend fun delete(ownerId: String, id: String)
@@ -117,12 +131,12 @@ class FirestoreNetWorthEntryStore(private val firestore: Firestore) : NetWorthEn
         type: NetWorthEntryType,
         value: Double,
         annualInterestRate: Double?,
-        monthlyPayment: Double?,
+        mortgagePaymentCategoryId: String?,
         annualAppreciationRate: Double?
     ): NetWorthEntry {
         val docRef = collection.document()
-        docRef.set(entryMap(ownerId, label, type, value, annualInterestRate, monthlyPayment, annualAppreciationRate)).get()
-        return NetWorthEntry(docRef.id, ownerId, label, type, value, annualInterestRate, monthlyPayment, annualAppreciationRate)
+        docRef.set(entryMap(ownerId, label, type, value, annualInterestRate, mortgagePaymentCategoryId, annualAppreciationRate)).get()
+        return NetWorthEntry(docRef.id, ownerId, label, type, value, annualInterestRate, mortgagePaymentCategoryId, annualAppreciationRate)
     }
 
     // Single-field ownerId equality filter, no orderBy - same
@@ -142,14 +156,14 @@ class FirestoreNetWorthEntryStore(private val firestore: Firestore) : NetWorthEn
         type: NetWorthEntryType,
         value: Double,
         annualInterestRate: Double?,
-        monthlyPayment: Double?,
+        mortgagePaymentCategoryId: String?,
         annualAppreciationRate: Double?
     ): NetWorthEntry? {
         val existing = get(ownerId, id) ?: return null
-        collection.document(id).set(entryMap(ownerId, label, type, value, annualInterestRate, monthlyPayment, annualAppreciationRate)).get()
+        collection.document(id).set(entryMap(ownerId, label, type, value, annualInterestRate, mortgagePaymentCategoryId, annualAppreciationRate)).get()
         return existing.copy(
             label = label, type = type, value = value,
-            annualInterestRate = annualInterestRate, monthlyPayment = monthlyPayment, annualAppreciationRate = annualAppreciationRate
+            annualInterestRate = annualInterestRate, mortgagePaymentCategoryId = mortgagePaymentCategoryId, annualAppreciationRate = annualAppreciationRate
         )
     }
 
@@ -172,7 +186,7 @@ class FirestoreNetWorthEntryStore(private val firestore: Firestore) : NetWorthEn
         type: NetWorthEntryType,
         value: Double,
         annualInterestRate: Double?,
-        monthlyPayment: Double?,
+        mortgagePaymentCategoryId: String?,
         annualAppreciationRate: Double?
     ): Map<String, Any?> = mapOf(
         "ownerId" to ownerId,
@@ -180,7 +194,7 @@ class FirestoreNetWorthEntryStore(private val firestore: Firestore) : NetWorthEn
         "type" to type.name,
         "value" to value,
         "annualInterestRate" to annualInterestRate,
-        "monthlyPayment" to monthlyPayment,
+        "mortgagePaymentCategoryId" to mortgagePaymentCategoryId,
         "annualAppreciationRate" to annualAppreciationRate
     )
 
@@ -191,7 +205,7 @@ class FirestoreNetWorthEntryStore(private val firestore: Firestore) : NetWorthEn
         type = (data["type"] as? String)?.let { runCatching { NetWorthEntryType.valueOf(it) }.getOrNull() } ?: NetWorthEntryType.OTHER_ASSET,
         value = (data["value"] as? Number)?.toDouble() ?: 0.0,
         annualInterestRate = (data["annualInterestRate"] as? Number)?.toDouble(),
-        monthlyPayment = (data["monthlyPayment"] as? Number)?.toDouble(),
+        mortgagePaymentCategoryId = data["mortgagePaymentCategoryId"] as? String,
         annualAppreciationRate = (data["annualAppreciationRate"] as? Number)?.toDouble()
     )
 }

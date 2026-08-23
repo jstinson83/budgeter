@@ -44,13 +44,20 @@ see `context.md`'s Financial
 Planning Projections subsystem section. Working in slices, smallest first:
 - [x] Mortgage amortization + real estate appreciation ("Fix 1" from a
       2026-08-22 review of a projections export) - `NetWorthEntry` gained
-      optional `annualInterestRate`/`monthlyPayment` (MORTGAGE) and
-      `annualAppreciationRate` (REAL_ESTATE) fields; both `projectNetWorth`
-      (baseline) and `projectScenario` now amortize/appreciate those entries
-      month by month instead of leaving them frozen at their snapshot
-      value for the whole horizon - see `context.md`'s Financial Planning
-      Projections subsystem section for the full writeup, including the
-      payoff-frees-the-payment behavior.
+      optional `annualInterestRate`/`mortgagePaymentCategoryId` (MORTGAGE)
+      and `annualAppreciationRate` (REAL_ESTATE) fields; both
+      `projectNetWorth` (baseline) and `projectScenario` now
+      amortize/appreciate those entries month by month instead of leaving
+      them frozen at their snapshot value for the whole horizon. The
+      monthly payment is derived from the tagged category's own trailing
+      transaction history (median, not average) rather than typed in by
+      hand - a same-day maintainer follow-up ("mortgage payments are
+      already tracked by category, find that amount, we do this elsewhere")
+      on top of the initial landing, which still had a raw `monthlyPayment`
+      field. See `context.md`'s Financial Planning Projections subsystem
+      section for the full writeup, including the payoff-frees-the-payment
+      behavior and why deriving the payment from the same transaction
+      history the baseline savings rate reads isn't double-counting.
 - [ ] Coast/downshift analysis ("Fix 2" from the same review, explicitly
       gated on Fix 1 above landing first - a "full coast, ignoring home
       equity" test run never crossed over within the 10-year horizon, since

@@ -46,8 +46,9 @@ fun baselineMonthlySavingsRate(transactions: List<Transaction>, asOf: LocalDate 
 data class ProjectionPoint(val date: LocalDate, val netWorth: Double)
 
 // Month-by-month interest/principal amortization for one MORTGAGE entry's
-// own annualInterestRate/monthlyPayment (NetWorthStore.kt) - real
-// amortization, not a closed-form estimate, since principal accelerates as
+// own annualInterestRate and resolved monthly payment (NetWorthStore.kt/
+// resolvedMonthlyMortgagePayment below) - real amortization, not a
+// closed-form estimate, since principal accelerates as
 // the balance shrinks. Principal is capped at whatever balance remains so a
 // final undersized payment doesn't overshoot into negative; every month at
 // or after payoff contributes zero further principal, so the schedule just
@@ -84,19 +85,60 @@ private fun appreciateMonthly(startingValue: Double, annualRate: Double, months:
     return values
 }
 
+// The monthly payment for a mortgage entry is never typed in by hand - see
+// NetWorthEntry.mortgagePaymentCategoryId's doc comment for why ("we
+// already do this for the RRSP income category, find the amount the same
+// way" - Scenario.rrspIncomeCategoryId in ScenarioStore.kt is the existing
+// precedent). Resolved as the *median* of the tagged category's monthly
+// totals over the trailing BASELINE_TRAILING_MONTHS window ending at
+// `asOf` - median rather than average specifically because a mortgage
+// payment is normally a fixed recurring amount: the maintainer's own
+// review of a real export found one anomalous month with a one-off extra
+// payment, and an average would let that single month skew the derived
+// figure upward for the whole projection, while a median shrugs off
+// exactly one outlier. Months with no transaction in this category are
+// left out of the window entirely rather than counted as a $0 payment (a
+// gap almost always means a statement hasn't been imported yet, not that
+// nothing was owed that month). Returns null - meaning "not amortizing,
+// stays frozen" - if the category has no transactions in the window at
+// all, same graceful-degradation posture as a mortgage entry missing its
+// rate/category fields altogether.
+fun resolvedMonthlyMortgagePayment(entry: NetWorthEntry, transactions: List<Transaction>, asOf: LocalDate): Double? {
+    val categoryId = entry.mortgagePaymentCategoryId ?: return null
+    val endMonth = YearMonth.from(asOf)
+    val startMonth = endMonth.minusMonths((BASELINE_TRAILING_MONTHS - 1).toLong())
+    val monthlyTotals = transactions
+        .filter { it.category == categoryId }
+        .groupBy { YearMonth.from(it.date) }
+        .filterKeys { !it.isBefore(startMonth) && !it.isAfter(endMonth) }
+        .mapValues { (_, monthTransactions) -> -monthTransactions.sumOf { it.amount } } // outflow is negative; a payment is a positive magnitude
+    if (monthlyTotals.isEmpty()) return null
+    val sorted = monthlyTotals.values.sorted()
+    return sorted[sorted.size / 2]
+}
+
 // Precomputed month-by-month schedules for every NetWorthEntry that opted
 // into amortization/appreciation (NetWorthEntry.isAmortizingMortgage/
 // isAppreciatingRealEstate) - shared by projectNetWorth (the baseline) and
 // projectScenario below, since a mortgage amortizes and a house appreciates
 // the same way regardless of which Scenario (if any) is being projected;
 // only the ongoing savings rate/split differs between the two callers.
-// Entries with neither field set are untouched here - they stay frozen at
-// their own `value`, exactly as every NetWorthEntry behaved before this
-// existed, so a projection with no mortgage/appreciation data set is
-// unaffected byte-for-byte.
-private class DynamicEntrySchedules(entries: List<NetWorthEntry>, months: Int) {
+// Entries with neither field set (or a mortgage entry whose payment
+// category can't be resolved to an actual figure - see
+// resolvedMonthlyMortgagePayment above) are untouched here - they stay
+// frozen at their own `value`, exactly as every NetWorthEntry behaved
+// before this existed, so a projection with no mortgage/appreciation data
+// set is unaffected byte-for-byte.
+private class DynamicEntrySchedules(entries: List<NetWorthEntry>, transactions: List<Transaction>, asOf: LocalDate, months: Int) {
+    // (entry, resolved monthly payment, balance schedule) - the payment is
+    // kept alongside the schedule rather than re-derived from the entry
+    // each time, since freedMortgagePayment below needs the same resolved
+    // figure a paid-off mortgage frees up as savings.
     private val mortgages = entries.filter { it.isAmortizingMortgage }
-        .map { it to amortizeMonthly(it.value, it.annualInterestRate!!, it.monthlyPayment!!, months) }
+        .mapNotNull { entry ->
+            val payment = resolvedMonthlyMortgagePayment(entry, transactions, asOf) ?: return@mapNotNull null
+            Triple(entry, payment, amortizeMonthly(entry.value, entry.annualInterestRate!!, payment, months))
+        }
     private val realEstate = entries.filter { it.isAppreciatingRealEstate }
         .map { it to appreciateMonthly(it.value, it.annualAppreciationRate!!, months) }
 
@@ -109,12 +151,12 @@ private class DynamicEntrySchedules(entries: List<NetWorthEntry>, months: Int) {
     // starting cash bucket) reproduces the correct dynamic total without
     // double-counting the entries' starting values.
     fun netDelta(offset: Int): Double {
-        val mortgagePaydown = mortgages.sumOf { (entry, balances) -> entry.value - balances[offset] }
+        val mortgagePaydown = mortgages.sumOf { (entry, _, balances) -> entry.value - balances[offset] }
         val appreciation = realEstate.sumOf { (entry, values) -> values[offset] - entry.value }
         return mortgagePaydown + appreciation
     }
 
-    // Sum of any mortgage's monthlyPayment that's no longer owed as of
+    // Sum of any mortgage's resolved payment that's no longer owed as of
     // `offset` - money that stops leaving the household once a mortgage is
     // paid off, per the maintainer's notes (CLAUDE.md/current.md's "Fix 1"
     // writeup): "decide explicitly what happens once the mortgage hits $0 -
@@ -125,7 +167,7 @@ private class DynamicEntrySchedules(entries: List<NetWorthEntry>, months: Int) {
     // isn't "extra" that month.
     fun freedMortgagePayment(offset: Int): Double =
         if (offset == 0) 0.0
-        else mortgages.filter { (_, balances) -> balances[offset - 1] <= 0.0 }.sumOf { (entry, _) -> entry.monthlyPayment!! }
+        else mortgages.filter { (_, _, balances) -> balances[offset - 1] <= 0.0 }.sumOf { (_, payment, _) -> payment }
 }
 
 // Projects net worth forward from `entries`' baseline (netWorthTotal) at
@@ -140,11 +182,11 @@ private class DynamicEntrySchedules(entries: List<NetWorthEntry>, months: Int) {
 // month, `from`'s own month included as offset 0 so a chart has a starting
 // point to draw from. `to` before `from` (a past-due goal) yields the
 // single starting point rather than projecting backward.
-fun projectNetWorth(entries: List<NetWorthEntry>, monthlySavingsRate: Double, from: LocalDate, to: LocalDate): List<ProjectionPoint> {
+fun projectNetWorth(entries: List<NetWorthEntry>, transactions: List<Transaction>, monthlySavingsRate: Double, from: LocalDate, to: LocalDate): List<ProjectionPoint> {
     val startMonth = YearMonth.from(from)
     val endMonth = YearMonth.from(to)
     val months = ChronoUnit.MONTHS.between(startMonth, endMonth).coerceAtLeast(0).toInt()
-    val schedules = DynamicEntrySchedules(entries, months)
+    val schedules = DynamicEntrySchedules(entries, transactions, from, months)
     val staticNetWorth = netWorthTotal(entries)
 
     var freedPaymentSoFar = 0.0
@@ -172,7 +214,7 @@ data class GoalProjection(val goal: FinancialGoal, val points: List<ProjectionPo
 // defined (projectScenario below).
 fun projectGoal(goal: FinancialGoal, entries: List<NetWorthEntry>, transactions: List<Transaction>, today: LocalDate = LocalDate.now()): GoalProjection {
     val monthlySavingsRate = baselineMonthlySavingsRate(transactions, today)
-    val points = projectNetWorth(entries, monthlySavingsRate, today, goal.targetDate)
+    val points = projectNetWorth(entries, transactions, monthlySavingsRate, today, goal.targetDate)
     return GoalProjection(goal, points, monthlySavingsRate)
 }
 
@@ -239,7 +281,7 @@ fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactio
     val startMonth = YearMonth.from(today)
     val endMonth = YearMonth.from(goal.targetDate)
     val months = ChronoUnit.MONTHS.between(startMonth, endMonth).coerceAtLeast(0).toInt()
-    val schedules = DynamicEntrySchedules(entries, months)
+    val schedules = DynamicEntrySchedules(entries, transactions, today, months)
 
     val points = mutableListOf(ScenarioProjectionPoint(startMonth.atDay(1), startingInvested, startingCash + schedules.netDelta(0)))
     var invested = startingInvested

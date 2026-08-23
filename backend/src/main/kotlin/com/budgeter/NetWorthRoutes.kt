@@ -66,7 +66,7 @@ fun Route.netWorthRoutes(
             ?: return@post call.respondRedirect("/planning?error=${"Invalid entry".encodeURLQueryComponent()}")
         val entry = netWorthEntryStore.add(
             ownerId, input.label, input.type, input.value,
-            input.annualInterestRate, input.monthlyPayment, input.annualAppreciationRate
+            input.annualInterestRate, input.mortgagePaymentCategoryId, input.annualAppreciationRate
         )
         call.respondRedirect("/planning?message=${"Added ${entry.label}".encodeURLQueryComponent()}")
     }
@@ -79,7 +79,7 @@ fun Route.netWorthRoutes(
             ?: return@post call.respondRedirect("/planning?error=${"Invalid entry".encodeURLQueryComponent()}")
         val updated = netWorthEntryStore.update(
             ownerId, id, input.label, input.type, input.value,
-            input.annualInterestRate, input.monthlyPayment, input.annualAppreciationRate
+            input.annualInterestRate, input.mortgagePaymentCategoryId, input.annualAppreciationRate
         )
         val message = if (updated != null) "Updated ${updated.label}" else "Entry not found"
         val param = if (updated != null) "message" else "error"
@@ -165,19 +165,22 @@ private data class EntryFormInput(
     val type: NetWorthEntryType,
     val value: Double,
     val annualInterestRate: Double?,
-    val monthlyPayment: Double?,
+    val mortgagePaymentCategoryId: String?,
     val annualAppreciationRate: Double?
 )
 
-// The mortgage rate/payment fields are a coherent pair, same "both or
-// neither" rule as Scenario's salary-change fields - a rate with no
-// payment (or vice versa) can't drive an amortization schedule. Appreciation
-// is its own independent optional field. All three are accepted regardless
-// of the chosen `type` (same posture planning.ftl already takes with
-// Scenario's RRSP fields) - they're only ever read for MORTGAGE/REAL_ESTATE
-// entries respectively (see NetWorthEntry.isAmortizingMortgage/
-// isAppreciatingRealEstate), so a stray value on the wrong type is inert
-// rather than a validation error.
+// The mortgage rate/payment-category fields are a coherent pair, same
+// "both or neither" rule as Scenario's salary-change fields - a rate with
+// no category to derive a payment from (or vice versa) can't drive an
+// amortization schedule. The payment itself is never typed in by hand - see
+// NetWorthEntry's doc comment for why this points at a household Category
+// (the same tagged-category pattern Scenario.rrspIncomeCategoryId already
+// uses) instead of a raw dollar figure. Appreciation is its own independent
+// optional field. All three are accepted regardless of the chosen `type`
+// (same posture planning.ftl already takes with Scenario's RRSP fields) -
+// they're only ever read for MORTGAGE/REAL_ESTATE entries respectively (see
+// NetWorthEntry.isAmortizingMortgage/isAppreciatingRealEstate), so a stray
+// value on the wrong type is inert rather than a validation error.
 private fun parseEntryForm(formParams: Parameters): EntryFormInput? {
     val label = formParams["label"]?.trim().orEmpty()
     if (label.isEmpty()) return null
@@ -188,18 +191,18 @@ private fun parseEntryForm(formParams: Parameters): EntryFormInput? {
     val value = formParams["value"]?.toDoubleOrNull()?.takeIf { it >= 0 } ?: return null
 
     val interestRateInput = formParams["annualInterestRatePercent"]?.trim().orEmpty()
-    val paymentInput = formParams["monthlyPayment"]?.trim().orEmpty()
-    val (annualInterestRate, monthlyPayment) = when {
-        interestRateInput.isEmpty() && paymentInput.isEmpty() -> null to null
+    val paymentCategoryInput = formParams["mortgagePaymentCategoryId"]?.trim().orEmpty()
+    val (annualInterestRate, mortgagePaymentCategoryId) = when {
+        interestRateInput.isEmpty() && paymentCategoryInput.isEmpty() -> null to null
         else -> {
             val rate = interestRateInput.toDoubleOrNull()?.takeIf { it >= 0 } ?: return null
-            val payment = paymentInput.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
-            (rate / 100.0) to payment
+            if (paymentCategoryInput.isEmpty()) return null
+            (rate / 100.0) to paymentCategoryInput
         }
     }
     val annualAppreciationRate = formParams["annualAppreciationRatePercent"]?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()
 
-    return EntryFormInput(label, type, value, annualInterestRate, monthlyPayment, annualAppreciationRate?.div(100.0))
+    return EntryFormInput(label, type, value, annualInterestRate, mortgagePaymentCategoryId, annualAppreciationRate?.div(100.0))
 }
 
 private data class GoalFormInput(

@@ -37,10 +37,19 @@ fun netWorthPageModel(
         "goals" to goals.map { goal -> financialGoalRowModel(goal, entries, scenarios, transactions, today) },
         "scenarios" to scenarios.mapIndexed { index, scenario -> scenarioRowModel(scenario, categoryLabelById, index) },
         "growthPresets" to MarketGrowthPreset.entries.map { mapOf("name" to it.name, "label" to it.label, "annualRatePercent" to "%.1f".format(it.annualRate * 100)) },
-        // Only active categories are offered for the RRSP income-tagging
-        // selector - same "disabling stops new assignment" rule
-        // /categories uses elsewhere.
-        "incomeCategoryOptions" to activeCategories.map { mapOf("id" to it.id, "label" to it.label) },
+        // Only active categories are offered anywhere a household tags a
+        // Category onto something else (the RRSP income selector, and a
+        // mortgage entry's payment category below) - same "disabling stops
+        // new assignment" rule /categories uses elsewhere. One shared list
+        // rather than one per selector, since it's the same set of rows
+        // either way.
+        "categoryOptions" to activeCategories.map { mapOf("id" to it.id, "label" to it.label) },
+        // Preselected on the add-liability form's mortgage payment-category
+        // select - "MORTGAGE" is already a built-in category id most
+        // households' mortgage payment transactions are already tagged
+        // with, so this is right the overwhelming majority of the time
+        // without the household having to hunt for it in the dropdown.
+        "defaultMortgagePaymentCategoryId" to MORTGAGE_CATEGORY_ID,
         "message" to message,
         "error" to error
     )
@@ -53,7 +62,7 @@ private fun netWorthEntryRowModel(entry: NetWorthEntry): Map<String, Any?> = map
     "typeLabel" to entry.type.label,
     "value" to "%.2f".format(entry.value),
     "annualInterestRatePercent" to (entry.annualInterestRate?.let { "%.2f".format(it * 100) } ?: ""),
-    "monthlyPayment" to (entry.monthlyPayment?.let { "%.2f".format(it) } ?: ""),
+    "mortgagePaymentCategoryId" to (entry.mortgagePaymentCategoryId ?: ""),
     "annualAppreciationRatePercent" to (entry.annualAppreciationRate?.let { "%.2f".format(it * 100) } ?: "")
 )
 
