@@ -72,6 +72,69 @@ reference — don't restate them here.
   errors, etc. — check there if something in this pipeline looks
   unfamiliar).
 
+## CSS / layout gotchas
+
+- **A flex item with no explicit `min-width` can be blown wide open by a
+  deeply-nested descendant's inline `min-width`, even through an
+  `overflow-x: auto` container that's supposed to contain it.** Hit on
+  `planning.ftl`: `.app-main` (`styles.css`) is a flex item of
+  `.app-shell` (`flex: 1`, no `min-width` set) at viewport widths between
+  the mobile breakpoint (760px) and its own `max-width` (960px) - a narrow
+  desktop window, or a tablet/phone in landscape. Its automatic flex-item
+  minimum width defaulted to its content's min-content size, which
+  included the wealth chart's `min-width:${wealthChart.widthPx}px` inline
+  style (hundreds to 1000+px for a longer horizon/more scenarios) several
+  levels down inside `.form-card` > `.wealth-chart-frame` >
+  `.wealth-chart-scroll`. Despite `.wealth-chart-scroll` itself correctly
+  having `min-width: 0` + `overflow-x: auto` (which *does* contain the
+  chart within its own box - scrolls internally, doesn't force
+  `.wealth-chart-frame` wider), that containment only applies within
+  `.wealth-chart-frame`'s own flex context; it does nothing for
+  `.app-main`'s *own* automatic-minimum-size calculation several levels
+  up, since `.app-main` never had `overflow` or `min-width` set and so
+  fell back to its full subtree's min-content size. Result: `.app-main` -
+  and every card inside it - rendered wider than the space actually
+  available next to the 220px sidebar, with no `overflow-x: hidden`
+  anywhere in the ancestor chain to catch it, so the whole page grew
+  wider than the viewport and every card looked "cut off" at the same
+  right edge. Fixed by adding `min-width: 0` to `.app-main` directly, the
+  same fix pattern - not just relying on it working transitively through
+  an unrelated flex/overflow container several levels down. No other page
+  has an element with a large explicit inline `min-width` this deep in
+  its DOM, which is why this was planning-only ("different behaviour than
+  other pages," as reported) - worth checking first if a similar
+  "cards/content cut off narrower than the sidebar layout, but fine on
+  full mobile width" report comes up again on a page with its own
+  wide/scrollable content (a future chart, a wide table, etc.).
+- **Debugging technique that found the bug above**: this repo has no dev
+  server that runs without real GCP credentials (see the Persistence
+  gotchas section), so layout bugs like this can't be checked with a
+  quick `run`. Instead: build a static HTML file reusing the real
+  `styles.css` and the actual template markup (real classes/structure,
+  representative sample data), then screenshot it with the sandbox's
+  pre-installed headless Chromium
+  (`/opt/pw-browsers/chromium-1194/chrome-linux/chrome --headless=new
+  --window-size=W,H --screenshot=out.png file://...`). A plain screenshot
+  alone can mislead, though - this sandbox's headless Chrome has no window
+  manager and silently floors the layout viewport at roughly 485 CSS px
+  regardless of a smaller requested `--window-size` (the screenshot file
+  itself is still saved at the requested pixel size, so it just looks
+  like clipped/cut-off content, which isn't a real bug - just the render
+  being wider than the crop). `--headless=new` (not legacy headless)
+  behaves better and this floor only affects widths below roughly 500px,
+  not the 760-960px range where the actual bug above lived. To get a real
+  signal instead of a screenshot, inject a small diagnostic `<script>` that
+  compares `document.documentElement.scrollWidth` against `clientWidth`
+  (a real gap means genuine page-level overflow, not just a legitimately
+  scrollable inner container) and dumps the offending elements'
+  `getBoundingClientRect()` - read it back via `--dump-dom` grepping the
+  injected content (e.g. stuffed into `document.title` or a `<pre>`).
+  Bisect the CSS itself (copy `styles.css`, patch one property, re-check
+  the same diagnostic) rather than guessing from the DOM/CSS alone -
+  confirmed the fix in minutes once this loop was in place, after
+  significant purely-theoretical back-and-forth about flexbox
+  min-content propagation rules that didn't converge on its own.
+
 ## FreeMarker gotchas
 
 - **Comparing a nullable model value directly (`<#if x == y>` or `x != y`)
