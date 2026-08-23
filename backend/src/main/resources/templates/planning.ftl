@@ -54,17 +54,26 @@
         </label>
         </#list>
       </div>
-      <div class="projection-chart-wrap">
+      <div class="wealth-chart-frame">
+        <div class="wealth-chart-yaxis">
+          <#list wealthChart.gridLines as grid>
+          <span>${grid.label}</span>
+          </#list>
+        </div>
         <div class="wealth-chart-scroll">
-          <svg viewBox="0 0 ${wealthChart.widthPx} 120" width="${wealthChart.widthPx}" height="120" class="wealth-chart">
+          <svg viewBox="0 0 ${wealthChart.widthPx} 120" preserveAspectRatio="none" style="min-width:${wealthChart.widthPx}px" class="wealth-chart">
+            <#list wealthChart.gridLines as grid>
+            <line x1="0" x2="${wealthChart.widthPx}" y1="${grid.y}" y2="${grid.y}" class="wealth-chart-grid-line"/>
+            </#list>
             <#list wealthChart.lines as line>
             <polyline points="${line.points}" class="${line.cssClass}"/>
             </#list>
           </svg>
-        </div>
-        <div class="projection-chart-labels">
-          <span>${wealthChart.minLabel}</span>
-          <span>${wealthChart.maxLabel}</span>
+          <div class="wealth-chart-xaxis" style="min-width:${wealthChart.widthPx}px">
+            <#list wealthChart.xAxisTicks as tick>
+            <span style="left:${tick.leftPercent}%">${tick.label}</span>
+            </#list>
+          </div>
         </div>
       </div>
     </div>

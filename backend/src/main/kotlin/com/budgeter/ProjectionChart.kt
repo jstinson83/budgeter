@@ -103,15 +103,45 @@ private const val WEALTH_CHART_POINT_SPACING_PX = 6.0
 // fixed CHART_WIDTH effectively is.
 private const val WEALTH_CHART_MIN_WIDTH_PX = 300.0
 
+// One horizontal gridline plus its y-axis label - WEALTH_CHART_GRID_STEPS
+// of these, evenly dividing the chart's value range from maxValue (first,
+// top) down to minValue (last, bottom). `y` is an SVG coordinate (goes
+// inside the chart's own scaled viewBox, same as ChartLine.points);
+// `label` is plain formatted text rendered outside the SVG (see the
+// x-axis tick comment below for why labels live outside it).
+data class WealthChartGridLine(val y: String, val label: String)
+
+// One x-axis year tick. `leftPercent` is a CSS left-offset percentage of
+// the chart's full width, not an SVG coordinate - planning.ftl renders
+// these as an absolutely-positioned HTML row layered under the <svg>
+// rather than as SVG <text>. That split matters once the chart is
+// stretched to fill its card (see wealthChartModel's width doc below):
+// the <svg> gets `preserveAspectRatio="none"` so its polylines/gridlines
+// can stretch horizontally to fill whatever width the card gives them,
+// but SVG <text> glyphs would stretch right along with it and come out
+// visibly squashed or smeared. Plain HTML text never does, and a
+// percentage offset tracks the same stretched/scrolled width identically
+// whether the chart is showing its natural per-point spacing or is
+// stretched to fill a wider card.
+data class WealthChartXAxisTick(val leftPercent: String, val label: String)
+
 data class WealthChartModel(
     val lines: List<ChartLine>,
-    val minLabel: String,
-    val maxLabel: String,
-    // The SVG's own viewBox/pixel width - planning.ftl sets both the
-    // <svg>'s width attribute and its viewBox to this so one unit is one
-    // real pixel, no scaling.
+    val gridLines: List<WealthChartGridLine>,
+    val xAxisTicks: List<WealthChartXAxisTick>,
+    // The chart's natural pixel width at one point per
+    // WEALTH_CHART_POINT_SPACING_PX - planning.ftl uses this as a
+    // `min-width` (not a fixed width) so a short horizon stretches to
+    // fill the card instead of leaving dead space next to a narrow chart,
+    // while a long horizon still gets its full natural width and scrolls
+    // rather than cramming hundreds of points into the card.
     val widthPx: Int
 )
+
+// Number of gridlines dividing the wealth chart's value range - 5 labels
+// (WEALTH_CHART_GRID_STEPS + 1) from maxValue down to minValue, replacing
+// the old bare min/max-only labels with a real, if unrounded, y-axis.
+private const val WEALTH_CHART_GRID_STEPS = 4
 
 // Same "baseline plus zero or more named scenario lines, one shared
 // coordinate scale" shape as projectionChartModel, deliberately kept as
@@ -129,12 +159,12 @@ fun wealthChartModel(baseline: List<ProjectionPoint>, scenarios: List<Pair<Strin
     val maxValue = allValues.max()
     val range = (maxValue - minValue).takeIf { it > 0.0 } ?: 1.0
     val width = maxOf(WEALTH_CHART_MIN_WIDTH_PX, 2 * CHART_PADDING + WEALTH_CHART_POINT_SPACING_PX * (baseline.size - 1))
+    val xStep = if (baseline.size > 1) (width - 2 * CHART_PADDING) / (baseline.size - 1) else 0.0
 
     fun yFor(value: Double): Double =
         CHART_HEIGHT - CHART_PADDING - ((value - minValue) / range) * (CHART_HEIGHT - 2 * CHART_PADDING)
 
     fun svgPointsFor(points: List<ProjectionPoint>): String {
-        val xStep = if (points.size > 1) (width - 2 * CHART_PADDING) / (points.size - 1) else 0.0
         return points.mapIndexed { index, point ->
             "%.2f,%.2f".format(CHART_PADDING + xStep * index, yFor(point.netWorth))
         }.joinToString(" ")
@@ -145,10 +175,24 @@ fun wealthChartModel(baseline: List<ProjectionPoint>, scenarios: List<Pair<Strin
         ChartLine(label, cssClass, svgPointsFor(points))
     }
 
+    val gridLines = (0..WEALTH_CHART_GRID_STEPS).map { step ->
+        val value = maxValue - (step.toDouble() / WEALTH_CHART_GRID_STEPS) * range
+        WealthChartGridLine(y = "%.2f".format(yFor(value)), label = "%.2f".format(value))
+    }
+
+    // One tick per calendar year the baseline crosses (every 12 monthly
+    // points, see wealthChartRowModel), labeled with that point's actual
+    // year rather than an offset from today - correct regardless of
+    // whether today's month is January.
+    val xAxisTicks = baseline.indices.filter { it % 12 == 0 }.map { index ->
+        val xPixel = CHART_PADDING + xStep * index
+        WealthChartXAxisTick(leftPercent = "%.2f".format(xPixel / width * 100.0), label = baseline[index].date.year.toString())
+    }
+
     return WealthChartModel(
         lines = lines,
-        minLabel = "%.2f".format(minValue),
-        maxLabel = "%.2f".format(maxValue),
+        gridLines = gridLines,
+        xAxisTicks = xAxisTicks,
         widthPx = width.toInt()
     )
 }

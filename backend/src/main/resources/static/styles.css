@@ -1252,21 +1252,90 @@ input[type="file"]::file-selector-button:hover {
 
 /* Wealth-over-time chart (planning.ftl) - unlike the goal-scoped chart
    above (fixed 300-unit viewBox, stretched to the card's width), this
-   chart's SVG width is real pixels (one unit == one CSS px, see
-   ProjectionChart.kt's wealthChartModel) sized to the number of monthly
-   points, wrapped in a scrolling container instead of being squeezed to
-   fit. */
+   chart's natural size is real pixels (one unit == one CSS px at
+   WEALTH_CHART_POINT_SPACING_PX per monthly point, see
+   ProjectionChart.kt's wealthChartModel) - but that's a *minimum*, not a
+   fixed width: the <svg> and the x-axis row below it are both `width:
+   100%` with that natural size as their `min-width` (set inline per
+   instance, since it depends on the household's own point count), so a
+   short horizon stretches to fill the card's real width instead of
+   leaving dead space next to a narrow chart, while a long horizon keeps
+   its natural per-point spacing and scrolls in `.wealth-chart-scroll`
+   rather than cramming hundreds of points into the card. `.wealth-chart`
+   itself carries `preserveAspectRatio="none"` so that stretch is
+   independent per axis - fine for gridlines/polylines (a stretched line
+   is still just a line), which is exactly why the y-axis value labels and
+   x-axis year labels are NOT drawn as SVG `<text>` inside it: stretched
+   text glyphs would smear right along with the coordinate system. They're
+   plain HTML instead - `.wealth-chart-yaxis` (a fixed sidebar, never
+   stretched) and `.wealth-chart-xaxis` (percent-positioned, tracks the
+   same stretched/scrolled width as the chart without distorting). */
+.wealth-chart-frame {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.wealth-chart-yaxis {
+  flex: 0 0 auto;
+  height: 7rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  padding: 0.15rem 0;
+}
+
 .wealth-chart-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow-x: auto;
-  border-radius: var(--radius-md);
 }
 
 .wealth-chart {
   display: block;
+  width: 100%;
   height: 7rem;
   background: var(--surface-soft);
   border-radius: var(--radius-md);
 }
+
+.wealth-chart-grid-line {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.wealth-chart-xaxis {
+  position: relative;
+  width: 100%;
+  height: 1.1rem;
+  margin-top: 0.3rem;
+}
+
+.wealth-chart-xaxis span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* A tick centered on its own point (the default above) would have the
+   first/last year label spill past the chart's left/right edge and get
+   clipped by .wealth-chart-scroll's overflow-x - so the first tick anchors
+   to its start and the last anchors to its end instead of centering.
+   :only-child comes last so a chart with a single tick (a horizon under a
+   year) uses start-anchoring too, rather than :last-child's end-anchoring
+   pushing its one label off the left edge instead. */
+.wealth-chart-xaxis span:first-child { transform: translateX(0); }
+.wealth-chart-xaxis span:last-child { transform: translateX(-100%); }
+.wealth-chart-xaxis span:only-child { transform: translateX(0); }
 
 /* Scenario visibility chips (planning.ftl) - one shared row above the
    wealth chart toggles which lines render, replacing a legend that used

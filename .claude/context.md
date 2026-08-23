@@ -1382,6 +1382,31 @@ itself.
   the 300-unit viewBox `projectionChartModel` stretches to fit. The
   goal-scoped chart/CRUD/routes are otherwise unchanged and still power
   `PlanningExport.kt`'s verification export.
+- **Wealth chart gained gridlines/axis labels and a width fix
+  (2026-08-23), maintainer feedback that the bare-polyline version looked
+  ugly and didn't fill its card on a short horizon.** `wealthChartModel`
+  now also returns `gridLines` (evenly-spaced y-axis values, top=max to
+  bottom=min) and `xAxisTicks` (one per calendar year the baseline
+  crosses, labeled with that point's real year so it's correct regardless
+  of what month "today" falls in). The width bug: the SVG's natural
+  per-point width was being used as a fixed width, so a short horizon (few
+  points) rendered narrower than the card, leaving dead space. Fixed by
+  making that width a CSS `min-width` instead, with the `<svg>` itself
+  `width: 100%` and `preserveAspectRatio="none"` so it stretches to fill a
+  wider card on a short horizon while a long horizon keeps its natural
+  per-point spacing and scrolls (`.wealth-chart-scroll`, unchanged)
+  instead of being squashed. That non-uniform stretch is why axis labels
+  are plain HTML, not SVG `<text>`: stretched glyphs would smear
+  horizontally, but a percent-positioned HTML x-axis row (`.wealth-chart-
+  xaxis`) and a fixed-height HTML y-axis sidebar (`.wealth-chart-yaxis`,
+  matching the chart's constant height) track the same stretched/scrolled
+  width without distorting. The first/last x-axis tick start/end-anchor
+  instead of centering (`.wealth-chart-xaxis span:first-child`/
+  `:last-child`, with `:only-child` overriding both for a horizon under a
+  year) so their label text doesn't get clipped by `.wealth-chart-scroll`'s
+  `overflow-x`. `projectionChartModel`/the goal-scoped chart are
+  untouched by any of this - still fixed-width, no gridlines, SVG-internal
+  min/max labels only.
 - **`Scenario`** (`ScenarioStore.kt`, landed): a named what-if parameter
   set, CRUD like `NetWorthEntry`/`FinancialGoal`, run through
   `ProjectionEngine.kt`'s `projectScenario()` and rendered as its own line
