@@ -84,4 +84,40 @@ class ProjectionChartTest {
         assertEquals("projection-chart-line-scenario-5", chart.lines[5].cssClass)
         assertEquals("projection-chart-line-scenario-1", chart.lines[6].cssClass) // wraps around
     }
+
+    @Test
+    fun testWealthChartModelHasNoGoalLineAndBaselineFirst() {
+        val baseline = listOf(ProjectionPoint(LocalDate.of(2026, 8, 1), 100000.0))
+        val chart = wealthChartModel(baseline, listOf("Aggressive" to baseline))
+
+        assertEquals(2, chart.lines.size)
+        assertEquals("Baseline", chart.lines[0].label)
+        assertEquals("projection-chart-line", chart.lines[0].cssClass)
+        assertEquals("projection-chart-line-scenario-1", chart.lines[1].cssClass)
+    }
+
+    @Test
+    fun testWealthChartModelWidensWithMorePointsRatherThanStayingFixed() {
+        val fewPoints = (0..2).map { ProjectionPoint(LocalDate.of(2026, 8, 1).plusMonths(it.toLong()), 0.0) }
+        val manyPoints = (0..120).map { ProjectionPoint(LocalDate.of(2026, 8, 1).plusMonths(it.toLong()), 0.0) }
+
+        val narrow = wealthChartModel(fewPoints, emptyList())
+        val wide = wealthChartModel(manyPoints, emptyList())
+
+        assertTrue(wide.widthPx > narrow.widthPx)
+    }
+
+    @Test
+    fun testWealthChartModelNeverGoesNarrowerThanItsMinimumWidth() {
+        val chart = wealthChartModel(listOf(ProjectionPoint(LocalDate.of(2026, 8, 1), 0.0)), emptyList())
+
+        assertTrue(chart.widthPx >= 300)
+    }
+
+    @Test
+    fun testWealthChartModelRejectsAnEmptyBaselineList() {
+        assertFailsWith<IllegalArgumentException> {
+            wealthChartModel(emptyList(), emptyList())
+        }
+    }
 }

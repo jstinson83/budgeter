@@ -27,6 +27,20 @@ class NetWorthRoutesTest {
     }
 
     @Test
+    fun testPlanningPageRendersAScrollableWealthChartWithJustTheBaselineLineByDefault() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("Wealth over time"))
+        assertTrue(page.contains("class=\"wealth-chart-scroll\""))
+        assertTrue(page.contains("class=\"wealth-chart\""))
+        assertTrue(page.contains("id=\"scenario-chip-baseline\""))
+        assertTrue(page.contains("projection-chart-line\""))
+        assertFalse(page.contains("id=\"goals-card\""))
+    }
+
+    @Test
     fun testPlanningExportRequiresSignIn() = testApplication {
         testModule()
 
@@ -160,59 +174,13 @@ class NetWorthRoutesTest {
         assertTrue(afterDelete.contains("No assets or liabilities yet."))
     }
 
-    @Test
-    fun testPlanningPageShowsNoGoalsEmptyState() = testApplication {
-        testModule()
-        val client = signInFakeUser()
-
-        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        assertTrue(page.contains("No goals yet."))
-    }
-
-    @Test
-    fun testAddingANetWorthTargetGoalShowsItsResolvedTargetAmount() = testApplication {
-        testModule()
-        val client = signInFakeUser()
-
-        val response = client.post("/planning/goals") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("name=House fund&type=NET_WORTH_TARGET&targetDate=2031-08-21&targetAmount=500000.00")
-        }
-        assertEquals("Added House fund", Url(response.headers[HttpHeaders.Location]!!).parameters["message"])
-
-        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        assertTrue(page.contains("House fund"))
-        assertTrue(page.contains("Target: 500000.00 by 2031-08-21"))
-    }
-
-    @Test
-    fun testAddingARetirementGoalDerivesItsTargetAmountFromAnnualSpendAndWithdrawalRate() = testApplication {
-        testModule()
-        val client = signInFakeUser()
-
-        val response = client.post("/planning/goals") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("name=Retire early&type=RETIREMENT&targetDate=2050-01-01&annualSpend=80000.00&withdrawalRatePercent=4")
-        }
-        assertEquals("Added Retire early", Url(response.headers[HttpHeaders.Location]!!).parameters["message"])
-
-        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        assertTrue(page.contains("Target: 2000000.00 by 2050-01-01"))
-    }
-
-    @Test
-    fun testAddingARetirementGoalWithoutAWithdrawalRateFallsBackToTheDefault() = testApplication {
-        testModule()
-        val client = signInFakeUser()
-
-        client.post("/planning/goals") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("name=Retire&type=RETIREMENT&targetDate=2050-01-01&annualSpend=40000.00")
-        }
-
-        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        assertTrue(page.contains("Target: 1000000.00 by 2050-01-01")) // 40000 / 0.04
-    }
+    // Goals themselves are hidden from /planning's UI for now (see
+    // CLAUDE.md/current.md, 2026-08-23) - the store/resolvedTargetAmount
+    // logic is covered directly in FinancialGoalStoreTest.kt, so the tests
+    // that used to scrape a goal's rendered card off the page were removed
+    // rather than adjusted. The routes themselves are still reachable
+    // (kept for PlanningExport.kt and in case this gets revisited), so
+    // their own validation behavior is still worth covering here.
 
     @Test
     fun testAddingAGoalWithABlankNameIsRejected() = testApplication {
@@ -239,28 +207,6 @@ class NetWorthRoutesTest {
     }
 
     @Test
-    fun testEditingAGoalUpdatesItsNameAndTargetAmount() = testApplication {
-        testModule()
-        val client = signInFakeUser()
-        client.post("/planning/goals") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("name=House fund&type=NET_WORTH_TARGET&targetDate=2031-08-21&targetAmount=500000.00")
-        }
-        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        val goalId = Regex("""/planning/goals/([^"/]+)"""").find(page)!!.groupValues[1]
-
-        val editResponse = client.post("/planning/goals/$goalId") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("name=Bigger house fund&type=NET_WORTH_TARGET&targetDate=2032-01-01&targetAmount=600000.00")
-        }
-        assertEquals("Updated Bigger house fund", Url(editResponse.headers[HttpHeaders.Location]!!).parameters["message"])
-
-        val updatedPage = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        assertTrue(updatedPage.contains("Bigger house fund"))
-        assertTrue(updatedPage.contains("Target: 600000.00 by 2032-01-01"))
-    }
-
-    @Test
     fun testEditingAnUnknownGoalIsReportedAsNotFound() = testApplication {
         testModule()
         val client = signInFakeUser()
@@ -273,56 +219,6 @@ class NetWorthRoutesTest {
     }
 
     @Test
-    fun testDeletingAGoalRemovesItFromThePage() = testApplication {
-        testModule()
-        val client = signInFakeUser()
-        client.post("/planning/goals") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("name=House fund&type=NET_WORTH_TARGET&targetDate=2031-08-21&targetAmount=500000.00")
-        }
-        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        val goalId = Regex("""/planning/goals/([^"/]+)"""").find(page)!!.groupValues[1]
-
-        val deleteResponse = client.post("/planning/goals/$goalId/delete")
-        assertEquals("Deleted goal", Url(deleteResponse.headers[HttpHeaders.Location]!!).parameters["message"])
-
-        val afterDelete = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        assertTrue(afterDelete.contains("No goals yet."))
-    }
-
-    @Test
-    fun testAGoalAlreadyAboveItsTargetRendersAsOnTrackWithAProjectionChart() = testApplication {
-        testModule()
-        val client = signInFakeUser()
-        client.post("/planning/entries") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("label=Chequing&type=BANK&value=100000.00")
-        }
-        client.post("/planning/goals") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("name=Easy goal&type=NET_WORTH_TARGET&targetDate=2026-09-01&targetAmount=50000.00")
-        }
-
-        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        assertTrue(page.contains("class=\"projection-chart\""))
-        assertTrue(page.contains("on track"))
-        assertFalse(page.contains("short by"))
-    }
-
-    @Test
-    fun testAGoalFarBelowItsTargetRendersAsShortBy() = testApplication {
-        testModule()
-        val client = signInFakeUser()
-        client.post("/planning/goals") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("name=Hard goal&type=NET_WORTH_TARGET&targetDate=2026-09-01&targetAmount=1000000.00")
-        }
-
-        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        assertTrue(page.contains("short by"))
-    }
-
-    @Test
     fun testPlanningPageShowsNoScenariosEmptyState() = testApplication {
         testModule()
         val client = signInFakeUser()
@@ -332,13 +228,9 @@ class NetWorthRoutesTest {
     }
 
     @Test
-    fun testAddingAScenarioMakesItAppearAndAddsALineToEveryGoalsChart() = testApplication {
+    fun testAddingAScenarioMakesItAppearAndAddsALineToTheWealthChart() = testApplication {
         testModule()
         val client = signInFakeUser()
-        client.post("/planning/goals") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("name=Goal&type=NET_WORTH_TARGET&targetDate=2027-08-21&targetAmount=50000.00")
-        }
 
         val response = client.post("/planning/scenarios") {
             contentType(ContentType.Application.FormUrlEncoded)
@@ -443,29 +335,6 @@ class NetWorthRoutesTest {
     }
 
     @Test
-    fun testAddingAScenarioWithAnRrspStrategyShowsItsRefundsOnTheGoalCard() = testApplication {
-        testModule()
-        val client = signInFakeUser()
-        client.post("/planning/goals") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("name=Goal&type=NET_WORTH_TARGET&targetDate=2027-08-21&targetAmount=50000.00")
-        }
-
-        val response = client.post("/planning/scenarios") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody(
-                "name=Max RRSP&annualMarketGrowthRatePercent=0&investedSavingsFractionPercent=0&recreationalSpendAdjustment=0" +
-                    "&rrspMonthlyContribution=1000&rrspMarginalTaxRatePercent=40&rrspRoomRemaining=100000"
-            )
-        }
-        assertEquals("Added Max RRSP", Url(response.headers[HttpHeaders.Location]!!).parameters["message"])
-
-        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        assertTrue(page.contains("in RRSP refunds"))
-        assertTrue(page.contains("room left"))
-    }
-
-    @Test
     fun testAddingAScenarioWithAnRrspStrategyPersistsTheReinvestRefundCheckbox() = testApplication {
         testModule()
         val client = signInFakeUser()
@@ -497,13 +366,9 @@ class NetWorthRoutesTest {
     }
 
     @Test
-    fun testAddingAScenarioWithNoRrspStrategyStillShowsOnTrackOffTrackWithoutRefundText() = testApplication {
+    fun testAddingAScenarioWithNoRrspStrategyDoesNotShowRefundText() = testApplication {
         testModule()
         val client = signInFakeUser()
-        client.post("/planning/goals") {
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody("name=Goal&type=NET_WORTH_TARGET&targetDate=2027-08-21&targetAmount=50000.00")
-        }
         client.post("/planning/scenarios") {
             contentType(ContentType.Application.FormUrlEncoded)
             setBody("name=Plain growth&annualMarketGrowthRatePercent=7&investedSavingsFractionPercent=100&recreationalSpendAdjustment=0")

@@ -34,8 +34,17 @@ fun netWorthPageModel(
         "netWorth" to "%.2f".format(netWorthTotal(entries)),
         "assetTypeOptions" to NetWorthEntryType.entries.filter { it.isAsset }.map { mapOf("name" to it.name, "label" to it.label) },
         "liabilityTypeOptions" to NetWorthEntryType.entries.filter { !it.isAsset }.map { mapOf("name" to it.name, "label" to it.label) },
+        // Goals themselves are hidden from /planning's UI for now (felt
+        // under-baked - a target/on-track judgment call, not the "watch
+        // your wealth grow" view the maintainer actually wanted day to
+        // day - see CLAUDE.md and current.md, 2026-08-23). Still computed
+        // here since FinancialGoal/the goal-scoped chart remain wired into
+        // PlanningExport.kt's verification export and the CRUD routes
+        // still work - planning.ftl just doesn't render this key anymore.
         "goals" to goals.map { goal -> financialGoalRowModel(goal, entries, scenarios, transactions, today) },
         "scenarios" to scenarios.mapIndexed { index, scenario -> scenarioRowModel(scenario, categoryLabelById, index) },
+        "wealthChart" to wealthChartRowModel(entries, scenarios, transactions, today),
+        "wealthChartHorizonYears" to WEALTH_CHART_HORIZON_YEARS,
         "growthPresets" to MarketGrowthPreset.entries.map { mapOf("name" to it.name, "label" to it.label, "annualRatePercent" to "%.1f".format(it.annualRate * 100)) },
         // Only active categories are offered anywhere a household tags a
         // Category onto something else (the RRSP income selector, and a
@@ -65,6 +74,27 @@ private fun netWorthEntryRowModel(entry: NetWorthEntry): Map<String, Any?> = map
     "mortgagePaymentCategoryId" to (entry.mortgagePaymentCategoryId ?: ""),
     "annualAppreciationRatePercent" to (entry.annualAppreciationRate?.let { "%.2f".format(it * 100) } ?: "")
 )
+
+// The goal-independent "Wealth over time" chart /planning now leads with -
+// the always-shown baseline plus one line per Scenario, projected a fixed
+// WEALTH_CHART_HORIZON_YEARS forward from today rather than to any goal's
+// own target date (there is no goal driving this chart). Reuses the same
+// projectScenario the goal-scoped chart uses, via the targetDate overload
+// (ProjectionEngine.kt) instead of passing a FinancialGoal.
+private fun wealthChartRowModel(entries: List<NetWorthEntry>, scenarios: List<Scenario>, transactions: List<Transaction>, today: LocalDate): Map<String, Any?> {
+    val horizonEnd = today.plusYears(WEALTH_CHART_HORIZON_YEARS)
+    val baselinePoints = projectNetWorth(entries, transactions, baselineMonthlySavingsRate(transactions, today), today, horizonEnd)
+    val scenarioLines = scenarios.map { scenario ->
+        scenario.name to projectScenario(scenario, entries, transactions, horizonEnd, today).points.map { ProjectionPoint(it.date, it.netWorth) }
+    }
+    val chart = wealthChartModel(baselinePoints, scenarioLines)
+    return mapOf(
+        "lines" to chart.lines.map { mapOf("label" to it.label, "cssClass" to it.cssClass, "points" to it.points) },
+        "minLabel" to chart.minLabel,
+        "maxLabel" to chart.maxLabel,
+        "widthPx" to chart.widthPx
+    )
+}
 
 private fun financialGoalRowModel(goal: FinancialGoal, entries: List<NetWorthEntry>, scenarios: List<Scenario>, transactions: List<Transaction>, today: LocalDate): Map<String, Any?> {
     val projection = projectGoal(goal, entries, transactions, today)

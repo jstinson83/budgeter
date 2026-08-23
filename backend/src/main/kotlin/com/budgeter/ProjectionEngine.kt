@@ -15,6 +15,14 @@ import java.time.temporal.ChronoUnit
 
 const val BASELINE_TRAILING_MONTHS = 3
 
+// How far forward /planning's goal-independent "Wealth over time" chart
+// projects (NetWorthPage.kt's wealthChartRowModel) - unlike a goal's own
+// chart, there's no target date to project to, so this is a fixed,
+// arbitrary horizon rather than derived from anything the household
+// entered. 10 years matches the horizon already used informally in the
+// Coast/downshift analysis notes (see current.md).
+const val WEALTH_CHART_HORIZON_YEARS = 10L
+
 // Average monthly net change (income - expense, TRANSFER/INVESTMENT
 // excluded) over the trailing BASELINE_TRAILING_MONTHS calendar months
 // ending with the month containing `asOf` - reuses DashboardPage.kt's own
@@ -263,7 +271,13 @@ data class ScenarioProjection(
     val finalRrspRoomRemaining: Double
 )
 
-fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactions: List<Transaction>, goal: FinancialGoal, today: LocalDate = LocalDate.now()): ScenarioProjection {
+// Same projection, tied to one goal's own target date - kept for the
+// goal-scoped chart (currently hidden from /planning's UI, see CLAUDE.md,
+// but still used by the verification export) and PlanningExport.kt.
+fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactions: List<Transaction>, goal: FinancialGoal, today: LocalDate = LocalDate.now()): ScenarioProjection =
+    projectScenario(scenario, entries, transactions, goal.targetDate, today)
+
+fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactions: List<Transaction>, targetDate: LocalDate, today: LocalDate = LocalDate.now()): ScenarioProjection {
     val startingInvested = entries.filter { it.type == NetWorthEntryType.INVESTMENT }.sumOf { it.value }
     val startingCash = netWorthTotal(entries) - startingInvested
     val baselineRate = baselineMonthlySavingsRate(transactions, today)
@@ -279,7 +293,7 @@ fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactio
     } ?: 0.0
 
     val startMonth = YearMonth.from(today)
-    val endMonth = YearMonth.from(goal.targetDate)
+    val endMonth = YearMonth.from(targetDate)
     val months = ChronoUnit.MONTHS.between(startMonth, endMonth).coerceAtLeast(0).toInt()
     val schedules = DynamicEntrySchedules(entries, transactions, today, months)
 

@@ -21,6 +21,30 @@ and revisit merging as its own follow-up feature if it comes up again.
 
 ## Active task: Financial Planning Projections (net worth + scenarios)
 
+**2026-08-23: Goals hidden from `/planning`'s UI, revisit later.** The
+maintainer's actual day-to-day want is watching wealth grow over time, not
+a target/on-track judgment - "goals" felt under-baked as a concept and got
+in the way of that. `/planning` now leads with a goal-independent "Wealth
+over time" chart (baseline + one line per Scenario, projected a fixed
+`WEALTH_CHART_HORIZON_YEARS` = 10 years out, `ProjectionChart.kt`'s
+`wealthChartModel`/`NetWorthPage.kt`'s `wealthChartRowModel`) instead of
+one chart per goal. `FinancialGoal` CRUD, its own goal-scoped chart, and
+the RRSP-refund-vs-goal outcome text are untouched in the backend (still
+exercised by `PlanningExport.kt`'s verification export and reachable via
+`POST /planning/goals*`) - only `planning.ftl`'s Goals card and "Add goal"
+form were removed. Revisit if/when goals come back as a real feature
+(possibly reshaped, given the "under-baked" feedback) rather than treating
+this as a completed decision either way.
+
+**Same session: the wealth chart scrolls horizontally instead of being
+squeezed to fit.** Its SVG width now scales with point count (one SVG
+unit == one real CSS pixel, no `preserveAspectRatio` stretching) and is
+wrapped in an `overflow-x: auto` container (`.wealth-chart-scroll` in
+`styles.css`) - a multi-year monthly projection would otherwise cram
+hundreds of points into one fixed ~300px-wide viewBox. The goal-scoped
+chart (hidden, above) keeps its original fixed-width/no-scroll behavior
+unchanged.
+
 A deterministic net worth projection engine (no Gemini in the math) that
 goals are checked against - net worth target or retirement, not just a
 flat savings-rate target. Design discussed and agreed 2026-08-21.
