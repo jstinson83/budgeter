@@ -193,7 +193,9 @@ private fun scenariosCsv(scenarios: List<Scenario>, categoryLabelById: Map<Strin
     CSVFormat.DEFAULT.builder()
         .setHeader(
             "Name", "AnnualMarketGrowthRatePercent", "InvestedSavingsFractionPercent", "RecreationalSpendAdjustment",
-            "SalaryChangeDate", "SalaryChangeMonthlyDelta", "RrspMonthlyContribution", "RrspMarginalTaxRatePercent",
+            "SalaryChangeDate", "SalaryChangeMonthlyDelta", "SalaryChangeEndDate",
+            "SalaryChangeRrspContributionOverride", "SalaryChangeMarginalTaxRateOverridePercent", "SalaryChangeRoomAccrualOverride",
+            "RrspMonthlyContribution", "RrspMarginalTaxRatePercent",
             "RrspRoomRemaining", "RrspReinvestRefund", "RrspIncomeCategory", "RrspAnnualRoomAccrualCap"
         )
         .build()
@@ -203,6 +205,10 @@ private fun scenariosCsv(scenarios: List<Scenario>, categoryLabelById: Map<Strin
                 printer.printRecord(
                     scenario.name, scenario.annualMarketGrowthRate * 100, scenario.investedSavingsFraction * 100,
                     scenario.recreationalSpendAdjustment, scenario.salaryChangeDate ?: "", scenario.salaryChangeMonthlyDelta ?: "",
+                    scenario.salaryChangeEndDate ?: "",
+                    scenario.salaryChangeRrspContributionOverride ?: "",
+                    scenario.salaryChangeMarginalTaxRateOverride?.let { it * 100 } ?: "",
+                    scenario.salaryChangeRoomAccrualOverride ?: "",
                     scenario.rrspMonthlyContribution ?: "", scenario.rrspMarginalTaxRate?.let { it * 100 } ?: "",
                     scenario.rrspRoomRemaining ?: "", scenario.rrspReinvestRefund,
                     scenario.rrspIncomeCategoryId?.let { categoryLabelById[it] ?: it } ?: "",

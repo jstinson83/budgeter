@@ -1445,6 +1445,22 @@ itself.
     no income/expense/tax breakdown to recompute a savings rate from a
     stated salary. Revisit both simplifications if a household actually
     needs more.
+  - **`salaryChangeEndDate` + three RRSP overrides (landed 2026-08-23)**
+    turn this from "permanent step change" into a real dated event: an
+    optional end date (null = permanent, the original behavior; set means
+    active for `[salaryChangeDate, salaryChangeEndDate)`) plus
+    `salaryChangeRrspContributionOverride`/`salaryChangeMarginalTaxRateOverride`/
+    `salaryChangeRoomAccrualOverride`, each independently optional and
+    each replacing the scenario's own steady-state RRSP number only while
+    the event is active. See `current.md`'s item 7 writeup for the full
+    design reasoning (why the room-accrual override replaces the computed
+    dollar figure rather than `rrspAnnualRoomAccrualCap`, the
+    rate-at-anniversary simplification, "modifies an existing strategy,
+    doesn't conjure one from nothing") and `ProjectionEngine.kt`'s
+    `projectScenario` for the mechanics - this was the first of the two
+    "event" shapes discussed that session (see `current.md`'s Events
+    section); the second (a project's payment schedule) is still not
+    built.
   - **Mid-session correction, worth recording so it isn't relitigated**:
     a maintainer question about RRSP contributions briefly led to
     "fixing" `baselineMonthlySavingsRate()` to stop excluding

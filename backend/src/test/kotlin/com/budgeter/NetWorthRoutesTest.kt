@@ -260,6 +260,45 @@ class NetWorthRoutesTest {
     }
 
     @Test
+    fun testAddingAScenarioWithASalaryChangeEndDateAndRrspOverridesPersistsAllOfThem() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        client.post("/planning/scenarios") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody(
+                "name=Temporary cut&annualMarketGrowthRatePercent=7&investedSavingsFractionPercent=50&recreationalSpendAdjustment=0" +
+                    "&salaryChangeDate=2027-01-01&salaryChangeMonthlyDelta=-500&salaryChangeEndDate=2027-07-01" +
+                    "&salaryChangeRrspContributionOverride=200&salaryChangeMarginalTaxRateOverridePercent=15&salaryChangeRoomAccrualOverride=5000"
+            )
+        }
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("value=\"2027-07-01\""))
+        assertTrue(page.contains("name=\"salaryChangeRrspContributionOverride\" value=\"200.00\""))
+        assertTrue(page.contains("name=\"salaryChangeMarginalTaxRateOverridePercent\" value=\"15.0\""))
+        assertTrue(page.contains("name=\"salaryChangeRoomAccrualOverride\" value=\"5000.00\""))
+        // The summary tag reflects the temporary window, not just the start date.
+        assertTrue(page.contains("2027-01-01"))
+        assertTrue(page.contains("&rarr; 2027-07-01"))
+    }
+
+    @Test
+    fun testAddingAScenarioWithASalaryChangeEndDateOnOrBeforeItsStartDateIsRejected() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.post("/planning/scenarios") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody(
+                "name=Bad dates&annualMarketGrowthRatePercent=7&investedSavingsFractionPercent=50&recreationalSpendAdjustment=0" +
+                    "&salaryChangeDate=2027-01-01&salaryChangeMonthlyDelta=-500&salaryChangeEndDate=2027-01-01"
+            )
+        }
+        assertEquals("Invalid scenario", Url(response.headers[HttpHeaders.Location]!!).parameters["error"])
+    }
+
+    @Test
     fun testAddingAScenarioWithABlankNameIsRejected() = testApplication {
         testModule()
         val client = signInFakeUser()

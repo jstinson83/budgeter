@@ -129,8 +129,9 @@ fun Route.netWorthRoutes(
         val scenario = scenarioStore.add(
             ownerId, input.name, input.annualMarketGrowthRate, input.investedSavingsFraction,
             input.recreationalSpendAdjustment, input.salaryChangeDate, input.salaryChangeMonthlyDelta,
-            input.rrspMonthlyContribution, input.rrspMarginalTaxRate, input.rrspRoomRemaining, input.rrspReinvestRefund,
-            input.rrspIncomeCategoryId, input.rrspAnnualRoomAccrualCap
+            input.salaryChangeEndDate, input.salaryChangeRrspContributionOverride, input.salaryChangeMarginalTaxRateOverride,
+            input.salaryChangeRoomAccrualOverride, input.rrspMonthlyContribution, input.rrspMarginalTaxRate,
+            input.rrspRoomRemaining, input.rrspReinvestRefund, input.rrspIncomeCategoryId, input.rrspAnnualRoomAccrualCap
         )
         call.respondRedirect("/planning?message=${"Added ${scenario.name}".encodeURLQueryComponent()}")
     }
@@ -144,8 +145,9 @@ fun Route.netWorthRoutes(
         val updated = scenarioStore.update(
             ownerId, id, input.name, input.annualMarketGrowthRate, input.investedSavingsFraction,
             input.recreationalSpendAdjustment, input.salaryChangeDate, input.salaryChangeMonthlyDelta,
-            input.rrspMonthlyContribution, input.rrspMarginalTaxRate, input.rrspRoomRemaining, input.rrspReinvestRefund,
-            input.rrspIncomeCategoryId, input.rrspAnnualRoomAccrualCap
+            input.salaryChangeEndDate, input.salaryChangeRrspContributionOverride, input.salaryChangeMarginalTaxRateOverride,
+            input.salaryChangeRoomAccrualOverride, input.rrspMonthlyContribution, input.rrspMarginalTaxRate,
+            input.rrspRoomRemaining, input.rrspReinvestRefund, input.rrspIncomeCategoryId, input.rrspAnnualRoomAccrualCap
         )
         val message = if (updated != null) "Updated ${updated.name}" else "Scenario not found"
         val param = if (updated != null) "message" else "error"
@@ -247,6 +249,10 @@ private data class ScenarioFormInput(
     val recreationalSpendAdjustment: Double,
     val salaryChangeDate: LocalDate?,
     val salaryChangeMonthlyDelta: Double?,
+    val salaryChangeEndDate: LocalDate?,
+    val salaryChangeRrspContributionOverride: Double?,
+    val salaryChangeMarginalTaxRateOverride: Double?,
+    val salaryChangeRoomAccrualOverride: Double?,
     val rrspMonthlyContribution: Double?,
     val rrspMarginalTaxRate: Double?,
     val rrspRoomRemaining: Double?,
@@ -279,6 +285,31 @@ private fun parseScenarioForm(formParams: Parameters): ScenarioFormInput? {
         }
     }
 
+    // Optional even when the pair above is set - blank means permanent,
+    // same as before this field existed. Only meaningful with a
+    // salary-change event to attach to; a stray value with no event
+    // configured is inert (ProjectionEngine.kt only ever reads it via
+    // salaryChangeDate), so it's only parsed/validated when that's set.
+    val salaryChangeEndDateInput = formParams["salaryChangeEndDate"]?.trim().orEmpty()
+    val salaryChangeEndDate = if (salaryChangeDate != null && salaryChangeEndDateInput.isNotEmpty()) {
+        val endDate = runCatching { LocalDate.parse(salaryChangeEndDateInput) }.getOrNull() ?: return null
+        if (!endDate.isAfter(salaryChangeDate)) return null // can't revert before (or the same month) it starts
+        endDate
+    } else {
+        null
+    }
+    // Each independently optional (blank = "no change," the default) -
+    // see Scenario.kt's doc comment for why these replace the RRSP
+    // trio's own numbers only while the salary-change event is active,
+    // rather than being validated as a coherent group the way the RRSP
+    // trio itself is.
+    val salaryChangeRrspContributionOverride = formParams["salaryChangeRrspContributionOverride"]?.trim()
+        ?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()?.takeIf { it >= 0 }
+    val salaryChangeMarginalTaxRateOverride = formParams["salaryChangeMarginalTaxRateOverridePercent"]?.trim()
+        ?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()?.takeIf { it in 0.0..100.0 }?.div(100.0)
+    val salaryChangeRoomAccrualOverride = formParams["salaryChangeRoomAccrualOverride"]?.trim()
+        ?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()?.takeIf { it >= 0 }
+
     val rrspContributionInput = formParams["rrspMonthlyContribution"]?.trim().orEmpty()
     val rrspTaxRateInput = formParams["rrspMarginalTaxRatePercent"]?.trim().orEmpty()
     val rrspRoomInput = formParams["rrspRoomRemaining"]?.trim().orEmpty()
@@ -306,6 +337,10 @@ private fun parseScenarioForm(formParams: Parameters): ScenarioFormInput? {
         recreationalSpendAdjustment,
         salaryChangeDate,
         salaryChangeMonthlyDelta,
+        salaryChangeEndDate,
+        salaryChangeRrspContributionOverride,
+        salaryChangeMarginalTaxRateOverride,
+        salaryChangeRoomAccrualOverride,
         rrspMonthlyContribution,
         rrspMarginalTaxRate,
         rrspRoomRemaining,

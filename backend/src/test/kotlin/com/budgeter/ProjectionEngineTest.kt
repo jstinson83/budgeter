@@ -305,6 +305,103 @@ class ProjectionEngineTest {
     }
 
     @Test
+    fun testProjectScenarioRevertsTheSalaryChangeEventAfterItsEndDate() {
+        val entries = emptyList<NetWorthEntry>()
+        val scenario = Scenario(
+            "s1", "owner", "Temporary cut", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
+            salaryChangeDate = LocalDate.of(2026, 9, 1), salaryChangeMonthlyDelta = -500.0, salaryChangeEndDate = LocalDate.of(2026, 11, 1)
+        )
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 12, 1), targetAmount = 1.0)
+
+        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21)).points
+
+        assertEquals(0.0, points[0].cash, 0.001)     // Aug: before the cut
+        assertEquals(-500.0, points[1].cash, 0.001)  // Sep: cut applies
+        assertEquals(-1000.0, points[2].cash, 0.001) // Oct: cut still in effect
+        assertEquals(-1000.0, points[3].cash, 0.001) // Nov: reverted - the end-date month itself is back to normal
+        assertEquals(-1000.0, points[4].cash, 0.001) // Dec: stays reverted
+    }
+
+    @Test
+    fun testProjectScenarioOverridesTheRrspContributionWhileTheSalaryChangeEventIsActive() {
+        val entries = emptyList<NetWorthEntry>()
+        // A single +6000 transaction averaged over the trailing 3-month
+        // window gives a 2000/mo baseline, same trick the plain RRSP tests
+        // below use - isolates the contribution override from needing a
+        // real income event to fund it.
+        val transactions = listOf(tx("1", "2026-08-15", 6000.0))
+        val scenario = Scenario(
+            "s1", "owner", "Pay cut, less RRSP", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
+            salaryChangeDate = LocalDate.of(2026, 9, 1), salaryChangeMonthlyDelta = 0.0, salaryChangeEndDate = LocalDate.of(2026, 11, 1),
+            salaryChangeRrspContributionOverride = 200.0,
+            rrspMonthlyContribution = 1000.0, rrspMarginalTaxRate = 0.0, rrspRoomRemaining = 100000.0
+        )
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 12, 1), targetAmount = 1.0)
+
+        val points = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21)).points
+
+        assertEquals(200.0, points[1].invested, 0.01)  // Sep: override (200) applies
+        assertEquals(400.0, points[2].invested, 0.01)  // Oct: override still in effect
+        assertEquals(1400.0, points[3].invested, 0.01) // Nov: reverted to the scenario's own 1000/mo
+        assertEquals(2400.0, points[4].invested, 0.01) // Dec: stays reverted
+    }
+
+    @Test
+    fun testProjectScenarioOverridesTheMarginalTaxRateForARefundComputedWhileTheEventIsActive() {
+        val entries = emptyList<NetWorthEntry>()
+        val scenario = Scenario(
+            "s1", "owner", "Raise into a higher bracket", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
+            salaryChangeDate = LocalDate.of(2026, 9, 1), salaryChangeMonthlyDelta = 0.0,
+            salaryChangeMarginalTaxRateOverride = 0.40,
+            rrspMonthlyContribution = 1000.0, rrspMarginalTaxRate = 0.10, rrspRoomRemaining = 100000.0
+        )
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
+
+        val result = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21))
+
+        // 12000 contributed over the year * the 40% override, not the
+        // scenario's own 10% - the event (no end date) is still active at
+        // the 12-month refund anniversary.
+        assertEquals(4800.0, result.totalRrspRefunds, 0.01)
+    }
+
+    @Test
+    fun testProjectScenarioOverridesTheRrspRoomAccrualWhileTheSalaryChangeEventIsActive() {
+        val entries = emptyList<NetWorthEntry>()
+        val transactions = listOf(tx("1", "2026-08-01", 500000.0, "SALARY")) // 18% would normally accrue 90000
+        val scenario = Scenario(
+            "s1", "owner", "Pay cut, less accrual", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
+            salaryChangeDate = LocalDate.of(2026, 9, 1), salaryChangeMonthlyDelta = 0.0,
+            salaryChangeRoomAccrualOverride = 10000.0,
+            rrspRoomRemaining = 0.0, rrspIncomeCategoryId = "SALARY"
+        )
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
+
+        val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+
+        assertEquals(10000.0, result.finalRrspRoomRemaining, 0.01) // override, not the computed 90000
+    }
+
+    @Test
+    fun testProjectScenarioRrspRoomAccrualRevertsToTheComputedValueAfterTheEventEnds() {
+        val entries = emptyList<NetWorthEntry>()
+        val transactions = listOf(tx("1", "2026-08-01", 500000.0, "SALARY"))
+        val scenario = Scenario(
+            "s1", "owner", "Temporary cut", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
+            salaryChangeDate = LocalDate.of(2026, 9, 1), salaryChangeMonthlyDelta = 0.0, salaryChangeEndDate = LocalDate.of(2026, 10, 1),
+            salaryChangeRoomAccrualOverride = 10000.0,
+            rrspRoomRemaining = 0.0, rrspIncomeCategoryId = "SALARY"
+        )
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
+
+        val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+
+        // The event ended well before the 12-month accrual anniversary, so
+        // the normal 18%-of-income figure applies instead of the override.
+        assertEquals(90000.0, result.finalRrspRoomRemaining, 0.01)
+    }
+
+    @Test
     fun testProjectScenarioAppliesAnRrspStrategyGeneratingAnAnnualRefund() {
         val entries = emptyList<NetWorthEntry>()
         // A single +6000 transaction averaged over the trailing 3-month
