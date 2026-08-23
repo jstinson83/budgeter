@@ -39,6 +39,21 @@ fun Route.categoryRoutes(
         call.respondRedirect("/categories?message=${"Added ${category.label}".encodeURLQueryComponent()}")
     }
 
+    // Forces a full recategorize pass from scratch - clears every
+    // transaction's category, then hands off to /analysis, whose GET
+    // handler already unconditionally runs the normal categorize() pass
+    // (TransferMatcher -> rules -> Gemini, CategorizationJob.kt) on every
+    // load, "Categorizing…" polling UI included. Added after enough rule
+    // churn during development left some transactions sitting in stale
+    // categories that the normal pass would never revisit (it only looks
+    // at still-uncategorized rows) - a blunt reset-and-redo rather than
+    // trying to detect which specific transactions are stale.
+    post("/categories/recategorize-all") {
+        val ownerId = call.requireUserId()
+        transactionStore.resetCategories(ownerId)
+        call.respondRedirect("/analysis")
+    }
+
     post("/categories/{id}/toggle") {
         val ownerId = call.requireUserId()
         val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)

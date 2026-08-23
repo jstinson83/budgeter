@@ -122,6 +122,19 @@ interface TransactionRepository {
 
     suspend fun updateCategories(ownerId: String, categorized: Map<String, String>)
 
+    // Clears every one of this owner's transactions back to uncategorized
+    // (category = null) without deleting the rows themselves - see
+    // CategoryRoutes.kt's "Recategorize all" action. Exists because the
+    // normal categorize() pass (CategorizationJob.kt) only ever revisits
+    // uncategorized(ownerId) for rules/Gemini - a transaction that's
+    // already (mis)categorized, e.g. from since-edited/deleted rules or
+    // other dev-time churn, is otherwise never reconsidered. Only
+    // TransferMatcher's own step already scans every transaction
+    // regardless of its current category, so it re-derives the same
+    // result immediately and for free on the very next categorize() pass -
+    // this doesn't need to special-case TRANSFER-tagged rows.
+    suspend fun resetCategories(ownerId: String)
+
     // Wipes every transaction (and, since categories/analysis live on the
     // transaction record rather than a separate collection, everything
     // /analysis would show too) for one owner. Handy while the CSV import
@@ -180,6 +193,14 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
         if (categorized.isEmpty()) return
         val batch = firestore.batch()
         categorized.forEach { (id, category) -> batch.update(collection.document(id), mapOf("category" to category)) }
+        batch.commit().get()
+    }
+
+    override suspend fun resetCategories(ownerId: String) {
+        val snapshot = collection.whereEqualTo("ownerId", ownerId).get().get()
+        if (snapshot.isEmpty) return
+        val batch = firestore.batch()
+        snapshot.documents.forEach { batch.update(it.reference, mapOf("category" to null)) }
         batch.commit().get()
     }
 

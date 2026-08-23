@@ -187,6 +187,38 @@ class CategoryRoutesTest {
     }
 
     @Test
+    fun testRecategorizeAllClearsStaleCategoriesAndRedirectsToAnalysis() = testApplication {
+        val categorizer = FakeTransactionCategorizer("OTHER")
+        testModule(transactionCategorizer = categorizer)
+        val client = signInFakeUser()
+        client.get("/categories") // seeds built-ins
+
+        client.importCsv("2026-06-15,NETFLIX.COM,15.99,,984.01")
+        client.triggerCategorizeAndAwaitResult() // falls to Gemini, lands in OTHER
+
+        // Same "rule added after the transaction was already categorized"
+        // situation as testAddingARuleWithoutRescanLeavesAlreadyCategorizedTransactionsAlone -
+        // without rescan, the existing transaction stays stuck in OTHER.
+        client.post("/categories/rules") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("pattern=NETFLIX&matchType=SUBSTRING&category=SUBSCRIPTIONS")
+        }
+        val stillOtherBeforeReset = client.get("/analysis/category/other?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        assertTrue(stillOtherBeforeReset.bodyAsText().contains("NETFLIX.COM"))
+
+        val resetResponse = client.post("/categories/recategorize-all")
+        assertEquals("/analysis", resetResponse.headers[HttpHeaders.Location])
+
+        // The reset transaction is uncategorized again, so this run's rule
+        // pass (not Gemini) picks it up under the now-existing rule.
+        client.triggerCategorizeAndAwaitResult()
+        val nowSubscriptions = client.get("/analysis/category/subscriptions?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        assertTrue(nowSubscriptions.bodyAsText().contains("NETFLIX.COM"))
+        val noLongerOther = client.get("/analysis/category/other?year=2026&month=6") { header(HttpHeaders.Accept, "text/html") }
+        assertFalse(noLongerOther.bodyAsText().contains("NETFLIX.COM"))
+    }
+
+    @Test
     fun testAddingARuleRejectsADisabledCategoryAsTheTarget() = testApplication {
         testModule()
         val client = signInFakeUser()
