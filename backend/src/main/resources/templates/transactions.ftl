@@ -34,9 +34,12 @@
     </form>
 
     <#if (transactions?size gt 0)>
-    <form method="post" action="/transactions/delete-all" class="upload-form" onsubmit="return confirm('Delete all transactions? This cannot be undone.');">
-      <button type="submit" class="button button-danger">Delete all transactions</button>
-    </form>
+    <div class="upload-form">
+      <a href="/transactions/duplicates" class="button button-small button-secondary">Review duplicates</a>
+      <form method="post" action="/transactions/delete-all" onsubmit="return confirm('Delete all transactions? This cannot be undone.');">
+        <button type="submit" class="button button-danger">Delete all transactions</button>
+      </form>
+    </div>
     </#if>
 
     <#if (transactions?size == 0)>
@@ -49,6 +52,9 @@
         <span class="transaction-description">${transaction.description}</span>
         <span class="transaction-account">${transaction.accountType}</span>
         <span class="transaction-amount ${transaction.amountClass}">${transaction.amount}</span>
+        <form method="post" action="/transactions/${transaction.id}/delete" onsubmit="return confirm('Delete this transaction? This cannot be undone.');">
+          <button type="submit" class="button button-small button-danger">Delete</button>
+        </form>
       </div>
       </#list>
     </div>

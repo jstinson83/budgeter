@@ -37,7 +37,15 @@ data class Transaction(
     // filled in later, on demand, not at import time. A Category.id
     // (CategoryStore.kt) rather than an enum - categories are per-owner and
     // user-editable now, not a fixed compile-time set.
-    val category: String? = null
+    val category: String? = null,
+    // Which uploaded file this row came from (see transactionFingerprint).
+    // Null for rows written before this field existed. Not shown in the UI
+    // - it exists so duplicateGroupsPageModel (TransactionPage.kt) can tell
+    // a genuine same-day repeat within one file (never flagged - see
+    // withoutContentOverlap's doc comment) apart from rows that share
+    // identical content but came from different files, which is what a
+    // cross-import duplicate actually looks like.
+    val fileHash: String? = null
 )
 
 data class TransactionImportResult(val stored: List<Transaction>, val duplicateCount: Int)
@@ -80,10 +88,14 @@ fun transactionFingerprint(ownerId: String, fileHash: String, parsed: ParsedTran
 // same-day/same-amount transactions (e.g. two identical coffees) as
 // separate as long as the new file doesn't contain more of them than are
 // already stored.
-private data class TransactionContentKey(val accountType: AccountType, val date: LocalDate, val description: String, val amount: Double)
+// Internal, not private: TransactionPage.kt's duplicateGroupsPageModel reuses
+// the same key to group already-stored transactions for manual review (see
+// its doc comment for why that has to stay a manual review rather than an
+// auto-delete).
+internal data class TransactionContentKey(val accountType: AccountType, val date: LocalDate, val description: String, val amount: Double)
 
 private fun ParsedTransaction.contentKey() = TransactionContentKey(accountType, date, description, amount)
-private fun Transaction.contentKey() = TransactionContentKey(accountType, date, description, amount)
+internal fun Transaction.contentKey() = TransactionContentKey(accountType, date, description, amount)
 
 // Returns `parsed` with the content-overlapping subsection removed, in
 // order, plus how many rows were dropped as overlap duplicates.
@@ -142,6 +154,13 @@ interface TransactionRepository {
     // bad import be cleared and retried from scratch instead of piling up
     // wrongly-signed rows a re-upload's dedup would otherwise never correct.
     suspend fun deleteAll(ownerId: String)
+
+    // Removes one transaction - the recovery path for a stray duplicate
+    // that predates withoutContentOverlap() above (imported before that
+    // cross-file dedup existed, so it was never caught) or any other
+    // one-off bad row, without resorting to deleteAll()'s "wipe everything
+    // and re-import" nuclear option.
+    suspend fun delete(ownerId: String, id: String)
 }
 
 class FirestoreTransactionStore(private val firestore: Firestore) : TransactionRepository {
@@ -174,8 +193,8 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
                 duplicateCount++
                 continue
             }
-            batch.set(collection.document(fingerprint), transactionToMap(ownerId, parsed))
-            stored += Transaction(fingerprint, ownerId, parsed.accountType, parsed.date, parsed.description, parsed.amount)
+            batch.set(collection.document(fingerprint), transactionToMap(ownerId, fileHash, parsed))
+            stored += Transaction(fingerprint, ownerId, parsed.accountType, parsed.date, parsed.description, parsed.amount, fileHash = fileHash)
         }
         if (stored.isNotEmpty()) batch.commit().get()
         return TransactionImportResult(stored, duplicateCount + contentOverlapCount)
@@ -212,7 +231,14 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
         batch.commit().get()
     }
 
-    private fun transactionToMap(ownerId: String, parsed: ParsedTransaction): Map<String, Any?> = mapOf(
+    override suspend fun delete(ownerId: String, id: String) {
+        val docRef = collection.document(id)
+        val snapshot = docRef.get().get()
+        if (!snapshot.exists() || snapshot.getString("ownerId") != ownerId) return
+        docRef.delete().get()
+    }
+
+    private fun transactionToMap(ownerId: String, fileHash: String, parsed: ParsedTransaction): Map<String, Any?> = mapOf(
         "ownerId" to ownerId,
         "accountType" to parsed.accountType.name,
         // Stored as an ISO-8601 string (yyyy-MM-dd) rather than a Firestore
@@ -222,6 +248,7 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
         "date" to parsed.date.toString(),
         "description" to parsed.description,
         "amount" to parsed.amount,
+        "fileHash" to fileHash,
         "createdAt" to FieldValue.serverTimestamp()
     )
 
@@ -235,6 +262,7 @@ class FirestoreTransactionStore(private val firestore: Firestore) : TransactionR
         date = LocalDate.parse(data["date"] as? String ?: "1970-01-01"),
         description = data["description"] as? String ?: "",
         amount = (data["amount"] as? Number)?.toDouble() ?: 0.0,
-        category = data["category"] as? String
+        category = data["category"] as? String,
+        fileHash = data["fileHash"] as? String
     )
 }

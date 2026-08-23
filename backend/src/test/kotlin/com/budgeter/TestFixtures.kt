@@ -125,6 +125,14 @@ suspend fun ApplicationTestBuilder.signInFakeUser(): HttpClient {
 class FakeTransactionRepository : TransactionRepository {
     private val transactions = mutableListOf<Transaction>()
 
+    // Test-only escape hatch that skips addAll()'s dedup checks entirely -
+    // stands in for a legacy duplicate row that predates
+    // withoutContentOverlap(), which the ordinary addAll() path can no
+    // longer produce (see TransactionRoutesTest's duplicates-review tests).
+    fun seedRaw(transaction: Transaction) {
+        transactions += transaction
+    }
+
     override suspend fun addAll(ownerId: String, fileHash: String, transactions: List<ParsedTransaction>): TransactionImportResult {
         val (newRows, contentOverlapCount) = withoutContentOverlap(all(ownerId), transactions)
 
@@ -137,7 +145,7 @@ class FakeTransactionRepository : TransactionRepository {
                 duplicateCount++
                 continue
             }
-            val transaction = Transaction(fingerprint, ownerId, parsed.accountType, parsed.date, parsed.description, parsed.amount)
+            val transaction = Transaction(fingerprint, ownerId, parsed.accountType, parsed.date, parsed.description, parsed.amount, fileHash = fileHash)
             stored += transaction
             this.transactions += transaction
         }
@@ -164,6 +172,10 @@ class FakeTransactionRepository : TransactionRepository {
 
     override suspend fun deleteAll(ownerId: String) {
         transactions.removeAll { it.ownerId == ownerId }
+    }
+
+    override suspend fun delete(ownerId: String, id: String) {
+        transactions.removeAll { it.ownerId == ownerId && it.id == id }
     }
 }
 

@@ -19,6 +19,14 @@ fun Route.transactionRoutes(transactionStore: TransactionRepository) {
         call.respond(FreeMarkerContent("transactions.ftl", model))
     }
 
+    get("/transactions/duplicates") {
+        val ownerId = call.requireUserId()
+        val transactions = transactionStore.all(ownerId)
+        val message = call.request.queryParameters["message"]
+        val model = duplicateGroupsPageModel(transactions) + mapOf("message" to message) + call.currentUserModel()
+        call.respond(FreeMarkerContent("transaction-duplicates.ftl", model))
+    }
+
     post("/transactions/import") {
         val ownerId = call.requireUserId()
 
@@ -70,5 +78,17 @@ fun Route.transactionRoutes(transactionStore: TransactionRepository) {
         val ownerId = call.requireUserId()
         transactionStore.deleteAll(ownerId)
         call.respondRedirect("/transactions?message=${"All transactions deleted".encodeURLQueryComponent()}")
+    }
+
+    post("/transactions/{id}/delete") {
+        val ownerId = call.requireUserId()
+        val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.NotFound)
+        transactionStore.delete(ownerId, id)
+        // Deleting from the duplicates review list (?returnTo=duplicates)
+        // sends the user back there rather than to the full /transactions
+        // list, so reviewing the rest of a group doesn't mean re-finding
+        // your place after every delete.
+        val returnPath = if (call.request.queryParameters["returnTo"] == "duplicates") "/transactions/duplicates" else "/transactions"
+        call.respondRedirect("$returnPath?message=${"Transaction deleted".encodeURLQueryComponent()}")
     }
 }
