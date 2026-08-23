@@ -1685,6 +1685,114 @@ input[type="file"]::file-selector-button:hover {
   min-height: 2.5rem;
 }
 
+/* Scenario facets (planning.ftl) - replaces one long always-expanded
+   ~20-field form with a small set of always-visible core fields plus
+   optional facets added one at a time. A facet's <fieldset> (not just its
+   wrapping .facet-block) carries the disabled state - a disabled
+   fieldset's controls are excluded from form submission entirely, which
+   is what makes "Remove" actually drop a facet's values instead of just
+   hiding stale ones that would still get saved (see planning.ftl's
+   inline script). */
+.facet-scope { display: flex; flex-direction: column; gap: 0; }
+
+.facet-core { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.facet-core-header,
+.facet-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.facet-block-title-group { display: inline-flex; align-items: center; gap: 0.4rem; }
+.facet-block-title { font-weight: 700; font-size: 0.85rem; }
+
+.facet-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.1rem;
+  margin-top: 0.85rem;
+  background: var(--surface-soft);
+}
+
+.facet-block .facet-block-header { margin-bottom: 0.75rem; }
+
+fieldset.facet-fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+fieldset.facet-fieldset:disabled input,
+fieldset.facet-fieldset:disabled select {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.facet-remove {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+}
+.facet-remove:hover { color: var(--brick); background: var(--brick-soft-bg); }
+.facet-remove:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+
+.facet-add-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+
+.facet-add-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.42rem 0.9rem 0.42rem 0.7rem;
+  border-radius: var(--radius-pill);
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: inherit;
+}
+.facet-add-chip:hover { border-style: solid; border-color: var(--brass-line); color: var(--brass); background: var(--brass-soft-bg); }
+.facet-add-chip:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+.facet-add-chip-plus { font-weight: 700; }
+
+.override-hint {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin: 0 0 0.6rem;
+  font-style: italic;
+}
+
+.facet-help-btn {
+  flex: 0 0 auto;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-family: inherit;
+}
+.facet-help-btn:hover { color: var(--brass); border-color: var(--brass-line); background: var(--brass-soft-bg); }
+.facet-help-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+
 .priority-badge {
   display: inline-flex;
   align-items: center;

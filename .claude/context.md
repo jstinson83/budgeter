@@ -1693,6 +1693,55 @@ itself.
   feature works completely without it, same as every other Gemini call in
   this app.
 
+**Scenario form redesign: facets instead of one long always-expanded
+form (2026-08-23).** The add/edit Scenario form on `/planning` had grown
+to ~20 fields shown all at once regardless of whether a household actually
+uses RRSP strategy, salary events, or a spend adjustment - flagged as "the
+UI is super complicated" once the knob set itself was judged mostly solid.
+`planning.ftl`'s Scenarios card now shows only the three core fields
+(name, growth rate, % invested) plus a "+ Add" chip per optional group
+(`.facet-add-chip` in `styles.css`) - clicking one reveals that facet's
+fields (`.facet-block`), clicking "Remove" collapses it back to a chip.
+**No data model or backend validation changes were needed** - every
+optional group `parseScenarioForm` (`NetWorthRoutes.kt`) already read was
+already independently nullable/optional, already treating a group missing
+from the submitted form the same as it being present-but-blank; the
+redesign only changes how the form gets there. The one adjustment: a
+facet's `<fieldset>` (not just its wrapping `.facet-block` div) carries
+the disabled state - a disabled fieldset's controls are excluded from
+form submission entirely, which is what makes "Remove" actually drop a
+facet's values instead of just hiding stale ones that would still get
+saved (plain `hidden` alone doesn't stop a field from submitting).
+Recreational spend adjustment was the one field with no natural "unset"
+state (a plain required `Double`, defaulting to 0, not one of the
+nullable optional groups) - `parseScenarioForm` was loosened to default a
+missing/blank value to `0.0` instead of rejecting the whole scenario save,
+so it could become a removable facet like the others; its open/closed
+state on page load is keyed off `value != 0` rather than a `hasX` flag,
+the same convention the summary-tag chips already used pre-redesign.
+Salary change's three RRSP-override fields (see the income-change event
+entry above) are the one facet with a cross-facet dependency - they only
+mean anything once RRSP strategy is also present on the same scenario, so
+they're shown but disabled (not hidden) with an italic hint until then,
+preserving the earlier "force you to think about it, don't hide it"
+framing those fields were built with rather than tucking them behind
+another toggle. Each facet also got a small "?" button
+(`.facet-help-btn`) opening a `<dialog>` with real explanatory prose,
+reusing the app's existing `.recategorize-dialog` styling (the
+transaction-recategorize modal) rather than inventing a tooltip component
+- lets the card carry more explanation than before without it being
+always-on-screen clutter. All of this is plain vanilla JS in
+`planning.ftl`'s own `<script>` block (add/remove toggles visibility +
+fieldset.disabled together, a small `syncOverrides()` re-checks the
+cross-facet RRSP-strategy dependency after every toggle) - no framework,
+same posture as the rest of the app. Verified end-to-end before landing by
+dumping real rendered HTML from a live `NetWorthRoutesTest` request (not
+just eyeballing the template) and screenshotting it with the sandbox's
+headless Chromium against the real `styles.css`, since there's no way to
+run the authenticated server interactively in this environment - see
+`CLAUDE.md`'s CSS/layout gotchas section for the same technique used on
+the planning-page overflow bug.
+
 This is an explicit prerequisite for the "Financial Goals & Project
 Feasibility" section below, not a peer feature: a `Project`'s cost/timing
 will plug into this engine as an event once it exists, rather than the
