@@ -85,18 +85,23 @@
       </div>
     </div>
 
+<#-- Scenario form facets - each optional group (everything but the core
+     name/growth-rate/invested-% fields) starts collapsed behind a "+ Add"
+     chip unless already configured, matching how the same optional groups
+     are already validated server-side in NetWorthRoutes.kt's
+     parseScenarioForm (a group missing from the submitted form is already
+     read as "not set", same as it being present-but-blank). Removing a
+     facet disables its <fieldset> rather than just hiding it, since a
+     disabled control is excluded from form submission - hidden alone
+     wouldn't stop a removed facet's old values from still being saved.
+     Recreational spend adjustment is the one exception with no natural
+     "unset" state (it's a plain required Double, defaulting to 0) - its
+     facet open/closed state is keyed off value != 0 instead of a hasX
+     flag, same convention the summary tags below already used before this
+     redesign. -->
     <div class="form-card">
       <h2>Scenarios</h2>
-      <p class="dashboard-card-note">Each scenario adds its own line to every goal's chart above, alongside the always-shown baseline (which always assumes today's real savings rate, no growth, and no changes). Use the chips above the goals to show or hide a line.</p>
-      <p class="dashboard-card-note">
-        <strong>Growth rate</strong> compounds today's existing investments plus whatever share of each month's new savings you mark as <strong>% of new savings invested</strong> - the rest sits as cash and never grows. <strong>Recreational spend adjustment</strong> redirects $/mo from spending into savings (negative = spend more instead). <strong>Salary change</strong> is optional, one-time, and takes effect from its date onward - a negative amount models a deliberate pay cut (e.g. switching to a less demanding role), not just a raise.
-      </p>
-      <p class="dashboard-card-note">
-        <strong>RRSP strategy</strong> (optional) models diverting part of your savings into an RRSP: it's capped by the contribution room you enter, and once a year it triggers a refund (contributions that year &times; your marginal tax rate), which you can either keep as cash or reinvest. Your marginal rate and RRSP room are numbers you look up and enter yourself - this app never fetches or guesses tax figures.
-      </p>
-      <p class="dashboard-card-note">
-        <strong>RRSP room accrual</strong> (optional, independent of the strategy above) grows your remaining room each year instead of leaving it fixed: 18% of whatever category you tag as income, summed over the trailing 12 months. Tag your salary transactions with a category first (on <a href="/categories">Categories</a>), then pick it here. The optional annual cap mirrors the marginal tax rate above - CRA sets one, but it changes yearly, so it's a number you look up and enter rather than one this app assumes.
-      </p>
+      <p class="dashboard-card-note">Each scenario adds its own line to every goal's chart above, alongside the always-shown baseline (which always assumes today's real savings rate, no growth, and no changes). Use the chips above the goals to show or hide a line. Click a "?" on any section below for what it does.</p>
       <#if (scenarios?size == 0)>
       <p class="empty-state">No scenarios yet.</p>
       <#else>
@@ -122,92 +127,170 @@
           </summary>
           <div class="acc-body">
           <form method="post" action="/planning/scenarios/${scenario.id}">
-            <div class="form-row">
-              <div class="form-field form-field-wide">
-                <span class="form-field-label">Name</span>
-                <input type="text" name="name" value="${scenario.name}" required>
+          <div class="facet-scope" data-facet-scope>
+            <div class="facet-core">
+              <div class="facet-core-header">
+                <span class="facet-block-title-group">
+                  <span class="facet-block-title">Core assumptions</span>
+                  <button type="button" class="facet-help-btn" data-open-help="help-core" aria-label="What do these mean?">?</button>
+                </span>
               </div>
-              <div class="form-field">
-                <span class="form-field-label">Growth rate (%/yr)</span>
-                <input type="number" name="annualMarketGrowthRatePercent" value="${scenario.annualMarketGrowthRatePercent}" step="0.1">
-              </div>
-              <div class="form-field">
-                <span class="form-field-label">% of new savings invested</span>
-                <input type="number" name="investedSavingsFractionPercent" value="${scenario.investedSavingsFractionPercent}" step="1" min="0" max="100">
-              </div>
-              <div class="form-field">
-                <span class="form-field-label">Recreational spend adj. ($/mo)</span>
-                <input type="number" name="recreationalSpendAdjustment" value="${scenario.recreationalSpendAdjustment}" step="0.01">
-              </div>
-            </div>
-            <p class="field-label">Salary change (optional)</p>
-            <div class="form-row">
-              <div class="form-field">
-                <span class="form-field-label">Date</span>
-                <input type="date" name="salaryChangeDate" value="${scenario.salaryChangeDate}">
-              </div>
-              <div class="form-field">
-                <span class="form-field-label">Amount ($/mo)</span>
-                <input type="number" name="salaryChangeMonthlyDelta" value="${scenario.salaryChangeMonthlyDelta}" step="0.01">
-              </div>
-              <div class="form-field">
-                <span class="form-field-label">Reverts on (optional)</span>
-                <input type="date" name="salaryChangeEndDate" value="${scenario.salaryChangeEndDate}">
+              <div class="form-row">
+                <div class="form-field form-field-wide">
+                  <span class="form-field-label">Name</span>
+                  <input type="text" name="name" value="${scenario.name}" required>
+                </div>
+                <div class="form-field">
+                  <span class="form-field-label">Growth rate (%/yr)</span>
+                  <input type="number" name="annualMarketGrowthRatePercent" value="${scenario.annualMarketGrowthRatePercent}" step="0.1">
+                </div>
+                <div class="form-field">
+                  <span class="form-field-label">% of new savings invested</span>
+                  <input type="number" name="investedSavingsFractionPercent" value="${scenario.investedSavingsFractionPercent}" step="1" min="0" max="100">
+                </div>
               </div>
             </div>
-            <p class="dashboard-card-note">
-              A raise or pay cut can also mean contributing differently to RRSP or landing in a different tax bracket while it's in effect - the three fields below replace the RRSP strategy's own numbers only for the duration of this change. Leave any of them blank to keep using the RRSP strategy's normal numbers throughout.
-            </p>
-            <div class="form-row">
-              <div class="form-field">
-                <span class="form-field-label">RRSP contribution while in effect ($/mo, optional)</span>
-                <input type="number" name="salaryChangeRrspContributionOverride" value="${scenario.salaryChangeRrspContributionOverride}" step="0.01" min="0">
+
+            <div class="facet-block" data-facet="recreational"<#if scenario.recreationalSpendAdjustment == "0.00"> hidden</#if>>
+              <div class="facet-block-header">
+                <span class="facet-block-title-group">
+                  <span class="facet-block-title">Recreational spend adjustment</span>
+                  <button type="button" class="facet-help-btn" data-open-help="help-recreational" aria-label="What does this adjust?">?</button>
+                </span>
+                <button type="button" class="facet-remove" data-remove-facet="recreational">Remove</button>
               </div>
-              <div class="form-field">
-                <span class="form-field-label">Marginal tax rate while in effect (%, optional)</span>
-                <input type="number" name="salaryChangeMarginalTaxRateOverridePercent" value="${scenario.salaryChangeMarginalTaxRateOverridePercent}" step="0.1" min="0" max="100">
-              </div>
-              <div class="form-field">
-                <span class="form-field-label">RRSP room accrued/yr while in effect ($, optional)</span>
-                <input type="number" name="salaryChangeRoomAccrualOverride" value="${scenario.salaryChangeRoomAccrualOverride}" step="0.01" min="0">
-              </div>
+              <fieldset class="facet-fieldset"<#if scenario.recreationalSpendAdjustment == "0.00"> disabled</#if>>
+                <div class="form-row">
+                  <div class="form-field">
+                    <span class="form-field-label">Adjustment ($/mo)</span>
+                    <input type="number" name="recreationalSpendAdjustment" value="${scenario.recreationalSpendAdjustment}" step="0.01">
+                  </div>
+                </div>
+              </fieldset>
             </div>
-            <p class="field-label">RRSP strategy (optional)</p>
-            <div class="form-row">
-              <div class="form-field">
-                <span class="form-field-label">Monthly contribution ($)</span>
-                <input type="number" name="rrspMonthlyContribution" value="${scenario.rrspMonthlyContribution}" step="0.01" min="0">
+
+            <div class="facet-block" data-facet="salary"<#if !scenario.hasSalaryChange> hidden</#if>>
+              <div class="facet-block-header">
+                <span class="facet-block-title-group">
+                  <span class="facet-block-title">Salary change</span>
+                  <button type="button" class="facet-help-btn" data-open-help="help-salary" aria-label="What does Salary change do?">?</button>
+                </span>
+                <button type="button" class="facet-remove" data-remove-facet="salary">Remove</button>
               </div>
-              <div class="form-field">
-                <span class="form-field-label">Your marginal tax rate (%)</span>
-                <input type="number" name="rrspMarginalTaxRatePercent" value="${scenario.rrspMarginalTaxRatePercent}" step="0.1" min="0" max="100">
-              </div>
-              <div class="form-field">
-                <span class="form-field-label">RRSP room remaining ($)</span>
-                <input type="number" name="rrspRoomRemaining" value="${scenario.rrspRoomRemaining}" step="0.01" min="0">
-              </div>
-              <div class="form-field">
-                <span class="form-field-label">Refund handling</span>
-                <label><input type="checkbox" name="rrspReinvestRefund" <#if scenario.rrspReinvestRefund>checked</#if>> Reinvest into investments</label>
-              </div>
+              <fieldset class="facet-fieldset"<#if !scenario.hasSalaryChange> disabled</#if>>
+                <div class="form-row">
+                  <div class="form-field">
+                    <span class="form-field-label">Date</span>
+                    <input type="date" name="salaryChangeDate" value="${scenario.salaryChangeDate}">
+                  </div>
+                  <div class="form-field">
+                    <span class="form-field-label">Amount ($/mo)</span>
+                    <input type="number" name="salaryChangeMonthlyDelta" value="${scenario.salaryChangeMonthlyDelta}" step="0.01">
+                  </div>
+                  <div class="form-field">
+                    <span class="form-field-label">Reverts on (optional)</span>
+                    <input type="date" name="salaryChangeEndDate" value="${scenario.salaryChangeEndDate}">
+                  </div>
+                </div>
+                <div class="facet-core-header" style="margin-top:0.9rem;">
+                  <span class="facet-block-title-group">
+                    <span class="field-label" style="margin:0;">While in effect, override RRSP strategy's numbers (optional)</span>
+                    <button type="button" class="facet-help-btn" data-open-help="help-salary-override" aria-label="What does this override?">?</button>
+                  </span>
+                </div>
+                <p class="override-hint" data-override-hint="rrsp-strategy"<#if scenario.hasRrspStrategy> hidden</#if>>Add RRSP strategy to enable these.</p>
+                <fieldset class="facet-fieldset" data-override-fields="rrsp-strategy"<#if !scenario.hasRrspStrategy> disabled</#if>>
+                  <div class="form-row">
+                    <div class="form-field">
+                      <span class="form-field-label">RRSP contribution ($/mo)</span>
+                      <input type="number" name="salaryChangeRrspContributionOverride" value="${scenario.salaryChangeRrspContributionOverride}" step="0.01" min="0" placeholder="Same as strategy">
+                    </div>
+                    <div class="form-field">
+                      <span class="form-field-label">Marginal tax rate (%)</span>
+                      <input type="number" name="salaryChangeMarginalTaxRateOverridePercent" value="${scenario.salaryChangeMarginalTaxRateOverridePercent}" step="0.1" min="0" max="100" placeholder="Same as strategy">
+                    </div>
+                    <div class="form-field">
+                      <span class="form-field-label">RRSP room accrued/yr</span>
+                      <input type="number" name="salaryChangeRoomAccrualOverride" value="${scenario.salaryChangeRoomAccrualOverride}" step="0.01" min="0" placeholder="Same as strategy">
+                    </div>
+                  </div>
+                </fieldset>
+              </fieldset>
             </div>
-            <p class="field-label">RRSP room accrual (optional)</p>
-            <div class="form-row">
-              <div class="form-field">
-                <span class="form-field-label">Income category</span>
-                <select name="rrspIncomeCategoryId">
-                  <option value="">None</option>
-                  <#list categoryOptions as option>
-                  <option value="${option.id}" <#if option.id == scenario.rrspIncomeCategoryId>selected</#if>>${option.label}</option>
-                  </#list>
-                </select>
+
+            <div class="facet-block" data-facet="rrsp-strategy"<#if !scenario.hasRrspStrategy> hidden</#if>>
+              <div class="facet-block-header">
+                <span class="facet-block-title-group">
+                  <span class="facet-block-title">RRSP strategy</span>
+                  <button type="button" class="facet-help-btn" data-open-help="help-rrsp-strategy" aria-label="What does RRSP strategy do?">?</button>
+                </span>
+                <button type="button" class="facet-remove" data-remove-facet="rrsp-strategy">Remove</button>
               </div>
-              <div class="form-field">
-                <span class="form-field-label">Annual accrual cap ($, optional)</span>
-                <input type="number" name="rrspAnnualRoomAccrualCap" value="${scenario.rrspAnnualRoomAccrualCap}" step="0.01" min="0">
-              </div>
+              <fieldset class="facet-fieldset"<#if !scenario.hasRrspStrategy> disabled</#if>>
+                <div class="form-row">
+                  <div class="form-field">
+                    <span class="form-field-label">Monthly contribution ($)</span>
+                    <input type="number" name="rrspMonthlyContribution" value="${scenario.rrspMonthlyContribution}" step="0.01" min="0">
+                  </div>
+                  <div class="form-field">
+                    <span class="form-field-label">Your marginal tax rate (%)</span>
+                    <input type="number" name="rrspMarginalTaxRatePercent" value="${scenario.rrspMarginalTaxRatePercent}" step="0.1" min="0" max="100">
+                  </div>
+                  <div class="form-field">
+                    <span class="form-field-label">RRSP room remaining ($)</span>
+                    <input type="number" name="rrspRoomRemaining" value="${scenario.rrspRoomRemaining}" step="0.01" min="0">
+                  </div>
+                  <div class="form-field">
+                    <span class="form-field-label">Refund handling</span>
+                    <label><input type="checkbox" name="rrspReinvestRefund" <#if scenario.rrspReinvestRefund>checked</#if>> Reinvest into investments</label>
+                  </div>
+                </div>
+              </fieldset>
             </div>
-            <button type="submit" class="button button-small button-save">Save</button>
+
+            <div class="facet-block" data-facet="rrsp-accrual"<#if scenario.rrspIncomeCategoryId == ""> hidden</#if>>
+              <div class="facet-block-header">
+                <span class="facet-block-title-group">
+                  <span class="facet-block-title">RRSP room accrual</span>
+                  <button type="button" class="facet-help-btn" data-open-help="help-rrsp-accrual" aria-label="What does this do?">?</button>
+                </span>
+                <button type="button" class="facet-remove" data-remove-facet="rrsp-accrual">Remove</button>
+              </div>
+              <fieldset class="facet-fieldset"<#if scenario.rrspIncomeCategoryId == ""> disabled</#if>>
+                <div class="form-row">
+                  <div class="form-field">
+                    <span class="form-field-label">Income category</span>
+                    <select name="rrspIncomeCategoryId">
+                      <option value="">None</option>
+                      <#list categoryOptions as option>
+                      <option value="${option.id}" <#if option.id == scenario.rrspIncomeCategoryId>selected</#if>>${option.label}</option>
+                      </#list>
+                    </select>
+                  </div>
+                  <div class="form-field">
+                    <span class="form-field-label">Annual accrual cap ($, optional)</span>
+                    <input type="number" name="rrspAnnualRoomAccrualCap" value="${scenario.rrspAnnualRoomAccrualCap}" step="0.01" min="0">
+                  </div>
+                </div>
+              </fieldset>
+            </div>
+
+            <div class="facet-add-row">
+              <#if scenario.recreationalSpendAdjustment == "0.00">
+              <button type="button" class="facet-add-chip" data-add-facet="recreational"><span class="facet-add-chip-plus">+</span> Recreational spend adjustment</button>
+              </#if>
+              <#if !scenario.hasSalaryChange>
+              <button type="button" class="facet-add-chip" data-add-facet="salary"><span class="facet-add-chip-plus">+</span> Salary change</button>
+              </#if>
+              <#if !scenario.hasRrspStrategy>
+              <button type="button" class="facet-add-chip" data-add-facet="rrsp-strategy"><span class="facet-add-chip-plus">+</span> RRSP strategy</button>
+              </#if>
+              <#if scenario.rrspIncomeCategoryId == "">
+              <button type="button" class="facet-add-chip" data-add-facet="rrsp-accrual"><span class="facet-add-chip-plus">+</span> RRSP room accrual</button>
+              </#if>
+            </div>
+          </div>
+            <button type="submit" class="button button-small button-save" style="margin-top:1.1rem;">Save</button>
           </form>
           <form method="post" action="/planning/scenarios/${scenario.id}/delete">
             <button type="submit" class="button button-small button-danger">Delete</button>
@@ -220,102 +303,227 @@
 
       <h3>Add scenario</h3>
       <form method="post" action="/planning/scenarios" id="scenario-form">
-        <div class="form-row">
-          <div class="form-field form-field-wide">
-            <span class="form-field-label">Name</span>
-            <input type="text" name="name" placeholder="e.g. Aggressive growth" required>
+      <div class="facet-scope" data-facet-scope>
+        <div class="facet-core">
+          <div class="facet-core-header">
+            <span class="facet-block-title-group">
+              <span class="facet-block-title">Core assumptions</span>
+              <button type="button" class="facet-help-btn" data-open-help="help-core" aria-label="What do these mean?">?</button>
+            </span>
           </div>
-          <div class="form-field">
-            <span class="form-field-label">Growth rate preset</span>
-            <select id="scenario-growth-preset">
-              <#list growthPresets as preset>
-              <option value="${preset.annualRatePercent}"<#if preset.name == "MODERATE"> selected</#if>>${preset.label}</option>
-              </#list>
-              <option value="">Custom</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <span class="form-field-label">Growth rate (%/yr)</span>
-            <input type="number" name="annualMarketGrowthRatePercent" id="scenario-growth-rate" value="7.0" step="0.1" required>
-          </div>
-          <div class="form-field">
-            <span class="form-field-label">% of new savings invested</span>
-            <input type="number" name="investedSavingsFractionPercent" value="100" step="1" min="0" max="100" required>
-          </div>
-          <div class="form-field">
-            <span class="form-field-label">Recreational spend adj. ($/mo)</span>
-            <input type="number" name="recreationalSpendAdjustment" value="0" step="0.01" required>
-          </div>
-        </div>
-        <p class="field-label">Salary change (optional)</p>
-        <div class="form-row">
-          <div class="form-field">
-            <span class="form-field-label">Date</span>
-            <input type="date" name="salaryChangeDate">
-          </div>
-          <div class="form-field">
-            <span class="form-field-label">Amount ($/mo)</span>
-            <input type="number" name="salaryChangeMonthlyDelta" step="0.01">
-          </div>
-          <div class="form-field">
-            <span class="form-field-label">Reverts on (optional)</span>
-            <input type="date" name="salaryChangeEndDate">
+          <div class="form-row">
+            <div class="form-field form-field-wide">
+              <span class="form-field-label">Name</span>
+              <input type="text" name="name" placeholder="e.g. Aggressive growth" required>
+            </div>
+            <div class="form-field">
+              <span class="form-field-label">Growth rate preset</span>
+              <select id="scenario-growth-preset">
+                <#list growthPresets as preset>
+                <option value="${preset.annualRatePercent}"<#if preset.name == "MODERATE"> selected</#if>>${preset.label}</option>
+                </#list>
+                <option value="">Custom</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <span class="form-field-label">Growth rate (%/yr)</span>
+              <input type="number" name="annualMarketGrowthRatePercent" id="scenario-growth-rate" value="7.0" step="0.1" required>
+            </div>
+            <div class="form-field">
+              <span class="form-field-label">% of new savings invested</span>
+              <input type="number" name="investedSavingsFractionPercent" value="100" step="1" min="0" max="100" required>
+            </div>
           </div>
         </div>
-        <p class="dashboard-card-note">
-          A raise or pay cut can also mean contributing differently to RRSP or landing in a different tax bracket while it's in effect - the three fields below replace the RRSP strategy's own numbers only for the duration of this change. Leave any of them blank to keep using the RRSP strategy's normal numbers throughout.
-        </p>
-        <div class="form-row">
-          <div class="form-field">
-            <span class="form-field-label">RRSP contribution while in effect ($/mo, optional)</span>
-            <input type="number" name="salaryChangeRrspContributionOverride" step="0.01" min="0">
+
+        <div class="facet-block" data-facet="recreational" hidden>
+          <div class="facet-block-header">
+            <span class="facet-block-title-group">
+              <span class="facet-block-title">Recreational spend adjustment</span>
+              <button type="button" class="facet-help-btn" data-open-help="help-recreational" aria-label="What does this adjust?">?</button>
+            </span>
+            <button type="button" class="facet-remove" data-remove-facet="recreational">Remove</button>
           </div>
-          <div class="form-field">
-            <span class="form-field-label">Marginal tax rate while in effect (%, optional)</span>
-            <input type="number" name="salaryChangeMarginalTaxRateOverridePercent" step="0.1" min="0" max="100">
-          </div>
-          <div class="form-field">
-            <span class="form-field-label">RRSP room accrued/yr while in effect ($, optional)</span>
-            <input type="number" name="salaryChangeRoomAccrualOverride" step="0.01" min="0">
-          </div>
+          <fieldset class="facet-fieldset" disabled>
+            <div class="form-row">
+              <div class="form-field">
+                <span class="form-field-label">Adjustment ($/mo)</span>
+                <input type="number" name="recreationalSpendAdjustment" value="0" step="0.01">
+              </div>
+            </div>
+          </fieldset>
         </div>
-        <p class="field-label">RRSP strategy (optional)</p>
-        <div class="form-row">
-          <div class="form-field">
-            <span class="form-field-label">Monthly contribution ($)</span>
-            <input type="number" name="rrspMonthlyContribution" step="0.01" min="0">
+
+        <div class="facet-block" data-facet="salary" hidden>
+          <div class="facet-block-header">
+            <span class="facet-block-title-group">
+              <span class="facet-block-title">Salary change</span>
+              <button type="button" class="facet-help-btn" data-open-help="help-salary" aria-label="What does Salary change do?">?</button>
+            </span>
+            <button type="button" class="facet-remove" data-remove-facet="salary">Remove</button>
           </div>
-          <div class="form-field">
-            <span class="form-field-label">Your marginal tax rate (%)</span>
-            <input type="number" name="rrspMarginalTaxRatePercent" step="0.1" min="0" max="100">
-          </div>
-          <div class="form-field">
-            <span class="form-field-label">RRSP room remaining ($)</span>
-            <input type="number" name="rrspRoomRemaining" step="0.01" min="0">
-          </div>
-          <div class="form-field">
-            <span class="form-field-label">Refund handling</span>
-            <label><input type="checkbox" name="rrspReinvestRefund"> Reinvest into investments</label>
-          </div>
+          <fieldset class="facet-fieldset" disabled>
+            <div class="form-row">
+              <div class="form-field">
+                <span class="form-field-label">Date</span>
+                <input type="date" name="salaryChangeDate">
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">Amount ($/mo)</span>
+                <input type="number" name="salaryChangeMonthlyDelta" step="0.01">
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">Reverts on (optional)</span>
+                <input type="date" name="salaryChangeEndDate">
+              </div>
+            </div>
+            <div class="facet-core-header" style="margin-top:0.9rem;">
+              <span class="facet-block-title-group">
+                <span class="field-label" style="margin:0;">While in effect, override RRSP strategy's numbers (optional)</span>
+                <button type="button" class="facet-help-btn" data-open-help="help-salary-override" aria-label="What does this override?">?</button>
+              </span>
+            </div>
+            <p class="override-hint" data-override-hint="rrsp-strategy">Add RRSP strategy to enable these.</p>
+            <fieldset class="facet-fieldset" data-override-fields="rrsp-strategy" disabled>
+              <div class="form-row">
+                <div class="form-field">
+                  <span class="form-field-label">RRSP contribution ($/mo)</span>
+                  <input type="number" name="salaryChangeRrspContributionOverride" step="0.01" min="0" placeholder="Same as strategy">
+                </div>
+                <div class="form-field">
+                  <span class="form-field-label">Marginal tax rate (%)</span>
+                  <input type="number" name="salaryChangeMarginalTaxRateOverridePercent" step="0.1" min="0" max="100" placeholder="Same as strategy">
+                </div>
+                <div class="form-field">
+                  <span class="form-field-label">RRSP room accrued/yr</span>
+                  <input type="number" name="salaryChangeRoomAccrualOverride" step="0.01" min="0" placeholder="Same as strategy">
+                </div>
+              </div>
+            </fieldset>
+          </fieldset>
         </div>
-        <p class="field-label">RRSP room accrual (optional)</p>
-        <div class="form-row">
-          <div class="form-field">
-            <span class="form-field-label">Income category</span>
-            <select name="rrspIncomeCategoryId">
-              <option value="">None</option>
-              <#list categoryOptions as option>
-              <option value="${option.id}">${option.label}</option>
-              </#list>
-            </select>
+
+        <div class="facet-block" data-facet="rrsp-strategy" hidden>
+          <div class="facet-block-header">
+            <span class="facet-block-title-group">
+              <span class="facet-block-title">RRSP strategy</span>
+              <button type="button" class="facet-help-btn" data-open-help="help-rrsp-strategy" aria-label="What does RRSP strategy do?">?</button>
+            </span>
+            <button type="button" class="facet-remove" data-remove-facet="rrsp-strategy">Remove</button>
           </div>
-          <div class="form-field">
-            <span class="form-field-label">Annual accrual cap ($, optional)</span>
-            <input type="number" name="rrspAnnualRoomAccrualCap" step="0.01" min="0">
-          </div>
+          <fieldset class="facet-fieldset" disabled>
+            <div class="form-row">
+              <div class="form-field">
+                <span class="form-field-label">Monthly contribution ($)</span>
+                <input type="number" name="rrspMonthlyContribution" step="0.01" min="0">
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">Your marginal tax rate (%)</span>
+                <input type="number" name="rrspMarginalTaxRatePercent" step="0.1" min="0" max="100">
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">RRSP room remaining ($)</span>
+                <input type="number" name="rrspRoomRemaining" step="0.01" min="0">
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">Refund handling</span>
+                <label><input type="checkbox" name="rrspReinvestRefund"> Reinvest into investments</label>
+              </div>
+            </div>
+          </fieldset>
         </div>
-        <button type="submit" class="button">Add scenario</button>
+
+        <div class="facet-block" data-facet="rrsp-accrual" hidden>
+          <div class="facet-block-header">
+            <span class="facet-block-title-group">
+              <span class="facet-block-title">RRSP room accrual</span>
+              <button type="button" class="facet-help-btn" data-open-help="help-rrsp-accrual" aria-label="What does this do?">?</button>
+            </span>
+            <button type="button" class="facet-remove" data-remove-facet="rrsp-accrual">Remove</button>
+          </div>
+          <fieldset class="facet-fieldset" disabled>
+            <div class="form-row">
+              <div class="form-field">
+                <span class="form-field-label">Income category</span>
+                <select name="rrspIncomeCategoryId">
+                  <option value="">None</option>
+                  <#list categoryOptions as option>
+                  <option value="${option.id}">${option.label}</option>
+                  </#list>
+                </select>
+              </div>
+              <div class="form-field">
+                <span class="form-field-label">Annual accrual cap ($, optional)</span>
+                <input type="number" name="rrspAnnualRoomAccrualCap" step="0.01" min="0">
+              </div>
+            </div>
+          </fieldset>
+        </div>
+
+        <div class="facet-add-row">
+          <button type="button" class="facet-add-chip" data-add-facet="recreational"><span class="facet-add-chip-plus">+</span> Recreational spend adjustment</button>
+          <button type="button" class="facet-add-chip" data-add-facet="salary"><span class="facet-add-chip-plus">+</span> Salary change</button>
+          <button type="button" class="facet-add-chip" data-add-facet="rrsp-strategy"><span class="facet-add-chip-plus">+</span> RRSP strategy</button>
+          <button type="button" class="facet-add-chip" data-add-facet="rrsp-accrual"><span class="facet-add-chip-plus">+</span> RRSP room accrual</button>
+        </div>
+
+        <button type="submit" class="button" style="margin-top:1.1rem;">Add scenario</button>
+      </div>
       </form>
+
+      <dialog class="recategorize-dialog" id="help-core">
+        <h3 class="recategorize-dialog-title">Core assumptions</h3>
+        <p class="recategorize-dialog-description"><strong>Growth rate</strong> compounds today's existing investments plus whatever share of each month's new savings you mark as invested &mdash; the rest sits as cash and never grows.</p>
+        <p class="recategorize-dialog-description">Both numbers are hypothetical, for this scenario's projection only. Your real transaction history and account balances aren't touched.</p>
+        <div class="recategorize-dialog-actions">
+          <button type="button" class="button button-secondary" data-close-help>Got it</button>
+        </div>
+      </dialog>
+
+      <dialog class="recategorize-dialog" id="help-recreational">
+        <h3 class="recategorize-dialog-title">Recreational spend adjustment</h3>
+        <p class="recategorize-dialog-description">A flat $/mo added straight onto your real trailing savings rate, for this scenario's projection only &mdash; it doesn't read or change any transaction or category.</p>
+        <p class="recategorize-dialog-description"><strong>Positive</strong> means saving more each month than your real history shows (imagine cutting recreational spending). <strong>Negative</strong> means saving less (imagine spending more).</p>
+        <div class="recategorize-dialog-actions">
+          <button type="button" class="button button-secondary" data-close-help>Got it</button>
+        </div>
+      </dialog>
+
+      <dialog class="recategorize-dialog" id="help-salary">
+        <h3 class="recategorize-dialog-title">Salary change</h3>
+        <p class="recategorize-dialog-description">Models a one-time, dated change to your monthly savings rate &mdash; a raise, a pay cut, a career switch. Takes effect from its date onward. A negative amount models a deliberate pay cut, not just a raise.</p>
+        <p class="recategorize-dialog-description">Set <strong>Reverts on</strong> if it's temporary (e.g. a year of reduced hours); leave it blank for a permanent change.</p>
+        <div class="recategorize-dialog-actions">
+          <button type="button" class="button button-secondary" data-close-help>Got it</button>
+        </div>
+      </dialog>
+
+      <dialog class="recategorize-dialog" id="help-salary-override">
+        <h3 class="recategorize-dialog-title">Overriding RRSP numbers during a salary change</h3>
+        <p class="recategorize-dialog-description">A raise or pay cut can also mean contributing differently to RRSP, or landing in a different tax bracket, while it's in effect.</p>
+        <p class="recategorize-dialog-description">These three fields replace RRSP strategy's own numbers only for the duration of this change, then revert automatically once it ends (or run indefinitely if it never does). Leave any of them blank to keep using RRSP strategy's normal numbers throughout.</p>
+        <div class="recategorize-dialog-actions">
+          <button type="button" class="button button-secondary" data-close-help>Got it</button>
+        </div>
+      </dialog>
+
+      <dialog class="recategorize-dialog" id="help-rrsp-strategy">
+        <h3 class="recategorize-dialog-title">RRSP strategy</h3>
+        <p class="recategorize-dialog-description">Diverts part of your monthly savings into an RRSP, capped by the room you enter. Once a year it triggers a refund &mdash; that year's contributions &times; your marginal tax rate &mdash; which you can keep as cash or reinvest.</p>
+        <p class="recategorize-dialog-description">Your marginal rate and RRSP room are numbers you look up and enter yourself; this app never fetches or guesses tax figures.</p>
+        <div class="recategorize-dialog-actions">
+          <button type="button" class="button button-secondary" data-close-help>Got it</button>
+        </div>
+      </dialog>
+
+      <dialog class="recategorize-dialog" id="help-rrsp-accrual">
+        <h3 class="recategorize-dialog-title">RRSP room accrual</h3>
+        <p class="recategorize-dialog-description">Grows your remaining RRSP room automatically each year &mdash; 18% of whatever category you tag as income, summed over the trailing 12 months &mdash; instead of leaving it fixed at whatever you typed in.</p>
+        <p class="recategorize-dialog-description">Tag your salary transactions with a category first (on <a href="/categories">Categories</a>), then pick it here. The optional annual cap mirrors a real CRA limit, which changes yearly, so it's a number you look up and enter rather than one this app assumes.</p>
+        <div class="recategorize-dialog-actions">
+          <button type="button" class="button button-secondary" data-close-help>Got it</button>
+        </div>
+      </dialog>
     </div>
 
     <div class="form-card">
@@ -428,6 +636,72 @@
       if (!preset || !rateInput) return;
       preset.addEventListener('change', function () {
         if (preset.value !== '') rateInput.value = preset.value;
+      });
+    })();
+
+    // Scenario facets - add/remove toggles a facet's visibility and its
+    // <fieldset>'s disabled state together: a disabled fieldset's controls
+    // are excluded from form submission, which is what actually makes
+    // "Remove" drop a facet's values instead of just hiding stale ones
+    // that would still get saved. Salary change's RRSP-override sub-fields
+    // are additionally gated on RRSP strategy being present in the same
+    // scenario - re-synced after every add/remove since either facet can
+    // toggle independently in either order.
+    (function () {
+      function syncOverrides(scope) {
+        var hasStrategy = !!scope.querySelector('[data-facet="rrsp-strategy"]:not([hidden])');
+        var fieldset = scope.querySelector('[data-override-fields="rrsp-strategy"]');
+        var hint = scope.querySelector('[data-override-hint="rrsp-strategy"]');
+        if (fieldset) fieldset.disabled = !hasStrategy;
+        if (hint) hint.hidden = hasStrategy;
+      }
+
+      document.querySelectorAll('[data-facet-scope]').forEach(syncOverrides);
+
+      document.querySelectorAll('[data-add-facet]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var facet = btn.getAttribute('data-add-facet');
+          var scope = btn.closest('[data-facet-scope]');
+          if (!scope) return;
+          var section = scope.querySelector('[data-facet="' + facet + '"]');
+          if (section) {
+            section.hidden = false;
+            var fieldset = section.querySelector(':scope > fieldset.facet-fieldset');
+            if (fieldset) fieldset.disabled = false;
+          }
+          btn.hidden = true;
+          syncOverrides(scope);
+        });
+      });
+
+      document.querySelectorAll('[data-remove-facet]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var facet = btn.getAttribute('data-remove-facet');
+          var scope = btn.closest('[data-facet-scope]');
+          if (!scope) return;
+          var section = scope.querySelector('[data-facet="' + facet + '"]');
+          var chip = scope.querySelector('[data-add-facet="' + facet + '"]');
+          if (section) {
+            section.hidden = true;
+            var fieldset = section.querySelector(':scope > fieldset.facet-fieldset');
+            if (fieldset) fieldset.disabled = true;
+          }
+          if (chip) chip.hidden = false;
+          syncOverrides(scope);
+        });
+      });
+
+      document.querySelectorAll('[data-open-help]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var dialog = document.getElementById(btn.getAttribute('data-open-help'));
+          if (dialog) dialog.showModal();
+        });
+      });
+      document.querySelectorAll('[data-close-help]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var dialog = btn.closest('dialog');
+          if (dialog) dialog.close();
+        });
       });
     })();
   </script>

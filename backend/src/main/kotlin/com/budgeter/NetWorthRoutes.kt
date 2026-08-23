@@ -272,7 +272,12 @@ private fun parseScenarioForm(formParams: Parameters): ScenarioFormInput? {
     if (name.isEmpty()) return null
     val annualMarketGrowthRatePercent = formParams["annualMarketGrowthRatePercent"]?.toDoubleOrNull() ?: return null
     val investedSavingsFractionPercent = formParams["investedSavingsFractionPercent"]?.toDoubleOrNull()?.takeIf { it in 0.0..100.0 } ?: return null
-    val recreationalSpendAdjustment = formParams["recreationalSpendAdjustment"]?.toDoubleOrNull() ?: return null
+    // A removable facet in the UI means this can now be genuinely absent
+    // from the submitted form (its fieldset gets disabled, which excludes
+    // the input) - defaults to "no adjustment" rather than failing the
+    // whole scenario save, same "blank/unparseable silently means not set"
+    // convention the optional groups below already use.
+    val recreationalSpendAdjustment = formParams["recreationalSpendAdjustment"]?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull() ?: 0.0
 
     val salaryChangeDateInput = formParams["salaryChangeDate"]?.trim().orEmpty()
     val salaryChangeDeltaInput = formParams["salaryChangeMonthlyDelta"]?.trim().orEmpty()

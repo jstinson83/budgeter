@@ -135,6 +135,22 @@ reference — don't restate them here.
   significant purely-theoretical back-and-forth about flexbox
   min-content propagation rules that didn't converge on its own.
 
+- **A `hidden` attribute (or `display:none`) does not exclude a form
+  control from submission - only `disabled` (or no `name`, or living
+  inside a `<fieldset disabled>`) does.** Relevant wherever a form
+  progressively shows/hides optional field groups with JS, e.g.
+  `planning.ftl`'s Scenario facets (2026-08-23 redesign - see
+  `context.md`'s Financial Planning Projections section for the full
+  writeup): visually hiding a removed facet's `.facet-block` alone would
+  still submit its old values on Save, silently un-removing it server-side
+  even though the UI showed it gone. Fixed by wrapping each facet's actual
+  inputs in a `<fieldset class="facet-fieldset">` and toggling `.disabled`
+  on the fieldset itself (in lockstep with the wrapping div's `hidden`)
+  whenever a facet is added/removed - a disabled fieldset's descendant
+  controls are excluded from the submitted form entirely, checkboxes and
+  selects included. Worth checking first if a future "toggle these fields
+  ± JS" pattern reports fields silently persisting after being hidden.
+
 ## FreeMarker gotchas
 
 - **Comparing a nullable model value directly (`<#if x == y>` or `x != y`)
