@@ -48,6 +48,37 @@ Knowledge subsystem below) — deferred fields are noted where they come up.
   document fact extraction (two-pass), component summaries, and project
   recommendations — see each subsystem below for its specific call shape.
 
+## PWA / installability
+
+Added 2026-08-23 - `manifest.webmanifest`, `sw.js`, `register-sw.js`,
+`offline.html`, and `icon-192.png`/`icon-512.png` (generated from
+`favicon.svg`'s existing gold-triangle mark, given an opaque `#f2f0e9`
+background rather than transparent - matching `apple-touch-icon.png`'s
+existing style and keeping the mark within the maskable safe zone - rather
+than shipping a separate maskable variant) all live under
+`backend/src/main/resources/static/` and are served automatically by the
+existing `staticResources("/", "static")` route - no new Ktor routes needed.
+Ktor 3.0.1's built-in mime map already knows `.webmanifest` ->
+`application/manifest+json` and `.js` -> `text/javascript` (confirmed by
+inspecting `ktor-http-jvm`'s bundled `MimesKt` class), so an explicit
+content-type override route was written and then removed as unnecessary.
+Each of the 12 FreeMarker templates that render a full `<head>` (there's no
+shared layout template - every page repeats the same head boilerplate) got
+the same lines added: `<link rel="manifest">`, a `theme-color` meta set to
+`--sidebar-bg` (`#241f16`, the fixed dark chrome color from `styles.css`,
+not the theme-aware `--bg`), the `apple-mobile-web-app-*`/
+`mobile-web-app-capable` metas, and a `<script src="/register-sw.js" defer>`
+tag.
+
+`sw.js` is deliberately narrow given this is a server-rendered,
+session-authenticated app where every page carries per-user financial data:
+navigations are always network-first (an offline navigation falls back to
+the static `offline.html`, never a cached page), while the fixed shell
+assets (styles.css, icons, manifest) are cache-first. `CACHE_NAME` needs a
+manual bump on any change to `PRECACHE_URLS` or their contents - that's the
+only invalidation mechanism (`activate` drops any cache whose name doesn't
+match the current one).
+
 ## System map
 
 How the four subsystems below relate — this is the part a flat feature
