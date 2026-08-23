@@ -39,9 +39,13 @@ class ProjectionEngineTest {
         assertEquals(0.0, baselineMonthlySavingsRate(emptyList(), LocalDate.of(2026, 8, 21)), 0.001)
     }
 
+    private fun entry(label: String, type: NetWorthEntryType, value: Double): NetWorthEntry =
+        NetWorthEntry("e-$label", "owner", label, type, value)
+
     @Test
     fun testProjectNetWorthStepsForwardOneMonthAtATimeWithNoCompounding() {
-        val points = projectNetWorth(10000.0, 500.0, LocalDate.of(2026, 8, 21), LocalDate.of(2026, 11, 1))
+        val entries = listOf(entry("Chequing", NetWorthEntryType.BANK, 10000.0))
+        val points = projectNetWorth(entries, emptyList(), 500.0, LocalDate.of(2026, 8, 21), LocalDate.of(2026, 11, 1))
 
         assertEquals(4, points.size) // Aug, Sep, Oct, Nov
         assertEquals(10000.0, points[0].netWorth, 0.001)
@@ -52,9 +56,141 @@ class ProjectionEngineTest {
 
     @Test
     fun testProjectNetWorthOfATargetDateInThePastYieldsOnlyTheStartingPoint() {
-        val points = projectNetWorth(10000.0, 500.0, LocalDate.of(2026, 8, 21), LocalDate.of(2020, 1, 1))
+        val entries = listOf(entry("Chequing", NetWorthEntryType.BANK, 10000.0))
+        val points = projectNetWorth(entries, emptyList(), 500.0, LocalDate.of(2026, 8, 21), LocalDate.of(2020, 1, 1))
         assertEquals(1, points.size)
         assertEquals(10000.0, points[0].netWorth, 0.001)
+    }
+
+    @Test
+    fun testProjectNetWorthAmortizesAMortgageEntryInsteadOfLeavingItFrozen() {
+        val entries = listOf(
+            NetWorthEntry(
+                "m1", "owner", "Mortgage", NetWorthEntryType.MORTGAGE, 100000.0,
+                annualInterestRate = 0.06, mortgagePaymentCategoryId = "MORT"
+            )
+        )
+        // The $1000/mo payment is derived from the tagged category's own
+        // transaction history (see resolvedMonthlyMortgagePayment), not typed
+        // in - one August transaction is enough for a one-value median.
+        val transactions = listOf(tx("t1", "2026-08-01", -1000.0, "MORT"))
+        // 0/mo baseline savings so only the mortgage amortization moves
+        // net worth - starts at -100000 (a lone liability).
+        val points = projectNetWorth(entries, transactions, 0.0, LocalDate.of(2026, 8, 21), LocalDate.of(2026, 9, 21))
+
+        // Month 1: interest = 100000 * 0.06/12 = 500, principal = 500,
+        // balance = 99500 -> net worth improves by exactly the principal paid.
+        assertEquals(-100000.0, points[0].netWorth, 0.001)
+        assertEquals(-99500.0, points[1].netWorth, 0.01)
+    }
+
+    @Test
+    fun testProjectNetWorthAppreciatesARealEstateEntryInsteadOfLeavingItFrozen() {
+        val entries = listOf(
+            NetWorthEntry(
+                "h1", "owner", "House", NetWorthEntryType.REAL_ESTATE, 600000.0,
+                annualAppreciationRate = 0.06
+            )
+        )
+        val points = projectNetWorth(entries, emptyList(), 0.0, LocalDate.of(2026, 8, 21), LocalDate.of(2026, 9, 21))
+
+        assertEquals(600000.0, points[0].netWorth, 0.001)
+        assertEquals(603000.0, points[1].netWorth, 0.01) // 600000 * 1.005
+    }
+
+    @Test
+    fun testProjectNetWorthDoesNotMoveAMortgageOrRealEstateEntryWithNoRateFieldsSet() {
+        val entries = listOf(
+            NetWorthEntry("m1", "owner", "Mortgage", NetWorthEntryType.MORTGAGE, 100000.0),
+            NetWorthEntry("h1", "owner", "House", NetWorthEntryType.REAL_ESTATE, 600000.0)
+        )
+        val points = projectNetWorth(entries, emptyList(), 0.0, LocalDate.of(2026, 8, 21), LocalDate.of(2026, 12, 21))
+
+        // Frozen entries with no rate/category fields set - net worth never
+        // moves, same behavior as before mortgage amortization/appreciation
+        // existed.
+        points.forEach { assertEquals(500000.0, it.netWorth, 0.001) }
+    }
+
+    @Test
+    fun testProjectNetWorthTreatsAMortgageWithNoResolvablePaymentAsFrozen() {
+        // Rate is set but the tagged category has no matching transaction
+        // history at all - resolvedMonthlyMortgagePayment can't derive a
+        // figure, so this falls back to frozen, same as an entry with no
+        // rate fields set at all.
+        val entries = listOf(
+            NetWorthEntry(
+                "m1", "owner", "Mortgage", NetWorthEntryType.MORTGAGE, 100000.0,
+                annualInterestRate = 0.06, mortgagePaymentCategoryId = "MORT"
+            )
+        )
+        val points = projectNetWorth(entries, emptyList(), 0.0, LocalDate.of(2026, 8, 21), LocalDate.of(2026, 9, 21))
+
+        points.forEach { assertEquals(-100000.0, it.netWorth, 0.001) }
+    }
+
+    @Test
+    fun testProjectNetWorthFreesTheMortgagePaymentAsSavingsOnceItsPaidOff() {
+        // A small mortgage that fully amortizes in 2 months: 500 balance,
+        // 0% interest, 250/mo payment -> paid off after month 2.
+        val entries = listOf(
+            NetWorthEntry(
+                "m1", "owner", "Mortgage", NetWorthEntryType.MORTGAGE, 500.0,
+                annualInterestRate = 0.0, mortgagePaymentCategoryId = "MORT"
+            )
+        )
+        val transactions = listOf(tx("t1", "2026-08-01", -250.0, "MORT"))
+        val points = projectNetWorth(entries, transactions, 0.0, LocalDate.of(2026, 8, 21), LocalDate.of(2026, 11, 21))
+
+        assertEquals(-500.0, points[0].netWorth, 0.001) // Aug: starting balance
+        assertEquals(-250.0, points[1].netWorth, 0.001) // Sep: one payment in
+        assertEquals(0.0, points[2].netWorth, 0.001)    // Oct: paid off exactly
+        // Nov: no more balance to pay down, and the freed $250/mo payment
+        // now counts as extra savings instead of vanishing from the model.
+        assertEquals(250.0, points[3].netWorth, 0.001)
+    }
+
+    @Test
+    fun testResolvedMonthlyMortgagePaymentIsTheMedianOfTrailingMonthsNotTheAverage() {
+        val entry = NetWorthEntry(
+            "m1", "owner", "Mortgage", NetWorthEntryType.MORTGAGE, 100000.0,
+            annualInterestRate = 0.06, mortgagePaymentCategoryId = "MORT"
+        )
+        // Two normal $1000 payments and one anomalous $2000 month (a real
+        // extra payment, per the maintainer's own review of an export) -
+        // an average would be dragged to $1333.33; the median correctly
+        // reports the normal recurring $1000 instead.
+        val transactions = listOf(
+            tx("1", "2026-06-05", -1000.0, "MORT"),
+            tx("2", "2026-07-05", -2000.0, "MORT"),
+            tx("3", "2026-08-05", -1000.0, "MORT")
+        )
+        val payment = resolvedMonthlyMortgagePayment(entry, transactions, LocalDate.of(2026, 8, 21))
+        assertEquals(1000.0, payment)
+    }
+
+    @Test
+    fun testResolvedMonthlyMortgagePaymentIgnoresMonthsOutsideTheTrailingWindow() {
+        val entry = NetWorthEntry(
+            "m1", "owner", "Mortgage", NetWorthEntryType.MORTGAGE, 100000.0,
+            annualInterestRate = 0.06, mortgagePaymentCategoryId = "MORT"
+        )
+        val transactions = listOf(
+            tx("old", "2025-01-05", -9999.0, "MORT"), // long before the trailing window
+            tx("recent", "2026-08-05", -1000.0, "MORT")
+        )
+        val payment = resolvedMonthlyMortgagePayment(entry, transactions, LocalDate.of(2026, 8, 21))
+        assertEquals(1000.0, payment)
+    }
+
+    @Test
+    fun testResolvedMonthlyMortgagePaymentIsNullWithNoCategorySetOrNoMatchingHistory() {
+        val noCategoryEntry = NetWorthEntry("m1", "owner", "Mortgage", NetWorthEntryType.MORTGAGE, 100000.0, annualInterestRate = 0.06)
+        val withCategoryEntry = noCategoryEntry.copy(mortgagePaymentCategoryId = "MORT")
+        val transactions = listOf(tx("1", "2026-08-05", -1000.0, "OTHER"))
+
+        assertNull(resolvedMonthlyMortgagePayment(noCategoryEntry, transactions, LocalDate.of(2026, 8, 21)))
+        assertNull(resolvedMonthlyMortgagePayment(withCategoryEntry, transactions, LocalDate.of(2026, 8, 21)))
     }
 
     @Test
@@ -277,5 +413,57 @@ class ProjectionEngineTest {
         val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
 
         assertEquals(5000.0, result.finalRrspRoomRemaining, 0.01) // unchanged - no rrspIncomeCategoryId set
+    }
+
+    @Test
+    fun testProjectScenarioAmortizesAMortgageAndAppreciatesRealEstateOnTopOfCash() {
+        val entries = listOf(
+            NetWorthEntry(
+                "m1", "owner", "Mortgage", NetWorthEntryType.MORTGAGE, 100000.0,
+                annualInterestRate = 0.06, mortgagePaymentCategoryId = "MORT"
+            ),
+            NetWorthEntry(
+                "h1", "owner", "House", NetWorthEntryType.REAL_ESTATE, 600000.0,
+                annualAppreciationRate = 0.06
+            )
+        )
+        // The $1000/mo payment is derived from the MORT-tagged transaction
+        // below (resolvedMonthlyMortgagePayment), same trailing window
+        // baselineMonthlySavingsRate reads - an offsetting +1000 income
+        // transaction keeps the "no other savings" baseline at exactly 0 so
+        // this test isolates the mortgage/appreciation dynamics only, same
+        // as the original manually-entered-payment version of this test.
+        val transactions = listOf(tx("m", "2026-08-01", -1000.0, "MORT"), tx("i", "2026-08-01", 1000.0))
+        val scenario = Scenario("s1", "owner", "No savings", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0)
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 9, 21), targetAmount = 1.0)
+
+        val points = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21)).points
+
+        assertEquals(500000.0, points[0].cash, 0.001) // 600000 house - 100000 mortgage, no savings yet
+        // Month 1: mortgage principal paid = 1000 - (100000*0.06/12=500) = 500;
+        // house appreciates 600000 * 0.005 = 3000. Cash moves by both.
+        assertEquals(503500.0, points[1].cash, 0.01)
+    }
+
+    @Test
+    fun testProjectScenarioFreesTheMortgagePaymentAsExtraSavingsOnceItsPaidOff() {
+        val entries = listOf(
+            NetWorthEntry(
+                "m1", "owner", "Mortgage", NetWorthEntryType.MORTGAGE, 500.0,
+                annualInterestRate = 0.0, mortgagePaymentCategoryId = "MORT"
+            )
+        )
+        // Same offsetting-income trick as the test above, isolating the
+        // mortgage dynamics from the household's own baseline savings rate.
+        val transactions = listOf(tx("m", "2026-08-01", -250.0, "MORT"), tx("i", "2026-08-01", 250.0))
+        val scenario = Scenario("s1", "owner", "No savings", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0)
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 11, 21), targetAmount = 1.0)
+
+        val points = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21)).points
+
+        assertEquals(-500.0, points[0].cash, 0.001) // Aug: starting balance
+        assertEquals(-250.0, points[1].cash, 0.001) // Sep: one payment in
+        assertEquals(0.0, points[2].cash, 0.001)    // Oct: paid off exactly
+        assertEquals(250.0, points[3].cash, 0.001)  // Nov: freed payment counted as savings
     }
 }

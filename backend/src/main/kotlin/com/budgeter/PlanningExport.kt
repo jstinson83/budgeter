@@ -52,7 +52,7 @@ fun planningExportZip(
         zip.closeEntry()
 
         zip.putNextEntry(ZipEntry("net_worth.csv"))
-        zip.write(netWorthCsv(entries).toByteArray())
+        zip.write(netWorthCsv(entries, transactions, categoryLabelById, today).toByteArray())
         zip.closeEntry()
 
         zip.putNextEntry(ZipEntry("monthly_category_totals.csv"))
@@ -98,16 +98,37 @@ private fun summaryCsv(entries: List<NetWorthEntry>, exportTransactions: List<Tr
 // Value is always entered as a positive magnitude regardless of asset vs.
 // liability - see NetWorthStore.kt's doc comment. AssetOrLiability is
 // exported alongside Type so a verifier doesn't need to know this app's enum
-// (NetWorthEntryType) to tell which way each row counts.
-private fun netWorthCsv(entries: List<NetWorthEntry>): String {
+// (NetWorthEntryType) to tell which way each row counts. The four trailing
+// columns are blank unless the entry actually amortizes/appreciates
+// (NetWorthEntry.isAmortizingMortgage/isAppreciatingRealEstate) - included
+// so a verifier can reproduce projections.csv's mortgage-paydown/
+// appreciation numbers from this file alone, same "verify without app
+// access" goal the rest of this export exists for. MortgagePaymentCategory
+// is the household's tagged category (a label, not this app's internal id -
+// same resolution transactionsToCsv/scenariosCsv already give a category
+// reference); ResolvedMonthlyPayment is the actual figure
+// resolvedMonthlyMortgagePayment (ProjectionEngine.kt) derived from that
+// category's own trailing transaction history as of this export, since the
+// payment is never a number the household typed in directly - see
+// NetWorthEntry.mortgagePaymentCategoryId's doc comment.
+private fun netWorthCsv(entries: List<NetWorthEntry>, transactions: List<Transaction>, categoryLabelById: Map<String, String>, today: LocalDate): String {
     val writer = StringWriter()
     CSVFormat.DEFAULT.builder()
-        .setHeader("Label", "Type", "AssetOrLiability", "Value")
+        .setHeader(
+            "Label", "Type", "AssetOrLiability", "Value", "AnnualInterestRatePercent",
+            "MortgagePaymentCategory", "ResolvedMonthlyPayment", "AnnualAppreciationRatePercent"
+        )
         .build()
         .print(writer)
         .use { printer ->
             entries.forEach { entry ->
-                printer.printRecord(entry.label, entry.type.label, if (entry.type.isAsset) "Asset" else "Liability", entry.value)
+                printer.printRecord(
+                    entry.label, entry.type.label, if (entry.type.isAsset) "Asset" else "Liability", entry.value,
+                    entry.annualInterestRate?.let { it * 100 } ?: "",
+                    entry.mortgagePaymentCategoryId?.let { categoryLabelById[it] ?: it } ?: "",
+                    resolvedMonthlyMortgagePayment(entry, transactions, today) ?: "",
+                    entry.annualAppreciationRate?.let { it * 100 } ?: ""
+                )
             }
         }
     return writer.toString()

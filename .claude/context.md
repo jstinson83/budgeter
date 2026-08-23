@@ -1495,6 +1495,105 @@ itself.
       or fetches - left blank, accrual is uncapped. `/planning`'s income-
       category `<select>` only offers active categories, filtered/sorted
       the same way `/categories`' own rule-target dropdown is.
+- **Mortgage amortization + real estate appreciation** (landed
+  2026-08-22, "Fix 1" from a maintainer review of a projections export):
+  before this, a `MORTGAGE`/`REAL_ESTATE` `NetWorthEntry` sat frozen at its
+  own `value` for the entire projection horizon - the engine updated the
+  invested balance every month but never touched these two entry types, so
+  a reviewed export showed home equity pinned at one constant figure across
+  all 125 exported months (with `investedSavingsFraction = 1.0`, the "cash"
+  bucket containing house+mortgage+bank+CC never grew at all, making the
+  bug maximally visible). `NetWorthEntry` gained three optional fields:
+  `annualInterestRate`/`mortgagePaymentCategoryId` (a coherent pair, same
+  "both or neither" rule as `Scenario`'s salary-change fields - meaningful
+  on `MORTGAGE` entries only) and `annualAppreciationRate` (independent, its
+  own field rather than reusing a scenario's market growth rate - real
+  estate and equities shouldn't be forced to move together in the model;
+  meaningful on `REAL_ESTATE` entries only). Left null (every entry's
+  default, and every entry that predates this feature), an entry is
+  unaffected - byte-for-byte the same frozen behavior as before.
+  - `ProjectionEngine.kt`'s private `DynamicEntrySchedules` class
+    precomputes a month-by-month balance/value schedule for every opted-in
+    entry - real interest/principal amortization (not a closed-form
+    estimate, since principal accelerates as the balance shrinks) and
+    monthly-compounding appreciation (same convention `annualMarketGrowthRate`
+    already uses) - and is shared by both `projectNetWorth` (the baseline,
+    previously a single flat-rate number with no per-entry breakdown at
+    all - its signature changed from `startingNetWorth: Double` to
+    `entries: List<NetWorthEntry>` to make this possible) and
+    `projectScenario` (whose `cash` bucket now carries the same dynamic
+    delta on top of ordinary ongoing-savings growth). A mortgage and its
+    property amortize/appreciate identically regardless of which (if any)
+    Scenario is being projected - only the ongoing savings rate/split
+    differs between the two callers, so the schedule computation itself
+    isn't duplicated.
+  - **The monthly payment is never typed in by hand - it's derived from
+    tracked transaction history**, the same day the feature landed (a
+    maintainer follow-up on the initial PR: "my mortgage payments are
+    tracked by category, find that amount, we do something similar
+    elsewhere"). `mortgagePaymentCategoryId` points at a household
+    `Category` - "MORTGAGE" is already one of `BUILT_IN_CATEGORIES`
+    (`CategoryStore.kt`'s `MORTGAGE_CATEGORY_ID`, preselected on the
+    add-liability form) - the exact same tagged-category pattern
+    `Scenario.rrspIncomeCategoryId` already established for deriving
+    `annualIncome` from real transaction history instead of asking for a
+    typed figure. `ProjectionEngine.kt`'s `resolvedMonthlyMortgagePayment`
+    resolves it as the **median** (not average) of the tagged category's
+    monthly totals over the trailing `BASELINE_TRAILING_MONTHS` window -
+    median specifically because a real export the maintainer reviewed had
+    one anomalous month with a one-off extra payment, which would have
+    dragged an average upward for the whole projection; a median of a few
+    months shrugs off exactly one outlier. A month with no transaction in
+    the category is left out of the window entirely (not counted as a $0
+    payment - almost always means a statement hasn't been imported yet). A
+    mortgage entry with `annualInterestRate` set but no resolvable payment
+    (category unset, or no matching transaction history yet) falls back to
+    frozen, same as an entry with neither field set. The interest rate
+    stays manually entered - a mortgage statement states it outright, no
+    transaction history to derive it from. Since this shares the exact
+    same trailing window `baselineMonthlySavingsRate` already reads from
+    the same `transactions` list, and the mortgage-tagged category isn't
+    excluded from that sum the way `TRANSFER`/`INVESTMENT` are, a
+    household's real mortgage-payment transactions correctly land in both
+    places at once - this is not double-counting: the full payment
+    (principal + interest) is expensed against the baseline savings rate
+    exactly once, while the principal portion is separately credited back
+    as equity via the mortgage balance shrinking, so only the interest
+    portion is a genuine net-worth loss. Once the loan is paid off, its
+    freed payment (see below) exactly cancels the frozen baseline rate's
+    continued assumption that the payment is still being made - the two
+    mechanisms were designed to interact this way, not bolted on
+    separately.
+  - **Mortgage payoff**: once a mortgage's amortization schedule hits
+    zero, its resolved payment stops being subtracted and instead counts as
+    extra ongoing savings from the following month onward, rather than
+    vanishing from the model - the maintainer's notes were explicit about
+    this ("ideally that payment amount starts flowing into savings instead
+    of vanishing"). The payoff month itself doesn't count as "freed" (that
+    month's payment still went toward retiring the last of the balance).
+  - `/planning`'s entry rows/add forms gained matching optional inputs -
+    `annualInterestRatePercent` (a number input) and a
+    `mortgagePaymentCategoryId` `<select>` (reusing the same active-category
+    list `Scenario`'s RRSP income selector already offers, generalized from
+    a page-model key named `incomeCategoryOptions` to `categoryOptions`
+    once it had two unrelated callers) on liability rows,
+    `annualAppreciationRatePercent` on asset rows - shown unconditionally
+    per row rather than toggled by `type` (same posture already used for
+    `Scenario`'s RRSP fields, since this app has no JS framework for
+    dynamic field toggling - a stray value on the wrong entry type is
+    simply never read, not a validation error).
+  - `PlanningExport.kt`'s `net_worth.csv` gained four columns instead of
+    the raw entry fields: `AnnualInterestRatePercent` and
+    `AnnualAppreciationRatePercent` as before, plus `MortgagePaymentCategory`
+    (the category's display label, not the raw id - same resolution
+    `scenariosCsv` already gives `rrspIncomeCategoryId`) and
+    `ResolvedMonthlyPayment` (the actual derived figure, via the now
+    non-private `resolvedMonthlyMortgagePayment`, computed as of the export
+    rather than re-derivable by a verifier without also re-deriving it
+    themselves) - all blank when unset, so a verifier can reproduce
+    `projections.csv`'s mortgage-paydown/appreciation numbers from this
+    file alone, matching the export's whole "verify without app access"
+    purpose.
 - **Gemini scenario-parameter suggestions** (not built) - see plan item 5
   in `current.md`, now scoped first at a "suggest my marginal tax rate"
   helper for the RRSP strategy above (reviewable, never authoritative -

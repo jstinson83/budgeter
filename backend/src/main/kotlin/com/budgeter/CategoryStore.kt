@@ -59,6 +59,16 @@ const val INVESTMENT_CATEGORY_ID = "INVESTMENT"
 // "interest"/"PYT TO:" markers are exact statement-generator templates.
 const val INTEREST_CATEGORY_ID = "INTEREST"
 
+// Also a real per-owner Category row, seeded via BUILT_IN_CATEGORIES like
+// the two above - "MORTGAGE" is already a built-in category label
+// households tag their mortgage payment transactions with (see
+// CategorizationRuleMatcher for the general rules-based tagging path).
+// Referenced as the default preselected option on a MORTGAGE NetWorthEntry's
+// payment-category selector (planning.ftl/NetWorthPage.kt) - see
+// NetWorthEntry.mortgagePaymentCategoryId in NetWorthStore.kt for why the
+// payment is derived from this tag rather than typed in by hand.
+const val MORTGAGE_CATEGORY_ID = "MORTGAGE"
+
 data class Category(
     val id: String,
     val ownerId: String,
