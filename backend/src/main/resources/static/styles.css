@@ -391,6 +391,18 @@ input[type="file"]::file-selector-button:hover {
 
 .app-main {
   flex: 1;
+  /* Without this, .app-main's automatic flex-item min-width falls back to
+     its content's min-content size - which, on planning.ftl, includes the
+     wealth chart's deep-nested inline min-width (hundreds to 1000+px for a
+     longer horizon/more scenarios). That bubbles up through .form-card and
+     forces .app-main - and every card inside it - wider than the actual
+     space next to the 220px sidebar once the viewport is too narrow for
+     .app-main's own max-width but still above the 760px mobile breakpoint
+     (e.g. a tablet or a narrow/split desktop window), overflowing the page
+     even though .wealth-chart-scroll's own overflow-x:auto correctly
+     contains the chart in isolation. No other page has an element with a
+     large explicit min-width this deep, which is why this was planning-only. */
+  min-width: 0;
   margin-left: 220px;
   padding: 2.25rem 2.5rem 4rem 3.5rem;
   max-width: 960px;
@@ -1757,6 +1769,64 @@ a.info-card:hover {
 }
 
 .tab-link:hover {
+  color: var(--text);
+  background: var(--surface-soft);
+}
+
+/* "More" dropdown (_finances-tabs.ftl) - same <details>/<summary>
+   disclosure pattern as .topbar-account, styled as one more .tab-link
+   pill so it reads as part of the same row rather than a different kind
+   of control. */
+.tab-more {
+  position: relative;
+}
+
+.tab-more-summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tab-more-summary::-webkit-details-marker {
+  display: none;
+}
+
+.tab-more-summary::after {
+  content: " \25BE";
+}
+
+.tab-more-panel {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
+  min-width: 160px;
+  padding: 0.4rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+.tab-more-link {
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.tab-more-link:hover {
+  color: var(--text);
+  background: var(--surface-soft);
+}
+
+.tab-more-link-active {
   color: var(--text);
   background: var(--surface-soft);
 }
