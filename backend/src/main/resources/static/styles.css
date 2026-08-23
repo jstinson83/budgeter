@@ -1250,12 +1250,30 @@ input[type="file"]::file-selector-button:hover {
 .projection-chart-line-scenario-4 { stroke: var(--pie-4); }
 .projection-chart-line-scenario-5 { stroke: var(--pie-5); }
 
+/* Wealth-over-time chart (planning.ftl) - unlike the goal-scoped chart
+   above (fixed 300-unit viewBox, stretched to the card's width), this
+   chart's SVG width is real pixels (one unit == one CSS px, see
+   ProjectionChart.kt's wealthChartModel) sized to the number of monthly
+   points, wrapped in a scrolling container instead of being squeezed to
+   fit. */
+.wealth-chart-scroll {
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+}
+
+.wealth-chart {
+  display: block;
+  height: 7rem;
+  background: var(--surface-soft);
+  border-radius: var(--radius-md);
+}
+
 /* Scenario visibility chips (planning.ftl) - one shared row above the
-   Goals list toggles which lines render across every goal's chart at
-   once, replacing a legend that used to repeat under each chart. Pure
-   CSS via :has(): a chip's checkbox and the chart lines it controls both
-   live under #goals-card, so unchecking one dims the matching class
-   everywhere inside it, no JS required. */
+   wealth chart toggles which lines render, replacing a legend that used
+   to repeat under each chart. Pure CSS via :has(): a chip's checkbox and
+   the chart lines it controls both live under #wealth-card, so
+   unchecking one dims the matching class everywhere inside it, no JS
+   required. */
 .chip-row {
   display: flex;
   flex-wrap: wrap;
@@ -1305,15 +1323,15 @@ input[type="file"]::file-selector-button:hover {
 .chip-dot-scenario-4 { background: var(--pie-4); }
 .chip-dot-scenario-5 { background: var(--pie-5); }
 
-#goals-card:has(#scenario-chip-baseline:not(:checked)) .projection-chart-line {
+#wealth-card:has(#scenario-chip-baseline:not(:checked)) .projection-chart-line {
   opacity: 0.15;
 }
 
-#goals-card:has(#scenario-chip-scenario-1:not(:checked)) .projection-chart-line-scenario-1,
-#goals-card:has(#scenario-chip-scenario-2:not(:checked)) .projection-chart-line-scenario-2,
-#goals-card:has(#scenario-chip-scenario-3:not(:checked)) .projection-chart-line-scenario-3,
-#goals-card:has(#scenario-chip-scenario-4:not(:checked)) .projection-chart-line-scenario-4,
-#goals-card:has(#scenario-chip-scenario-5:not(:checked)) .projection-chart-line-scenario-5 {
+#wealth-card:has(#scenario-chip-scenario-1:not(:checked)) .projection-chart-line-scenario-1,
+#wealth-card:has(#scenario-chip-scenario-2:not(:checked)) .projection-chart-line-scenario-2,
+#wealth-card:has(#scenario-chip-scenario-3:not(:checked)) .projection-chart-line-scenario-3,
+#wealth-card:has(#scenario-chip-scenario-4:not(:checked)) .projection-chart-line-scenario-4,
+#wealth-card:has(#scenario-chip-scenario-5:not(:checked)) .projection-chart-line-scenario-5 {
   opacity: 0.15;
 }
 

@@ -466,4 +466,21 @@ class ProjectionEngineTest {
         assertEquals(0.0, points[2].cash, 0.001)    // Oct: paid off exactly
         assertEquals(250.0, points[3].cash, 0.001)  // Nov: freed payment counted as savings
     }
+
+    @Test
+    fun testProjectScenarioWithATargetDateMatchesTheEquivalentGoalOverload() {
+        // The "Wealth over time" chart (NetWorthPage.kt's wealthChartRowModel)
+        // has no FinancialGoal to project against, so projectScenario grew a
+        // plain targetDate overload alongside the original goal-based one -
+        // this checks the two actually agree given the same effective date.
+        val entries = listOf(NetWorthEntry("1", "owner", "Chequing", NetWorthEntryType.BANK, 1000.0))
+        val transactions = listOf(tx("1", "2026-08-15", 500.0))
+        val scenario = Scenario("s1", "owner", "Growth", annualMarketGrowthRate = 0.06, investedSavingsFraction = 0.5, recreationalSpendAdjustment = 0.0)
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 11, 21), targetAmount = 1.0)
+
+        val viaGoal = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21)).points
+        val viaTargetDate = projectScenario(scenario, entries, transactions, goal.targetDate, LocalDate.of(2026, 8, 21)).points
+
+        assertEquals(viaGoal.map { it.netWorth }, viaTargetDate.map { it.netWorth })
+    }
 }

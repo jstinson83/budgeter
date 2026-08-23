@@ -37,9 +37,11 @@
       <span class="transaction-amount month-summary-amount <#if netWorth?number gte 0>transaction-amount-positive<#else>transaction-amount-negative</#if>">${netWorth}</span>
     </div>
 
-    <div class="form-card" id="goals-card">
-      <h2>Goals</h2>
-      <#if (goals?size gt 0)>
+    <div class="form-card" id="wealth-card">
+      <h2>Wealth over time</h2>
+      <p class="dashboard-card-note">
+        The always-shown baseline assumes today's real savings rate, no growth, and no changes; each scenario below adds its own line, projected ${wealthChartHorizonYears} years out. Use the chips to show or hide a line, and scroll the chart to see further into the projection.
+      </p>
       <div class="chip-row">
         <label class="chip">
           <input type="checkbox" id="scenario-chip-baseline" checked>
@@ -52,89 +54,19 @@
         </label>
         </#list>
       </div>
-      </#if>
-      <#if (goals?size == 0)>
-      <p class="empty-state">No goals yet.</p>
-      <#else>
-      <div class="card-list">
-        <#list goals as goal>
-        <div class="info-card">
-          <form method="post" action="/planning/goals/${goal.id}" class="recategorize-form">
-            <input type="hidden" name="type" value="${goal.typeName}">
-            <input type="text" name="name" value="${goal.name}" required>
-            <input type="date" name="targetDate" value="${goal.targetDate}" required>
-            <#if goal.isRetirement>
-            <input type="number" name="annualSpend" value="${goal.annualSpend}" step="0.01" min="0.01" placeholder="Annual spend">
-            <input type="number" name="withdrawalRatePercent" value="${goal.withdrawalRatePercent}" step="0.1" min="0.1" placeholder="Withdrawal rate %">
-            <#else>
-            <input type="number" name="targetAmount" value="${goal.targetAmount}" step="0.01" min="0.01" placeholder="Target amount">
-            </#if>
-            <button type="submit" class="button button-small button-save">Save</button>
-          </form>
-          <span class="dashboard-card-note">Target: ${goal.resolvedTargetAmount} by ${goal.targetDate}</span>
-
-          <div class="projection-chart-wrap">
-            <svg viewBox="0 0 300 120" class="projection-chart" preserveAspectRatio="none">
-              <line x1="6" y1="${goal.chartGoalY}" x2="294" y2="${goal.chartGoalY}" class="projection-chart-goal-line"/>
-              <#list goal.chartLines as line>
-              <polyline points="${line.points}" class="${line.cssClass}"/>
-              </#list>
-            </svg>
-            <div class="projection-chart-labels">
-              <span>${goal.chartMinLabel}</span>
-              <span>${goal.chartMaxLabel}</span>
-            </div>
-          </div>
-          <p class="dashboard-card-note">
-            Baseline projected: ${goal.projectedFinal} by ${goal.targetDate}
-            (${goal.monthlySavingsRate}/mo) &mdash;
-            <#if goal.onTrack>
-            <span class="transaction-amount-positive">on track</span>
-            <#else>
-            <span class="transaction-amount-negative">short by ${goal.shortfallOrSurplus}</span>
-            </#if>
-          </p>
-          <#list goal.scenarioOutcomes as outcome>
-          <p class="dashboard-card-note">
-            ${outcome.name}: ${outcome.projectedFinal} &mdash;
-            <#if outcome.onTrack>
-            <span class="transaction-amount-positive">on track</span>
-            <#else>
-            <span class="transaction-amount-negative">off track</span>
-            </#if>
-            <#if outcome.hasRrspStrategy>
-            &mdash; ${outcome.totalRrspRefunds} in RRSP refunds, ${outcome.finalRrspRoomRemaining} room left
-            </#if>
-          </p>
-          </#list>
-
-          <form method="post" action="/planning/goals/${goal.id}/delete">
-            <button type="submit" class="button button-small button-danger">Delete</button>
-          </form>
+      <div class="projection-chart-wrap">
+        <div class="wealth-chart-scroll">
+          <svg viewBox="0 0 ${wealthChart.widthPx} 120" width="${wealthChart.widthPx}" height="120" class="wealth-chart">
+            <#list wealthChart.lines as line>
+            <polyline points="${line.points}" class="${line.cssClass}"/>
+            </#list>
+          </svg>
         </div>
-        </#list>
+        <div class="projection-chart-labels">
+          <span>${wealthChart.minLabel}</span>
+          <span>${wealthChart.maxLabel}</span>
+        </div>
       </div>
-      </#if>
-
-      <h3>Add goal</h3>
-      <form method="post" action="/planning/goals" class="recategorize-form" id="goal-form">
-        <input type="text" name="name" placeholder="Goal name" required>
-        <div class="segmented-control" role="radiogroup" aria-label="Goal type">
-          <input type="radio" name="type" value="NET_WORTH_TARGET" id="goal-type-networth" checked>
-          <label for="goal-type-networth">Net worth target</label>
-          <input type="radio" name="type" value="RETIREMENT" id="goal-type-retirement">
-          <label for="goal-type-retirement">Retirement</label>
-        </div>
-        <input type="date" name="targetDate" required>
-        <div id="goal-networth-fields">
-          <input type="number" name="targetAmount" placeholder="Target amount" step="0.01" min="0.01">
-        </div>
-        <div id="goal-retirement-fields" hidden>
-          <input type="number" name="annualSpend" placeholder="Annual spend in retirement" step="0.01" min="0.01">
-          <input type="number" name="withdrawalRatePercent" placeholder="Withdrawal rate % (default 4)" step="0.1" min="0.1">
-        </div>
-        <button type="submit" class="button">Add goal</button>
-      </form>
     </div>
 
     <div class="form-card">
@@ -421,24 +353,7 @@
   </div>
 
   <script>
-    // No framework in this app - see analysis.ftl/CLAUDE.md. Toggles which
-    // field group the add-goal form shows based on the selected type; the
-    // fields that stay hidden are also the ones with no "required"
-    // attribute, so submitting never blocks on a field the user can't see.
-    // The server (NetWorthRoutes.kt's parseGoalForm) is what actually
-    // enforces "the right fields for the type" - this is convenience only.
-    (function () {
-      var retirementRadio = document.getElementById('goal-type-retirement');
-      var netWorthFields = document.getElementById('goal-networth-fields');
-      var retirementFields = document.getElementById('goal-retirement-fields');
-      document.querySelectorAll('#goal-form input[name="type"]').forEach(function (radio) {
-        radio.addEventListener('change', function () {
-          var isRetirement = retirementRadio.checked;
-          netWorthFields.hidden = isRetirement;
-          retirementFields.hidden = !isRetirement;
-        });
-      });
-    })();
+    // No framework in this app - see analysis.ftl/CLAUDE.md.
 
     // Picking a preset fills in the actual submitted rate field; picking
     // "Custom" just leaves whatever's already typed there alone. The

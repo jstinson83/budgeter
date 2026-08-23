@@ -1341,17 +1341,21 @@ itself.
     line always renders on-chart even when far above/below every
     trajectory, rather than
     clipping outside the viewBox.
-  - **`/planning` layout (reordered 2026-08-22):** Goals+chart sit at the
-    top (changed most often, the page's actual point), Scenarios below
-    them, and a merged "Net worth breakdown" (Assets+Liabilities combined,
-    collapsed behind a `<details>` by default) at the bottom (changed
-    least often). Each goal's chart no longer renders its own legend -
-    replaced by one shared row of visibility chips above the Goals list
-    (`#goals-card`'s `.chip-row`) that toggles every goal's chart lines at
+  - **`/planning` layout (reordered 2026-08-22, Goals card replaced by the
+    Wealth chart 2026-08-23 - see above):** the Wealth-over-time chart sits
+    at the top (changed most often, the page's actual point - Goals+its
+    own chart used to be here, now hidden), Scenarios below it, and a
+    merged "Net worth breakdown" (Assets+Liabilities combined, collapsed
+    behind a `<details>` by default) at the bottom (changed least often).
+    The chip-row-toggles-chart-lines-via-CSS mechanism described below was
+    designed for the (now-hidden) per-goal chart and carried over
+    unchanged onto the wealth chart, just re-scoped from `#goals-card` to
+    `#wealth-card`: one shared row of visibility chips
+    (`#wealth-card`'s `.chip-row`) toggles chart lines at
     once via CSS `:has()`, no JS: each chip's checkbox carries a stable id
     (`scenario-chip-baseline`, `scenario-chip-scenario-N`) matching the
     `projection-chart-line`/`projection-chart-line-scenario-N` class the
-    line already has, and `#goals-card:has(#chip-id:not(:checked)) .class
+    line already has, and `#wealth-card:has(#chip-id:not(:checked)) .class
     { opacity: ... }` dims it everywhere inside the card. `N` is
     `scenarioRowModel()`'s `chartColorIndex` (`NetWorthPage.kt`) - the same
     position-in-`SCENARIO_LINE_CSS_CLASSES` (`ProjectionChart.kt`, made
@@ -1362,6 +1366,22 @@ itself.
     `<details>` summary (name + growth/invested/RRSP tags) with the full
     edit form as the expandable body - the "Add scenario" form itself
     stays always-expanded, unlike existing rows.
+- **Goals hidden from `/planning`'s UI (2026-08-23), backend untouched -
+  see `current.md` for the full writeup.** In their place, `/planning`
+  leads with a goal-independent "Wealth over time" chart: the always-shown
+  baseline plus one line per Scenario, projected a fixed
+  `WEALTH_CHART_HORIZON_YEARS` (10 years, `ProjectionEngine.kt`) forward
+  from today rather than to any goal's target date. `projectScenario`
+  gained a `targetDate: LocalDate` overload alongside its original
+  `goal: FinancialGoal` one (the goal overload now just delegates to it
+  with `goal.targetDate`) so this chart doesn't need a `FinancialGoal` to
+  project against at all. `ProjectionChart.kt`'s `wealthChartModel` is a
+  parallel function to `projectionChartModel`, not a refactor of it - no
+  goal target line, and its SVG width scales with point count (real
+  pixels, wrapped in a scrolling container) instead of staying fixed at
+  the 300-unit viewBox `projectionChartModel` stretches to fit. The
+  goal-scoped chart/CRUD/routes are otherwise unchanged and still power
+  `PlanningExport.kt`'s verification export.
 - **`Scenario`** (`ScenarioStore.kt`, landed): a named what-if parameter
   set, CRUD like `NetWorthEntry`/`FinancialGoal`, run through
   `ProjectionEngine.kt`'s `projectScenario()` and rendered as its own line
