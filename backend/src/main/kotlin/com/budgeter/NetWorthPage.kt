@@ -90,8 +90,8 @@ private fun wealthChartRowModel(entries: List<NetWorthEntry>, scenarios: List<Sc
     val chart = wealthChartModel(baselinePoints, scenarioLines)
     return mapOf(
         "lines" to chart.lines.map { mapOf("label" to it.label, "cssClass" to it.cssClass, "points" to it.points) },
-        "minLabel" to chart.minLabel,
-        "maxLabel" to chart.maxLabel,
+        "gridLines" to chart.gridLines.map { mapOf("y" to it.y, "label" to it.label) },
+        "xAxisTicks" to chart.xAxisTicks.map { mapOf("leftPercent" to it.leftPercent, "label" to it.label) },
         "widthPx" to chart.widthPx
     )
 }

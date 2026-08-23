@@ -120,4 +120,34 @@ class ProjectionChartTest {
             wealthChartModel(emptyList(), emptyList())
         }
     }
+
+    @Test
+    fun testWealthChartModelGridLinesRunFromMaxAtTopToMinAtBottom() {
+        val baseline = listOf(
+            ProjectionPoint(LocalDate.of(2026, 8, 1), 100000.0),
+            ProjectionPoint(LocalDate.of(2026, 9, 1), 200000.0)
+        )
+        val chart = wealthChartModel(baseline, emptyList())
+
+        assertEquals("200000.00", chart.gridLines.first().label)
+        assertEquals("100000.00", chart.gridLines.last().label)
+        // Higher value -> smaller y (SVG y grows downward), so the top
+        // gridline's y should be smaller than the bottom gridline's.
+        assertTrue(chart.gridLines.first().y.toDouble() < chart.gridLines.last().y.toDouble())
+    }
+
+    @Test
+    fun testWealthChartModelXAxisTicksLandOnEveryTwelfthPointWithItsOwnYear() {
+        // Starts mid-year (August) on purpose - ticks should follow each
+        // point's actual date, not assume the horizon starts in January.
+        val baseline = (0..24).map { ProjectionPoint(LocalDate.of(2026, 8, 1).plusMonths(it.toLong()), 0.0) }
+        val chart = wealthChartModel(baseline, emptyList())
+
+        assertEquals(listOf("2026", "2027", "2028"), chart.xAxisTicks.map { it.label })
+        // Not exactly 0%/100% - CHART_PADDING keeps the first/last points
+        // (and their ticks) inset from the very edge of the chart, same as
+        // every other point.
+        assertEquals("2.00", chart.xAxisTicks.first().leftPercent)
+        assertEquals("98.00", chart.xAxisTicks.last().leftPercent)
+    }
 }
