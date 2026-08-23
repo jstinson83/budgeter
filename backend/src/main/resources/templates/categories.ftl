@@ -44,6 +44,13 @@
         <input type="text" name="label" placeholder="New category name" required>
         <button type="submit" class="button">Add category</button>
       </form>
+
+      <p class="dashboard-card-note">
+        Rule changes not reflected in your existing transactions? Recategorizing only ever revisits transactions with no category yet, so one that's already (mis)categorized - e.g. from a rule you've since edited or deleted - won't get fixed on its own.
+      </p>
+      <form method="post" action="/categories/recategorize-all" onsubmit="return confirm('Clear every transaction\'s category and recategorize everything from scratch (transfers, then rules, then Gemini)? This can take a moment for a large history.');">
+        <button type="submit" class="button button-small button-danger">Recategorize all transactions</button>
+      </form>
     </div>
 
     <div class="form-card">

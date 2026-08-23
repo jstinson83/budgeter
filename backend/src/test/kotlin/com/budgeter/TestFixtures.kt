@@ -155,6 +155,13 @@ class FakeTransactionRepository : TransactionRepository {
         }
     }
 
+    override suspend fun resetCategories(ownerId: String) {
+        for (i in transactions.indices) {
+            val transaction = transactions[i]
+            if (transaction.ownerId == ownerId) transactions[i] = transaction.copy(category = null)
+        }
+    }
+
     override suspend fun deleteAll(ownerId: String) {
         transactions.removeAll { it.ownerId == ownerId }
     }
