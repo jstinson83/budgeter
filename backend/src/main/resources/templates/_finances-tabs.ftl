@@ -14,7 +14,10 @@
   <a href="/analysis" class="tab-link<#if (activeTab!"") == "analysis"> tab-link-active</#if>">Analysis</a>
   <a href="/planning" class="tab-link<#if (activeTab!"") == "planning"> tab-link-active</#if>">Planning</a>
   <details class="tab-more">
-    <summary class="tab-link tab-more-summary<#if moreActive> tab-link-active</#if>">More</summary>
+    <summary class="tab-link tab-more-summary<#if moreActive> tab-link-active</#if>">
+      More
+      <svg class="tab-more-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+    </summary>
     <div class="tab-more-panel">
       <a href="/transactions" class="tab-more-link<#if (activeTab!"") == "transactions"> tab-more-link-active</#if>">Transactions</a>
       <a href="/categories" class="tab-more-link<#if (activeTab!"") == "categories"> tab-more-link-active</#if>">Categories</a>

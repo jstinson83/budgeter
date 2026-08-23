@@ -1776,12 +1776,18 @@ a.info-card:hover {
 /* "More" dropdown (_finances-tabs.ftl) - same <details>/<summary>
    disclosure pattern as .topbar-account, styled as one more .tab-link
    pill so it reads as part of the same row rather than a different kind
-   of control. */
+   of control. Panel spacing/tone deliberately mirrors
+   .topbar-account-panel (gap/padding, not the cramped 0.15rem/0.4rem a
+   first pass used) so it reads as the same quality of menu, not a
+   thrown-together variant. */
 .tab-more {
   position: relative;
 }
 
 .tab-more-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   list-style: none;
   cursor: pointer;
   user-select: none;
@@ -1791,21 +1797,32 @@ a.info-card:hover {
   display: none;
 }
 
-.tab-more-summary::after {
-  content: " \25BE";
+.tab-more-chevron {
+  flex: 0 0 auto;
+  transition: transform 0.15s ease;
+}
+
+.tab-more[open] .tab-more-chevron {
+  transform: rotate(180deg);
+}
+
+.tab-more-summary:focus-visible,
+.tab-more-link:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 1px;
 }
 
 .tab-more-panel {
   position: absolute;
-  top: calc(100% + 0.4rem);
+  top: calc(100% + 0.5rem);
   left: 0;
   z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.15rem;
-  min-width: 160px;
-  padding: 0.4rem;
+  gap: 0.2rem;
+  min-width: 170px;
+  padding: 0.6rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--surface);
@@ -1813,7 +1830,7 @@ a.info-card:hover {
 }
 
 .tab-more-link {
-  padding: 0.5rem 0.7rem;
+  padding: 0.55rem 0.75rem;
   border-radius: var(--radius-sm);
   color: var(--text-dim);
   text-decoration: none;
