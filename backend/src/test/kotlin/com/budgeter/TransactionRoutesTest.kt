@@ -167,8 +167,122 @@ class TransactionRoutesTest {
         val listResponse = client.get(redirectLocation)
         val body = listResponse.bodyAsText()
         assertTrue(body.contains("Imported 2 transaction(s)"))
-        assertFalse(body.contains("duplicate"))
+        // Scoped to the flash banner, not the whole page - /transactions
+        // also links to the "Review duplicates" page (transactions.ftl),
+        // whose label itself contains the word "duplicate".
+        val banner = body.substringAfter("banner-success\">").substringBefore("</p>")
+        assertFalse(banner.contains("duplicate"))
         assertEquals(2, Regex("Starbucks").findAll(body).count())
+    }
+
+    @Test
+    fun testDeletingATransactionRemovesItFromTheList() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val csv = "2026-01-15,Starbucks,4.75,,995.25\n2026-01-16,Payroll,,2500.00,3495.25"
+        val importResponse = client.submitFormWithBinaryData(
+            url = "/transactions/import",
+            formData = formData {
+                append("file", csv.toByteArray(), Headers.build {
+                    append(HttpHeaders.ContentType, "text/csv")
+                    append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
+                })
+            }
+        )
+        val afterImport = client.get(importResponse.headers[HttpHeaders.Location]!!).bodyAsText()
+        val starbucksRow = afterImport.substringAfter("Starbucks").substringBefore("</div>")
+        val transactionId = Regex("/transactions/([^/\"]+)/delete").find(starbucksRow)?.groupValues?.get(1)
+        assertNotNull(transactionId)
+
+        val deleteResponse = client.post("/transactions/$transactionId/delete")
+        assertEquals(HttpStatusCode.Found, deleteResponse.status)
+
+        val listResponse = client.get(deleteResponse.headers[HttpHeaders.Location]!!)
+        val body = listResponse.bodyAsText()
+        assertTrue(body.contains("Transaction deleted"))
+        assertFalse(body.contains("Starbucks"))
+        assertTrue(body.contains("Payroll"))
+    }
+
+    @Test
+    fun testDuplicatesReviewPageIsEmptyWhenThereAreNoOverlappingImports() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        // Two identical-content rows in the *same* file are never a
+        // reviewable duplicate - they're two genuinely separate charges
+        // (see testIdenticalRowsInTheSameFileAreNotTreatedAsDuplicatesOfEachOther).
+        val csv = "2026-01-15,Starbucks,4.75,,995.25\n2026-01-15,Starbucks,4.75,,995.25"
+        client.submitFormWithBinaryData(
+            url = "/transactions/import",
+            formData = formData {
+                append("file", csv.toByteArray(), Headers.build {
+                    append(HttpHeaders.ContentType, "text/csv")
+                    append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
+                })
+            }
+        )
+
+        val body = client.get("/transactions/duplicates") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(body.contains("No duplicate transactions found"))
+    }
+
+    @Test
+    fun testDuplicatesReviewPageSurfacesAllMembersWhenAGenuineRepeatIsMixedWithARealDuplicate() = testApplication {
+        val fakeTransactionRepository = FakeTransactionRepository()
+        testModule(transactionStore = fakeTransactionRepository)
+        val client = signInFakeUser()
+
+        // The subtle case: file "file-a" legitimately contains two real
+        // same-day $4.75 Starbucks charges (both correctly kept - see
+        // testIdenticalRowsInTheSameFileAreNotTreatedAsDuplicatesOfEachOther).
+        // A later overlapping re-export ("file-b") also contains a matching
+        // row that, pre-fix, got stored as a third copy instead of being
+        // caught as a duplicate of one of file-a's two. The review page
+        // must not silently collapse this group down to one (that would
+        // destroy a real transaction) - it should surface all three so a
+        // human can tell which one is the actual duplicate.
+        fakeTransactionRepository.seedRaw(Transaction("real-1", "test-sub", AccountType.BANK, java.time.LocalDate.parse("2026-01-15"), "Starbucks", -4.75, fileHash = "file-a"))
+        fakeTransactionRepository.seedRaw(Transaction("real-2", "test-sub", AccountType.BANK, java.time.LocalDate.parse("2026-01-15"), "Starbucks", -4.75, fileHash = "file-a"))
+        fakeTransactionRepository.seedRaw(Transaction("stray-dup", "test-sub", AccountType.BANK, java.time.LocalDate.parse("2026-01-15"), "Starbucks", -4.75, fileHash = "file-b"))
+
+        val body = client.get("/transactions/duplicates") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertEquals(3, Regex("Starbucks").findAll(body).count())
+    }
+
+    @Test
+    fun testDuplicatesReviewPageListsAndDeletesACrossImportDuplicate() = testApplication {
+        val fakeTransactionRepository = FakeTransactionRepository()
+        testModule(transactionStore = fakeTransactionRepository)
+        val client = signInFakeUser()
+
+        // Simulates a duplicate that predates cross-file overlap dedup: two
+        // rows with identical content but distinct ids/fingerprints AND
+        // distinct fileHash values, as if they'd come from two separate
+        // statement uploads before withoutContentOverlap() existed to
+        // catch it. addAll() itself can no longer produce this (it's
+        // covered by testUploadingAWiderStatementSkipsThePreviouslyImportedOverlap),
+        // so this seeds the fake store directly to stand in for that
+        // legacy data.
+        fakeTransactionRepository.seedRaw(Transaction("dup-1", "test-sub", AccountType.BANK, java.time.LocalDate.parse("2026-01-15"), "Starbucks", -4.75, fileHash = "file-a"))
+        fakeTransactionRepository.seedRaw(Transaction("dup-2", "test-sub", AccountType.BANK, java.time.LocalDate.parse("2026-01-15"), "Starbucks", -4.75, fileHash = "file-b"))
+        fakeTransactionRepository.seedRaw(Transaction("solo-1", "test-sub", AccountType.BANK, java.time.LocalDate.parse("2026-01-20"), "Payroll", 2500.00, fileHash = "file-a"))
+
+        val reviewBody = client.get("/transactions/duplicates") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertEquals(2, Regex("Starbucks").findAll(reviewBody).count())
+        assertFalse(reviewBody.contains("Payroll"))
+
+        val starbucksRow = reviewBody.substringAfter("Starbucks").substringBefore("</div>")
+        val transactionId = Regex("/transactions/([^/\"]+)/delete\\?returnTo=duplicates").find(starbucksRow)?.groupValues?.get(1)
+        assertNotNull(transactionId)
+
+        val deleteResponse = client.post("/transactions/$transactionId/delete?returnTo=duplicates")
+        val afterDelete = client.get(deleteResponse.headers[HttpHeaders.Location]!!).bodyAsText()
+        assertTrue(afterDelete.contains("No duplicate transactions found"))
+
+        val listBody = client.get("/transactions") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertEquals(1, Regex("Starbucks").findAll(listBody).count())
     }
 
     @Test

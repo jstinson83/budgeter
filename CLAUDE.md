@@ -151,6 +151,31 @@ breaks, not the facts themselves.
   in `FakeTransactionRepository` (`TestFixtures.kt`) so tests exercise the
   same behavior; see `testUploadingAWiderStatementSkipsThePreviouslyImportedOverlap`
   in `TransactionRoutesTest.kt`.
+- **`withoutContentOverlap()` only prevents *new* cross-import duplicates -
+  it doesn't retroactively clean up rows already duplicated before it
+  shipped (2026-08-19).** Hit for real: a maintainer report of two stored
+  transactions with identical account/date/description/amount that "came
+  from separate uploads." The forward dedup logic was confirmed correct
+  (tests cover exactly that overlap scenario) - the pair predated the fix.
+  There was no way to remove just the stray row (`/transactions/delete-all`
+  wipes everything), so `/transactions/duplicates` was added:
+  `duplicateGroupsPageModel` (`TransactionPage.kt`) groups stored
+  transactions by content key and flags a group only when its members
+  *don't* all share one known `Transaction.fileHash` - a same-file group
+  (two genuine same-day identical charges) is never flagged, matching
+  `withoutContentOverlap`'s own invariant that a duplicate never exists
+  within one file. `fileHash` is a new field (`TransactionStore.kt`,
+  persisted from `FirestoreTransactionStore.addAll`'s `fileHash` param);
+  rows written before this field existed read back `null` and are
+  conservatively flagged rather than excluded, since old pre-fix duplicates
+  are exactly the population with no fileHash. Flagging is never
+  destructive by itself - the page lists every member of a flagged group
+  with the same per-row delete (`POST /transactions/{id}/delete`) used
+  elsewhere, so a human decides what to remove; a group that mixes a
+  legitimate same-day repeat with one real stray duplicate still shows all
+  members rather than being auto-collapsed to one (see
+  `testDuplicatesReviewPageSurfacesAllMembersWhenAGenuineRepeatIsMixedWithARealDuplicate`
+  in `TransactionRoutesTest.kt`).
 
 ## Dashboard net position gotcha (feature since pulled)
 
