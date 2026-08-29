@@ -18,6 +18,7 @@ fun netWorthPageModel(
     scenarios: List<Scenario>,
     transactions: List<Transaction>,
     categories: List<Category>,
+    householdSettings: HouseholdSettings,
     message: String?,
     error: String?,
     today: LocalDate = LocalDate.now()
@@ -26,6 +27,7 @@ fun netWorthPageModel(
     val liabilities = entries.filter { !it.type.isAsset }
     val activeCategories = categories.filter { it.active }.sortedBy { it.label.lowercase() }
     val categoryLabelById = categories.associateBy({ it.id }, { it.label })
+    val incomeCategoryId = householdSettings.incomeCategoryId
     return mapOf(
         "assets" to assets.map(::netWorthEntryRowModel),
         "liabilities" to liabilities.map(::netWorthEntryRowModel),
@@ -41,17 +43,18 @@ fun netWorthPageModel(
         // here since FinancialGoal/the goal-scoped chart remain wired into
         // PlanningExport.kt's verification export and the CRUD routes
         // still work - planning.ftl just doesn't render this key anymore.
-        "goals" to goals.map { goal -> financialGoalRowModel(goal, entries, scenarios, transactions, today) },
-        "scenarios" to scenarios.mapIndexed { index, scenario -> scenarioRowModel(scenario, categoryLabelById, index) },
-        "wealthChart" to wealthChartRowModel(entries, scenarios, transactions, today),
+        "goals" to goals.map { goal -> financialGoalRowModel(goal, entries, scenarios, transactions, incomeCategoryId, today) },
+        "scenarios" to scenarios.mapIndexed { index, scenario -> scenarioRowModel(scenario, index) },
+        "wealthChart" to wealthChartRowModel(entries, scenarios, transactions, incomeCategoryId, today),
         "wealthChartHorizonYears" to WEALTH_CHART_HORIZON_YEARS,
+        "yourNumbers" to yourNumbersCardModel(transactions, categoryLabelById, incomeCategoryId, today),
         "growthPresets" to MarketGrowthPreset.entries.map { mapOf("name" to it.name, "label" to it.label, "annualRatePercent" to "%.1f".format(it.annualRate * 100)) },
         // Only active categories are offered anywhere a household tags a
-        // Category onto something else (the RRSP income selector, and a
-        // mortgage entry's payment category below) - same "disabling stops
-        // new assignment" rule /categories uses elsewhere. One shared list
-        // rather than one per selector, since it's the same set of rows
-        // either way.
+        // Category onto something else (Your Numbers' income selector, and
+        // a mortgage entry's payment category below) - same "disabling
+        // stops new assignment" rule /categories uses elsewhere. One shared
+        // list rather than one per selector, since it's the same set of
+        // rows either way.
         "categoryOptions" to activeCategories.map { mapOf("id" to it.id, "label" to it.label) },
         // Preselected on the add-liability form's mortgage payment-category
         // select - "MORTGAGE" is already a built-in category id most
@@ -61,6 +64,28 @@ fun netWorthPageModel(
         "defaultMortgagePaymentCategoryId" to MORTGAGE_CATEGORY_ID,
         "message" to message,
         "error" to error
+    )
+}
+
+// /planning's "Your Numbers" card - the household's real recent income and
+// savings rate, read straight from transaction history rather than typed in
+// anywhere, shown right above Scenarios so a household can see what it's
+// actually working with before configuring a Salary change's Amount ($/mo)
+// delta or an RRSP strategy's room accrual (see NetWorthRoutes.kt's
+// /planning/household-settings route and HouseholdSettingsStore.kt for why
+// the income category itself is a single household-wide setting rather than
+// something picked per scenario).
+private fun yourNumbersCardModel(transactions: List<Transaction>, categoryLabelById: Map<String, String>, incomeCategoryId: String?, today: LocalDate): Map<String, Any?> {
+    val recentIncome = recentCategoryMonthlyAverage(transactions, incomeCategoryId, today)
+    val savingsRate = baselineMonthlySavingsRate(transactions, today)
+    return mapOf(
+        "incomeCategoryId" to (incomeCategoryId ?: ""),
+        "incomeCategoryLabel" to (incomeCategoryId?.let { categoryLabelById[it] ?: it } ?: ""),
+        "hasRecentIncome" to (recentIncome != null),
+        "recentIncome" to (recentIncome?.let { "%.2f".format(it) } ?: ""),
+        "recentIncomeClass" to (recentIncome?.let { amountClass(it) } ?: ""),
+        "savingsRate" to formatSignedAmount(savingsRate),
+        "savingsRateClass" to amountClass(savingsRate)
     )
 }
 
@@ -81,11 +106,11 @@ private fun netWorthEntryRowModel(entry: NetWorthEntry): Map<String, Any?> = map
 // own target date (there is no goal driving this chart). Reuses the same
 // projectScenario the goal-scoped chart uses, via the targetDate overload
 // (ProjectionEngine.kt) instead of passing a FinancialGoal.
-private fun wealthChartRowModel(entries: List<NetWorthEntry>, scenarios: List<Scenario>, transactions: List<Transaction>, today: LocalDate): Map<String, Any?> {
+private fun wealthChartRowModel(entries: List<NetWorthEntry>, scenarios: List<Scenario>, transactions: List<Transaction>, incomeCategoryId: String?, today: LocalDate): Map<String, Any?> {
     val horizonEnd = today.plusYears(WEALTH_CHART_HORIZON_YEARS)
     val baselinePoints = projectNetWorth(entries, transactions, baselineMonthlySavingsRate(transactions, today), today, horizonEnd)
     val scenarioLines = scenarios.map { scenario ->
-        scenario.name to projectScenario(scenario, entries, transactions, horizonEnd, today).points.map { ProjectionPoint(it.date, it.netWorth) }
+        scenario.name to projectScenario(scenario, entries, transactions, horizonEnd, incomeCategoryId, today).points.map { ProjectionPoint(it.date, it.netWorth) }
     }
     val chart = wealthChartModel(baselinePoints, scenarioLines)
     return mapOf(
@@ -96,9 +121,9 @@ private fun wealthChartRowModel(entries: List<NetWorthEntry>, scenarios: List<Sc
     )
 }
 
-private fun financialGoalRowModel(goal: FinancialGoal, entries: List<NetWorthEntry>, scenarios: List<Scenario>, transactions: List<Transaction>, today: LocalDate): Map<String, Any?> {
+private fun financialGoalRowModel(goal: FinancialGoal, entries: List<NetWorthEntry>, scenarios: List<Scenario>, transactions: List<Transaction>, incomeCategoryId: String?, today: LocalDate): Map<String, Any?> {
     val projection = projectGoal(goal, entries, transactions, today)
-    val scenarioProjections = scenarios.map { scenario -> scenario to projectScenario(scenario, entries, transactions, goal, today) }
+    val scenarioProjections = scenarios.map { scenario -> scenario to projectScenario(scenario, entries, transactions, goal, incomeCategoryId, today) }
     val chart = projectionChartModel(
         projection.points,
         scenarioProjections.map { (scenario, result) -> scenario.name to result.points.map { ProjectionPoint(it.date, it.netWorth) } },
@@ -136,7 +161,7 @@ private fun financialGoalRowModel(goal: FinancialGoal, entries: List<NetWorthEnt
     )
 }
 
-private fun scenarioRowModel(scenario: Scenario, categoryLabelById: Map<String, String>, index: Int): Map<String, Any?> = mapOf(
+private fun scenarioRowModel(scenario: Scenario, index: Int): Map<String, Any?> = mapOf(
     "id" to scenario.id,
     "name" to scenario.name,
     // 1-based position within SCENARIO_LINE_CSS_CLASSES (ProjectionChart.kt) -
@@ -159,7 +184,6 @@ private fun scenarioRowModel(scenario: Scenario, categoryLabelById: Map<String, 
     "rrspMarginalTaxRatePercent" to (scenario.rrspMarginalTaxRate?.let { "%.1f".format(it * 100) } ?: ""),
     "rrspRoomRemaining" to (scenario.rrspRoomRemaining?.let { "%.2f".format(it) } ?: ""),
     "rrspReinvestRefund" to scenario.rrspReinvestRefund,
-    "rrspIncomeCategoryId" to (scenario.rrspIncomeCategoryId ?: ""),
-    "rrspIncomeCategoryLabel" to (scenario.rrspIncomeCategoryId?.let { categoryLabelById[it] ?: it }),
+    "rrspAccrueRoomFromIncome" to scenario.rrspAccrueRoomFromIncome,
     "rrspAnnualRoomAccrualCap" to (scenario.rrspAnnualRoomAccrualCap?.let { "%.2f".format(it) } ?: "")
 )

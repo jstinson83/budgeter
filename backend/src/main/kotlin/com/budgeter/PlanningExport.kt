@@ -34,6 +34,7 @@ fun planningExportZip(
     scenarios: List<Scenario>,
     transactions: List<Transaction>,
     categories: List<Category>,
+    incomeCategoryId: String? = null,
     today: LocalDate = LocalDate.now()
 ): ByteArray {
     val categoryLabelById = categories.associateBy({ it.id }, { it.label })
@@ -42,13 +43,13 @@ fun planningExportZip(
 
     val goalProjections = goals.map { goal -> goal to projectGoal(goal, entries, transactions, today) }
     val scenarioProjectionsByGoal = goals.associateWith { goal ->
-        scenarios.map { scenario -> scenario to projectScenario(scenario, entries, transactions, goal, today) }
+        scenarios.map { scenario -> scenario to projectScenario(scenario, entries, transactions, goal, incomeCategoryId, today) }
     }
 
     val bytes = ByteArrayOutputStream()
     ZipOutputStream(bytes).use { zip ->
         zip.putNextEntry(ZipEntry("summary.csv"))
-        zip.write(summaryCsv(entries, exportTransactions, exportStart, today).toByteArray())
+        zip.write(summaryCsv(entries, transactions, exportTransactions, categoryLabelById, incomeCategoryId, exportStart, today).toByteArray())
         zip.closeEntry()
 
         zip.putNextEntry(ZipEntry("net_worth.csv"))
@@ -64,7 +65,7 @@ fun planningExportZip(
         zip.closeEntry()
 
         zip.putNextEntry(ZipEntry("scenarios.csv"))
-        zip.write(scenariosCsv(scenarios, categoryLabelById).toByteArray())
+        zip.write(scenariosCsv(scenarios).toByteArray())
         zip.closeEntry()
 
         zip.putNextEntry(ZipEntry("projections.csv"))
@@ -78,10 +79,28 @@ fun planningExportZip(
     return bytes.toByteArray()
 }
 
-private fun summaryCsv(entries: List<NetWorthEntry>, exportTransactions: List<Transaction>, exportStart: LocalDate, today: LocalDate): String {
+// IncomeCategory/RecentMonthlyIncome/RecentMonthlySavingsRate mirror
+// /planning's "Your Numbers" card (NetWorthPage.kt) exactly - same
+// recentCategoryMonthlyAverage/baselineMonthlySavingsRate calls, so this
+// export can't drift from what the page itself shows. RecentMonthlyIncome
+// is blank (not 0) when no income category is set or it has no
+// transactions in the trailing window - see recentCategoryMonthlyAverage's
+// doc comment for why that's a distinct state from a real $0.
+private fun summaryCsv(
+    entries: List<NetWorthEntry>,
+    transactions: List<Transaction>,
+    exportTransactions: List<Transaction>,
+    categoryLabelById: Map<String, String>,
+    incomeCategoryId: String?,
+    exportStart: LocalDate,
+    today: LocalDate
+): String {
     val writer = StringWriter()
     CSVFormat.DEFAULT.builder()
-        .setHeader("ExportDate", "NetWorthAsOf", "NetWorth", "TotalAssets", "TotalLiabilities", "TransactionsFrom", "TransactionsTo", "TransactionCount")
+        .setHeader(
+            "ExportDate", "NetWorthAsOf", "NetWorth", "TotalAssets", "TotalLiabilities", "TransactionsFrom", "TransactionsTo", "TransactionCount",
+            "IncomeCategory", "RecentMonthlyIncome", "RecentMonthlySavingsRate"
+        )
         .build()
         .print(writer)
         .use { printer ->
@@ -89,7 +108,10 @@ private fun summaryCsv(entries: List<NetWorthEntry>, exportTransactions: List<Tr
             val liabilitiesTotal = entries.filter { !it.type.isAsset }.sumOf { it.value }
             printer.printRecord(
                 today, today, netWorthTotal(entries), assetsTotal, liabilitiesTotal,
-                exportStart, today, exportTransactions.size
+                exportStart, today, exportTransactions.size,
+                incomeCategoryId?.let { categoryLabelById[it] ?: it } ?: "",
+                recentCategoryMonthlyAverage(transactions, incomeCategoryId, today) ?: "",
+                baselineMonthlySavingsRate(transactions, today)
             )
         }
     return writer.toString()
@@ -185,10 +207,11 @@ private fun goalsCsv(goalProjections: List<Pair<FinancialGoal, GoalProjection>>)
     return writer.toString()
 }
 
-// RrspIncomeCategory is resolved to its display label (not just the raw
-// Category id) so a verifier without app access can tell what it means -
-// same reasoning transactionsToCsv already applies to Transaction.category.
-private fun scenariosCsv(scenarios: List<Scenario>, categoryLabelById: Map<String, String>): String {
+// RrspAccrueRoomFromIncome no longer carries its own category (that's now
+// summary.csv's IncomeCategory, one household-wide setting rather than
+// picked per scenario - see HouseholdSettingsStore.kt) - just whether this
+// scenario's room accrual is on.
+private fun scenariosCsv(scenarios: List<Scenario>): String {
     val writer = StringWriter()
     CSVFormat.DEFAULT.builder()
         .setHeader(
@@ -196,7 +219,7 @@ private fun scenariosCsv(scenarios: List<Scenario>, categoryLabelById: Map<Strin
             "SalaryChangeDate", "SalaryChangeMonthlyDelta", "SalaryChangeEndDate",
             "SalaryChangeRrspContributionOverride", "SalaryChangeMarginalTaxRateOverridePercent", "SalaryChangeRoomAccrualOverride",
             "RrspMonthlyContribution", "RrspMarginalTaxRatePercent",
-            "RrspRoomRemaining", "RrspReinvestRefund", "RrspIncomeCategory", "RrspAnnualRoomAccrualCap"
+            "RrspRoomRemaining", "RrspReinvestRefund", "RrspAccrueRoomFromIncome", "RrspAnnualRoomAccrualCap"
         )
         .build()
         .print(writer)
@@ -211,7 +234,7 @@ private fun scenariosCsv(scenarios: List<Scenario>, categoryLabelById: Map<Strin
                     scenario.salaryChangeRoomAccrualOverride ?: "",
                     scenario.rrspMonthlyContribution ?: "", scenario.rrspMarginalTaxRate?.let { it * 100 } ?: "",
                     scenario.rrspRoomRemaining ?: "", scenario.rrspReinvestRefund,
-                    scenario.rrspIncomeCategoryId?.let { categoryLabelById[it] ?: it } ?: "",
+                    scenario.rrspAccrueRoomFromIncome,
                     scenario.rrspAnnualRoomAccrualCap ?: ""
                 )
             }

@@ -1587,6 +1587,50 @@ itself.
       or fetches - left blank, accrual is uncapped. `/planning`'s income-
       category `<select>` only offers active categories, filtered/sorted
       the same way `/categories`' own rule-target dropdown is.
+    - **`rrspIncomeCategoryId` replaced by household-wide `HouseholdSettings.incomeCategoryId`
+      + `Scenario.rrspAccrueRoomFromIncome` (landed 2026-08-29).** Prompted
+      by a maintainer bug report: entering a Salary change "Amount ($/mo)"
+      less than their actual income still showed a *positive* projection
+      effect. Not a logic bug - the field is genuinely a delta from the
+      current savings rate (confirmed against the code and its own help
+      text), not a new absolute salary - but nothing on `/planning` ever
+      showed what "today" actually was, so typing in the wrong kind of
+      number was an easy mistake. Fix was a new **"Your Numbers"** card
+      (`NetWorthPage.kt`'s `yourNumbersCardModel`, rendered between the
+      wealth chart and Scenarios) showing the household's real recent
+      **Income** and **Savings rate**, both read straight from transaction
+      history (`ProjectionEngine.kt`'s `recentCategoryMonthlyAverage`, same
+      trailing-`BASELINE_TRAILING_MONTHS`-zero-fill shape
+      `baselineMonthlySavingsRate` already used - returns `null`, not
+      `0.0`, when no category is chosen or it has no transactions in the
+      window, same "no data yet" vs. "a real zero" distinction
+      `resolvedMonthlyMortgagePayment` already draws). Salary change's and
+      RRSP room accrual's help dialogs now point at this card so the
+      delta's reference point is visible in context.
+      Which category counts as income was previously picked per-scenario,
+      nested inside the RRSP strategy facet - awkward once a second thing
+      (this card) needed the same fact regardless of which facets any
+      scenario had configured. Promoted to `HouseholdSettings`
+      (`HouseholdSettingsStore.kt`) - one Firestore doc per owner, same
+      shape as `RecommendationGenerationMarkerStore.kt` - saved via
+      `POST /planning/household-settings` from Your Numbers' own picker.
+      `Scenario.rrspIncomeCategoryId: String?` became
+      `Scenario.rrspAccrueRoomFromIncome: Boolean` (the RRSP room accrual
+      facet's own presence in the form is now the on/off signal, same
+      hidden-fieldset-excludes-inputs mechanism `rrspReinvestRefund`
+      already used - see `CLAUDE.md`'s CSS/layout gotchas section for the
+      general pattern) - `ProjectionEngine.kt`'s `projectScenario` gained
+      an `incomeCategoryId: String?` parameter (the household setting,
+      resolved by the caller) instead of reading it off the scenario, and
+      only accrues when both that parameter and the scenario's boolean are
+      set. `planningExportZip`/`summaryCsv` gained matching
+      `IncomeCategory`/`RecentMonthlyIncome`/`RecentMonthlySavingsRate`
+      columns (mirroring the card exactly, so the export can't drift from
+      what the page shows); `scenariosCsv`'s RRSP column changed from a
+      resolved category label to a plain `RrspAccrueRoomFromIncome`
+      boolean. No existing scenario data needed preserving at the time, so
+      no migration path was built - a future rename of this kind on a
+      populated database would need one.
 - **Mortgage amortization + real estate appreciation** (landed
   2026-08-22, "Fix 1" from a maintainer review of a projections export):
   before this, a `MORTGAGE`/`REAL_ESTATE` `NetWorthEntry` sat frozen at its

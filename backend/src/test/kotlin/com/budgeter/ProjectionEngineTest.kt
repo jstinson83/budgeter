@@ -39,6 +39,31 @@ class ProjectionEngineTest {
         assertEquals(0.0, baselineMonthlySavingsRate(emptyList(), LocalDate.of(2026, 8, 21)), 0.001)
     }
 
+    @Test
+    fun testRecentCategoryMonthlyAverageAveragesTrailingThreeMonthsZeroFillingGaps() {
+        val transactions = listOf(
+            tx("1", "2026-06-15", 5000.0, "SALARY"), // June
+            // July has no SALARY transaction - counts as $0, not skipped
+            tx("2", "2026-08-15", 7000.0, "SALARY")  // Aug
+        )
+        val average = recentCategoryMonthlyAverage(transactions, "SALARY", LocalDate.of(2026, 8, 21))
+        assertEquals(4000.0, average!!, 0.001) // (5000 + 0 + 7000) / 3
+    }
+
+    @Test
+    fun testRecentCategoryMonthlyAverageIsNullWhenNoCategoryChosen() {
+        val transactions = listOf(tx("1", "2026-08-15", 5000.0, "SALARY"))
+        assertNull(recentCategoryMonthlyAverage(transactions, null, LocalDate.of(2026, 8, 21)))
+    }
+
+    @Test
+    fun testRecentCategoryMonthlyAverageIsNullWhenTheCategoryHasNoTransactionsInTheWindow() {
+        // Tagged, but outside the trailing 3-month window - a household that
+        // hasn't tagged anything recently shouldn't see a misleading $0.00.
+        val transactions = listOf(tx("1", "2026-01-15", 5000.0, "SALARY"))
+        assertNull(recentCategoryMonthlyAverage(transactions, "SALARY", LocalDate.of(2026, 8, 21)))
+    }
+
     private fun entry(label: String, type: NetWorthEntryType, value: Double): NetWorthEntry =
         NetWorthEntry("e-$label", "owner", label, type, value)
 
@@ -236,7 +261,7 @@ class ProjectionEngineTest {
         val scenario = Scenario("s1", "owner", "1%/mo growth", annualMarketGrowthRate = 0.12, investedSavingsFraction = 1.0, recreationalSpendAdjustment = 0.0)
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 10, 21), targetAmount = 1.0)
 
-        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21)).points
+        val points = projectScenario(scenario, entries, emptyList(), goal, today = LocalDate.of(2026, 8, 21)).points
 
         assertEquals(3, points.size) // Aug, Sep, Oct
         assertEquals(10000.0, points[0].invested, 0.001)
@@ -255,7 +280,7 @@ class ProjectionEngineTest {
         val scenario = Scenario("s1", "owner", "40% invested", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.4, recreationalSpendAdjustment = 0.0)
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 10, 1), targetAmount = 1.0)
 
-        val points = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21)).points
+        val points = projectScenario(scenario, entries, transactions, goal, today = LocalDate.of(2026, 8, 21)).points
 
         val last = points.last()
         assertEquals(800.0, last.invested, 0.01) // 2 months * 1000/mo * 0.4
@@ -269,7 +294,7 @@ class ProjectionEngineTest {
         val scenario = Scenario("s1", "owner", "Cut spending", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 200.0)
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 9, 21), targetAmount = 1.0)
 
-        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21)).points
+        val points = projectScenario(scenario, entries, emptyList(), goal, today = LocalDate.of(2026, 8, 21)).points
 
         assertEquals(200.0, points.last().cash, 0.001) // 0 baseline + 200 redirected
     }
@@ -283,7 +308,7 @@ class ProjectionEngineTest {
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 10, 1), targetAmount = 1.0)
 
-        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21)).points
+        val points = projectScenario(scenario, entries, emptyList(), goal, today = LocalDate.of(2026, 8, 21)).points
 
         assertEquals(0.0, points[0].cash, 0.001) // Aug: before the raise
         assertEquals(500.0, points[1].cash, 0.001) // Sep: raise applies
@@ -299,7 +324,7 @@ class ProjectionEngineTest {
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 9, 21), targetAmount = 1.0)
 
-        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21)).points
+        val points = projectScenario(scenario, entries, emptyList(), goal, today = LocalDate.of(2026, 8, 21)).points
 
         assertEquals(0.0, points.last().cash, 0.001)
     }
@@ -313,7 +338,7 @@ class ProjectionEngineTest {
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 12, 1), targetAmount = 1.0)
 
-        val points = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21)).points
+        val points = projectScenario(scenario, entries, emptyList(), goal, today = LocalDate.of(2026, 8, 21)).points
 
         assertEquals(0.0, points[0].cash, 0.001)     // Aug: before the cut
         assertEquals(-500.0, points[1].cash, 0.001)  // Sep: cut applies
@@ -338,7 +363,7 @@ class ProjectionEngineTest {
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 12, 1), targetAmount = 1.0)
 
-        val points = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21)).points
+        val points = projectScenario(scenario, entries, transactions, goal, today = LocalDate.of(2026, 8, 21)).points
 
         assertEquals(200.0, points[1].invested, 0.01)  // Sep: override (200) applies
         assertEquals(400.0, points[2].invested, 0.01)  // Oct: override still in effect
@@ -357,7 +382,7 @@ class ProjectionEngineTest {
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
 
-        val result = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21))
+        val result = projectScenario(scenario, entries, emptyList(), goal, today = LocalDate.of(2026, 8, 21))
 
         // 12000 contributed over the year * the 40% override, not the
         // scenario's own 10% - the event (no end date) is still active at
@@ -373,11 +398,11 @@ class ProjectionEngineTest {
             "s1", "owner", "Pay cut, less accrual", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
             salaryChangeDate = LocalDate.of(2026, 9, 1), salaryChangeMonthlyDelta = 0.0,
             salaryChangeRoomAccrualOverride = 10000.0,
-            rrspRoomRemaining = 0.0, rrspIncomeCategoryId = "SALARY"
+            rrspRoomRemaining = 0.0, rrspAccrueRoomFromIncome = true
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
 
-        val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+        val result = projectScenario(scenario, entries, transactions, goal, incomeCategoryId = "SALARY", today = LocalDate.of(2026, 8, 21))
 
         assertEquals(10000.0, result.finalRrspRoomRemaining, 0.01) // override, not the computed 90000
     }
@@ -390,11 +415,11 @@ class ProjectionEngineTest {
             "s1", "owner", "Temporary cut", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
             salaryChangeDate = LocalDate.of(2026, 9, 1), salaryChangeMonthlyDelta = 0.0, salaryChangeEndDate = LocalDate.of(2026, 10, 1),
             salaryChangeRoomAccrualOverride = 10000.0,
-            rrspRoomRemaining = 0.0, rrspIncomeCategoryId = "SALARY"
+            rrspRoomRemaining = 0.0, rrspAccrueRoomFromIncome = true
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
 
-        val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+        val result = projectScenario(scenario, entries, transactions, goal, incomeCategoryId = "SALARY", today = LocalDate.of(2026, 8, 21))
 
         // The event ended well before the 12-month accrual anniversary, so
         // the normal 18%-of-income figure applies instead of the override.
@@ -413,7 +438,7 @@ class ProjectionEngineTest {
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
 
-        val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+        val result = projectScenario(scenario, entries, transactions, goal, today = LocalDate.of(2026, 8, 21))
 
         assertEquals(12000.0, result.points.last().invested, 0.01) // 12 months * $1000 contributed, no growth
         assertEquals(16800.0, result.points.last().cash, 0.01) // 12 * $1000 non-RRSP savings + $4800 refund
@@ -431,7 +456,7 @@ class ProjectionEngineTest {
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
 
-        val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+        val result = projectScenario(scenario, entries, transactions, goal, today = LocalDate.of(2026, 8, 21))
 
         assertEquals(16800.0, result.points.last().invested, 0.01) // 12000 contributed + 4800 refund reinvested
         assertEquals(12000.0, result.points.last().cash, 0.01) // just the 12 * $1000 non-RRSP savings
@@ -446,7 +471,7 @@ class ProjectionEngineTest {
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 12, 21), targetAmount = 1.0)
 
-        val result = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21))
+        val result = projectScenario(scenario, entries, emptyList(), goal, today = LocalDate.of(2026, 8, 21))
 
         assertEquals(0.0, result.finalRrspRoomRemaining, 0.01)
         assertEquals(2500.0, result.points.last().invested, 0.01) // capped at the available room, not 4 * 1000
@@ -459,7 +484,7 @@ class ProjectionEngineTest {
         val scenario = Scenario("s1", "owner", "No RRSP", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0)
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 9, 21), targetAmount = 1.0)
 
-        val result = projectScenario(scenario, entries, emptyList(), goal, LocalDate.of(2026, 8, 21))
+        val result = projectScenario(scenario, entries, emptyList(), goal, today = LocalDate.of(2026, 8, 21))
 
         assertEquals(0.0, result.totalRrspRefunds, 0.001)
         assertEquals(0.0, result.finalRrspRoomRemaining, 0.001)
@@ -473,11 +498,11 @@ class ProjectionEngineTest {
         val transactions = listOf(tx("1", "2026-08-01", 500000.0, "SALARY"))
         val scenario = Scenario(
             "s1", "owner", "Catch-up", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
-            rrspRoomRemaining = 0.0, rrspIncomeCategoryId = "SALARY"
+            rrspRoomRemaining = 0.0, rrspAccrueRoomFromIncome = true
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
 
-        val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+        val result = projectScenario(scenario, entries, transactions, goal, incomeCategoryId = "SALARY", today = LocalDate.of(2026, 8, 21))
 
         assertEquals(90000.0, result.finalRrspRoomRemaining, 0.01) // 500000 * 18%
     }
@@ -488,28 +513,46 @@ class ProjectionEngineTest {
         val transactions = listOf(tx("1", "2026-08-01", 500000.0, "SALARY")) // 18% would be 90000, well above the cap
         val scenario = Scenario(
             "s1", "owner", "Catch-up", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
-            rrspRoomRemaining = 0.0, rrspIncomeCategoryId = "SALARY", rrspAnnualRoomAccrualCap = 31560.0
+            rrspRoomRemaining = 0.0, rrspAccrueRoomFromIncome = true, rrspAnnualRoomAccrualCap = 31560.0
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
 
-        val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+        val result = projectScenario(scenario, entries, transactions, goal, incomeCategoryId = "SALARY", today = LocalDate.of(2026, 8, 21))
 
         assertEquals(31560.0, result.finalRrspRoomRemaining, 0.01)
     }
 
     @Test
-    fun testProjectScenarioWithNoIncomeCategorySetNeverAccruesRoom() {
+    fun testProjectScenarioWithRoomAccrualTurnedOffNeverAccruesRoom() {
         val entries = emptyList<NetWorthEntry>()
-        val transactions = listOf(tx("1", "2026-08-01", 500000.0, "SALARY")) // present, but not tagged in the scenario
+        val transactions = listOf(tx("1", "2026-08-01", 500000.0, "SALARY")) // present, but accrual isn't turned on for this scenario
         val scenario = Scenario(
             "s1", "owner", "No accrual", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
             rrspRoomRemaining = 5000.0
         )
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
 
-        val result = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21))
+        val result = projectScenario(scenario, entries, transactions, goal, incomeCategoryId = "SALARY", today = LocalDate.of(2026, 8, 21))
 
-        assertEquals(5000.0, result.finalRrspRoomRemaining, 0.01) // unchanged - no rrspIncomeCategoryId set
+        assertEquals(5000.0, result.finalRrspRoomRemaining, 0.01) // unchanged - scenario.rrspAccrueRoomFromIncome is false
+    }
+
+    // The household hasn't picked an income category yet (HouseholdSettingsStore.kt) -
+    // even a scenario with room accrual turned on can't accrue anything
+    // without a category to read income from.
+    @Test
+    fun testProjectScenarioWithNoHouseholdIncomeCategorySetNeverAccruesRoom() {
+        val entries = emptyList<NetWorthEntry>()
+        val transactions = listOf(tx("1", "2026-08-01", 500000.0, "SALARY"))
+        val scenario = Scenario(
+            "s1", "owner", "Wants accrual", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0,
+            rrspRoomRemaining = 5000.0, rrspAccrueRoomFromIncome = true
+        )
+        val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2027, 8, 21), targetAmount = 1.0)
+
+        val result = projectScenario(scenario, entries, transactions, goal, today = LocalDate.of(2026, 8, 21))
+
+        assertEquals(5000.0, result.finalRrspRoomRemaining, 0.01) // unchanged - no incomeCategoryId passed in
     }
 
     @Test
@@ -534,7 +577,7 @@ class ProjectionEngineTest {
         val scenario = Scenario("s1", "owner", "No savings", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0)
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 9, 21), targetAmount = 1.0)
 
-        val points = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21)).points
+        val points = projectScenario(scenario, entries, transactions, goal, today = LocalDate.of(2026, 8, 21)).points
 
         assertEquals(500000.0, points[0].cash, 0.001) // 600000 house - 100000 mortgage, no savings yet
         // Month 1: mortgage principal paid = 1000 - (100000*0.06/12=500) = 500;
@@ -556,7 +599,7 @@ class ProjectionEngineTest {
         val scenario = Scenario("s1", "owner", "No savings", annualMarketGrowthRate = 0.0, investedSavingsFraction = 0.0, recreationalSpendAdjustment = 0.0)
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 11, 21), targetAmount = 1.0)
 
-        val points = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21)).points
+        val points = projectScenario(scenario, entries, transactions, goal, today = LocalDate.of(2026, 8, 21)).points
 
         assertEquals(-500.0, points[0].cash, 0.001) // Aug: starting balance
         assertEquals(-250.0, points[1].cash, 0.001) // Sep: one payment in
@@ -575,8 +618,8 @@ class ProjectionEngineTest {
         val scenario = Scenario("s1", "owner", "Growth", annualMarketGrowthRate = 0.06, investedSavingsFraction = 0.5, recreationalSpendAdjustment = 0.0)
         val goal = FinancialGoal("g1", "owner", "Goal", FinancialGoalType.NET_WORTH_TARGET, LocalDate.of(2026, 11, 21), targetAmount = 1.0)
 
-        val viaGoal = projectScenario(scenario, entries, transactions, goal, LocalDate.of(2026, 8, 21)).points
-        val viaTargetDate = projectScenario(scenario, entries, transactions, goal.targetDate, LocalDate.of(2026, 8, 21)).points
+        val viaGoal = projectScenario(scenario, entries, transactions, goal, today = LocalDate.of(2026, 8, 21)).points
+        val viaTargetDate = projectScenario(scenario, entries, transactions, goal.targetDate, today = LocalDate.of(2026, 8, 21)).points
 
         assertEquals(viaGoal.map { it.netWorth }, viaTargetDate.map { it.netWorth })
     }

@@ -419,36 +419,53 @@ class NetWorthRoutesTest {
     }
 
     @Test
-    fun testPlanningPageOffersTheHouseholdsActiveCategoriesForRrspRoomAccrual() = testApplication {
+    fun testPlanningPageOffersTheHouseholdsActiveCategoriesOnTheYourNumbersIncomeSelect() = testApplication {
         testModule()
         val client = signInFakeUser()
         client.get("/categories") // seeds the built-in categories, including INCOME
 
         val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        assertTrue(page.contains("""<option value="INCOME">Income</option>"""))
+        // Not yet selected (no household setting saved), so no `selected`
+        // attribute - matches the same categoryOptions rendering pattern
+        // the mortgage payment-category select elsewhere on this page uses.
+        assertTrue(page.contains("""<option value="INCOME" >Income</option>"""))
     }
 
     @Test
-    fun testAddingAScenarioWithAnIncomeCategoryPersistsTheSelection() = testApplication {
+    fun testSavingTheIncomeCategoryPersistsItAsTheHouseholdSetting() = testApplication {
         testModule()
         val client = signInFakeUser()
         client.get("/categories") // seeds the built-in categories
+
+        client.post("/planning/household-settings") {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("incomeCategoryId=INCOME")
+        }
+
+        val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
+        assertTrue(page.contains("""<option value="INCOME" selected>Income</option>"""))
+    }
+
+    @Test
+    fun testAddingAScenarioWithRoomAccrualTurnedOnPersistsItAndTheCap() = testApplication {
+        testModule()
+        val client = signInFakeUser()
 
         client.post("/planning/scenarios") {
             contentType(ContentType.Application.FormUrlEncoded)
             setBody(
                 "name=Catch-up&annualMarketGrowthRatePercent=7&investedSavingsFractionPercent=100&recreationalSpendAdjustment=0" +
-                    "&rrspIncomeCategoryId=INCOME&rrspAnnualRoomAccrualCap=31560"
+                    "&rrspAccrueRoomFromIncome=true&rrspAnnualRoomAccrualCap=31560"
             )
         }
 
         val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        assertTrue(page.contains("""value="INCOME" selected"""))
+        assertTrue(page.contains("""<span class="tag">room accrual</span>"""))
         assertTrue(page.contains("value=\"31560.00\""))
     }
 
     @Test
-    fun testAddingAScenarioWithNoIncomeCategorySelectedLeavesItUnset() = testApplication {
+    fun testAddingAScenarioWithNoRoomAccrualLeavesItOff() = testApplication {
         testModule()
         val client = signInFakeUser()
 
@@ -458,6 +475,6 @@ class NetWorthRoutesTest {
         }
 
         val page = client.get("/planning") { header(HttpHeaders.Accept, "text/html") }.bodyAsText()
-        assertFalse(page.contains("selected>Income"))
+        assertFalse(page.contains("""<span class="tag">room accrual</span>"""))
     }
 }

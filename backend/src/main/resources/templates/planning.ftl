@@ -85,6 +85,84 @@
       </div>
     </div>
 
+<#-- What every scenario below actually starts from, read straight out of
+     transaction history rather than typed in anywhere - previously
+     invisible (baselineMonthlySavingsRate/the income figure behind RRSP
+     room accrual were both computed but never shown), which made a
+     scenario's numbers hard to sanity-check against reality. See
+     NetWorthPage.kt's yourNumbersCardModel and HouseholdSettingsStore.kt
+     for where these come from; incomeCategoryId is a single household-wide
+     setting saved here, read by both this card and every scenario's RRSP
+     room accrual facet below. -->
+    <div class="form-card">
+      <h2>Your Numbers</h2>
+      <p class="dashboard-card-note">
+        What every scenario below actually starts from, read straight out of your transaction history &mdash; not typed in anywhere. If a scenario looks off, this is the first thing to check.
+      </p>
+
+      <div class="month-summary" style="margin-bottom:0.75rem;">
+        <span class="month-summary-label">Income <span class="month-summary-note"><#if yourNumbers.incomeCategoryId != "">tagged &ldquo;${yourNumbers.incomeCategoryLabel}&rdquo; &middot; trailing 3 months<#else>no category set yet</#if></span></span>
+        <#if yourNumbers.hasRecentIncome>
+        <span class="transaction-amount month-summary-amount ${yourNumbers.recentIncomeClass}">${yourNumbers.recentIncome}/mo</span>
+        <#else>
+        <span class="month-summary-amount month-summary-note">Not enough tagged transactions yet</span>
+        </#if>
+      </div>
+      <div class="month-summary">
+        <span class="month-summary-label">Savings rate <span class="month-summary-note">income minus spending &middot; trailing 3 months</span></span>
+        <span class="transaction-amount month-summary-amount ${yourNumbers.savingsRateClass}">${yourNumbers.savingsRate}/mo</span>
+      </div>
+
+      <#if !yourNumbers.hasRecentIncome>
+      <p class="dashboard-card-note" style="margin-top:0.75rem;">
+        <#if yourNumbers.incomeCategoryId == "">
+        No income category set yet - pick one below, then tag your paycheck deposits with it on <a href="/categories">Categories</a>.
+        <#else>
+        No transactions tagged &ldquo;${yourNumbers.incomeCategoryLabel}&rdquo; in the last 3 months - go tag some on <a href="/categories">Categories</a>, or pick a different category below.
+        </#if>
+      </p>
+      </#if>
+
+      <div class="facet-block" style="margin-top:1.1rem;">
+        <div class="facet-block-header">
+          <span class="facet-block-title-group">
+            <span class="facet-block-title">Which category is Income?</span>
+            <button type="button" class="facet-help-btn" data-open-help="help-your-numbers-income" aria-label="What does this control?">?</button>
+          </span>
+        </div>
+        <form method="post" action="/planning/household-settings">
+          <fieldset class="facet-fieldset">
+            <div class="form-row">
+              <div class="form-field">
+                <span class="form-field-label">Category</span>
+                <select name="incomeCategoryId">
+                  <option value="">None</option>
+                  <#list categoryOptions as option>
+                  <option value="${option.id}" <#if option.id == yourNumbers.incomeCategoryId>selected</#if>>${option.label}</option>
+                  </#list>
+                </select>
+              </div>
+              <div class="form-field" style="justify-content:flex-end; display:flex;">
+                <button type="submit" class="button button-secondary">Save</button>
+              </div>
+            </div>
+          </fieldset>
+        </form>
+        <p class="dashboard-card-note" style="margin-top:0.5rem;">
+          Used here, and by any scenario below with RRSP room accrual turned on - one setting instead of picking it per scenario.
+        </p>
+      </div>
+
+      <dialog class="recategorize-dialog" id="help-your-numbers-income">
+        <h3 class="recategorize-dialog-title">Which category is Income?</h3>
+        <p class="recategorize-dialog-description">Tells this card (and RRSP room accrual, if any scenario below has it turned on) which Category your paycheck deposits are tagged with, so it can read your real income straight out of your transaction history.</p>
+        <p class="recategorize-dialog-description">Tag your salary transactions with a category first (on <a href="/categories">Categories</a>), then pick it here. One setting for the whole household, not per scenario.</p>
+        <div class="recategorize-dialog-actions">
+          <button type="button" class="button button-secondary" data-close-help>Got it</button>
+        </div>
+      </dialog>
+    </div>
+
 <#-- Scenario form facets - each optional group (everything but the core
      name/growth-rate/invested-% fields) starts collapsed behind a "+ Add"
      chip unless already configured, matching how the same optional groups
@@ -121,7 +199,7 @@
                 </span>
                 </#if>
                 <#if scenario.hasRrspStrategy><span class="tag">${scenario.rrspMonthlyContribution}/mo RRSP, ${scenario.rrspRoomRemaining} room left</span></#if>
-                <#if scenario.rrspIncomeCategoryId != ""><span class="tag">room accrual: ${scenario.rrspIncomeCategoryLabel}</span></#if>
+                <#if scenario.rrspAccrueRoomFromIncome><span class="tag">room accrual</span></#if>
               </span>
             </span>
           </summary>
@@ -248,7 +326,7 @@
               </fieldset>
             </div>
 
-            <div class="facet-block" data-facet="rrsp-accrual"<#if scenario.rrspIncomeCategoryId == ""> hidden</#if>>
+            <div class="facet-block" data-facet="rrsp-accrual"<#if !scenario.rrspAccrueRoomFromIncome> hidden</#if>>
               <div class="facet-block-header">
                 <span class="facet-block-title-group">
                   <span class="facet-block-title">RRSP room accrual</span>
@@ -256,17 +334,16 @@
                 </span>
                 <button type="button" class="facet-remove" data-remove-facet="rrsp-accrual">Remove</button>
               </div>
-              <fieldset class="facet-fieldset"<#if scenario.rrspIncomeCategoryId == ""> disabled</#if>>
+              <fieldset class="facet-fieldset"<#if !scenario.rrspAccrueRoomFromIncome> disabled</#if>>
+                <#-- No visible checkbox - this facet's own presence (hidden/
+                     disabled together, see the shared add/remove-facet script
+                     below) already is the on/off signal, same as
+                     recreationalSpendAdjustment's facet. Which category counts
+                     as income is a household-wide setting now (Your Numbers,
+                     above) rather than picked per scenario - see
+                     ScenarioStore.kt's rrspAccrueRoomFromIncome doc comment. -->
+                <input type="hidden" name="rrspAccrueRoomFromIncome" value="true">
                 <div class="form-row">
-                  <div class="form-field">
-                    <span class="form-field-label">Income category</span>
-                    <select name="rrspIncomeCategoryId">
-                      <option value="">None</option>
-                      <#list categoryOptions as option>
-                      <option value="${option.id}" <#if option.id == scenario.rrspIncomeCategoryId>selected</#if>>${option.label}</option>
-                      </#list>
-                    </select>
-                  </div>
                   <div class="form-field">
                     <span class="form-field-label">Annual accrual cap ($, optional)</span>
                     <input type="number" name="rrspAnnualRoomAccrualCap" value="${scenario.rrspAnnualRoomAccrualCap}" step="0.01" min="0">
@@ -285,7 +362,7 @@
               <#if !scenario.hasRrspStrategy>
               <button type="button" class="facet-add-chip" data-add-facet="rrsp-strategy"><span class="facet-add-chip-plus">+</span> RRSP strategy</button>
               </#if>
-              <#if scenario.rrspIncomeCategoryId == "">
+              <#if !scenario.rrspAccrueRoomFromIncome>
               <button type="button" class="facet-add-chip" data-add-facet="rrsp-accrual"><span class="facet-add-chip-plus">+</span> RRSP room accrual</button>
               </#if>
             </div>
@@ -442,16 +519,8 @@
             <button type="button" class="facet-remove" data-remove-facet="rrsp-accrual">Remove</button>
           </div>
           <fieldset class="facet-fieldset" disabled>
+            <input type="hidden" name="rrspAccrueRoomFromIncome" value="true">
             <div class="form-row">
-              <div class="form-field">
-                <span class="form-field-label">Income category</span>
-                <select name="rrspIncomeCategoryId">
-                  <option value="">None</option>
-                  <#list categoryOptions as option>
-                  <option value="${option.id}">${option.label}</option>
-                  </#list>
-                </select>
-              </div>
               <div class="form-field">
                 <span class="form-field-label">Annual accrual cap ($, optional)</span>
                 <input type="number" name="rrspAnnualRoomAccrualCap" step="0.01" min="0">
@@ -491,7 +560,7 @@
 
       <dialog class="recategorize-dialog" id="help-salary">
         <h3 class="recategorize-dialog-title">Salary change</h3>
-        <p class="recategorize-dialog-description">Models a one-time, dated change to your monthly savings rate &mdash; a raise, a pay cut, a career switch. Takes effect from its date onward. A negative amount models a deliberate pay cut, not just a raise.</p>
+        <p class="recategorize-dialog-description">Amount is a <strong>change</strong> from what you make today, not your new total salary &mdash; check Your Numbers' Income stat above to see what that baseline actually is. Models a one-time, dated change to your monthly savings rate &mdash; a raise, a pay cut, a career switch. Takes effect from its date onward. A negative amount models a deliberate pay cut, not just a raise.</p>
         <p class="recategorize-dialog-description">Set <strong>Reverts on</strong> if it's temporary (e.g. a year of reduced hours); leave it blank for a permanent change.</p>
         <div class="recategorize-dialog-actions">
           <button type="button" class="button button-secondary" data-close-help>Got it</button>
@@ -518,8 +587,8 @@
 
       <dialog class="recategorize-dialog" id="help-rrsp-accrual">
         <h3 class="recategorize-dialog-title">RRSP room accrual</h3>
-        <p class="recategorize-dialog-description">Grows your remaining RRSP room automatically each year &mdash; 18% of whatever category you tag as income, summed over the trailing 12 months &mdash; instead of leaving it fixed at whatever you typed in.</p>
-        <p class="recategorize-dialog-description">Tag your salary transactions with a category first (on <a href="/categories">Categories</a>), then pick it here. The optional annual cap mirrors a real CRA limit, which changes yearly, so it's a number you look up and enter rather than one this app assumes.</p>
+        <p class="recategorize-dialog-description">Grows your remaining RRSP room automatically each year &mdash; 18% of your Income (set in Your Numbers, above), summed over the trailing 12 months &mdash; instead of leaving it fixed at whatever you typed in.</p>
+        <p class="recategorize-dialog-description">Set which category counts as Income once, in Your Numbers, and every scenario with this turned on reads the same number. The optional annual cap mirrors a real CRA limit, which changes yearly, so it's a number you look up and enter rather than one this app assumes.</p>
         <div class="recategorize-dialog-actions">
           <button type="button" class="button button-secondary" data-close-help>Got it</button>
         </div>

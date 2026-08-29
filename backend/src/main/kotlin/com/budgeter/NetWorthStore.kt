@@ -55,9 +55,9 @@ data class NetWorthEntry(
     // monthlyPayment is deliberately *not* a manually-typed field, though:
     // the payment is already sitting in tracked transaction history under a
     // category tag (mortgagePaymentCategoryId points at a household
-    // Category, same as Scenario.rrspIncomeCategoryId - "we already do this
-    // for the RRSP income category, find the amount the same way" rather
-    // than asking the household to type a number in by hand). See
+    // Category, same as HouseholdSettings.incomeCategoryId - "we already do
+    // this for the household's income category, find the amount the same
+    // way" rather than asking the household to type a number in by hand). See
     // ProjectionEngine.kt's resolvedMonthlyMortgagePayment for how the
     // actual payment figure gets derived from it.
     val annualInterestRate: Double? = null,
