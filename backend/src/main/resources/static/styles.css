@@ -1775,14 +1775,15 @@ fieldset.facet-fieldset:disabled select {
 
 .facet-help-btn {
   flex: 0 0 auto;
-  width: 1.3rem;
-  height: 1.3rem;
+  width: 1.4rem;
+  height: 1.4rem;
   border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-dim);
-  font-size: 0.68rem;
+  border: 1px solid var(--brass-line);
+  background: var(--brass-soft-bg);
+  color: var(--brass);
+  font-size: 0.72rem;
   font-weight: 700;
+  line-height: 1;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -1790,7 +1791,7 @@ fieldset.facet-fieldset:disabled select {
   padding: 0;
   font-family: inherit;
 }
-.facet-help-btn:hover { color: var(--brass); border-color: var(--brass-line); background: var(--brass-soft-bg); }
+.facet-help-btn:hover { background: var(--brass); border-color: var(--brass); color: var(--surface); }
 .facet-help-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
 
 .priority-badge {
