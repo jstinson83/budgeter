@@ -35,7 +35,7 @@ class PlanningExportTest {
 
     @Test
     fun testExportContainsOneCsvPerSection() {
-        val bytes = planningExportZip(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), today)
+        val bytes = planningExportZip(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), today = today)
         val files = readZip(bytes)
 
         assertEquals(
@@ -52,7 +52,7 @@ class PlanningExportTest {
             tx("too-old", date = today.minusMonths(7), amount = -20.0, category = "GROCERIES")
         )
         val categories = listOf(Category("GROCERIES", "owner", "Groceries"))
-        val bytes = planningExportZip(emptyList(), emptyList(), emptyList(), transactions, categories, today)
+        val bytes = planningExportZip(emptyList(), emptyList(), emptyList(), transactions, categories, today = today)
         val csv = readZip(bytes)["monthly_category_totals.csv"]!!
         val lines = csv.trim().lines()
 
@@ -67,7 +67,7 @@ class PlanningExportTest {
         val transactions = listOf(
             tx("secret-id", date = today.minusMonths(1), amount = -10.0, description = "Planned Parenthood")
         )
-        val bytes = planningExportZip(emptyList(), emptyList(), emptyList(), transactions, emptyList(), today)
+        val bytes = planningExportZip(emptyList(), emptyList(), emptyList(), transactions, emptyList(), today = today)
         val csv = readZip(bytes)["monthly_category_totals.csv"]!!
 
         assertFalse(csv.contains("Planned Parenthood"))
@@ -80,7 +80,7 @@ class PlanningExportTest {
             entry("Brokerage", NetWorthEntryType.INVESTMENT, 20000.0),
             entry("Mortgage", NetWorthEntryType.MORTGAGE, 18000.0)
         )
-        val bytes = planningExportZip(entries, emptyList(), emptyList(), emptyList(), emptyList(), today)
+        val bytes = planningExportZip(entries, emptyList(), emptyList(), emptyList(), emptyList(), today = today)
         val files = readZip(bytes)
 
         val netWorthCsv = files["net_worth.csv"]!!
@@ -97,7 +97,7 @@ class PlanningExportTest {
         val goals = listOf(goal("House", targetAmount = 50000.0, targetDate = today.plusYears(2)))
         val scenarios = listOf(scenario("Aggressive growth"))
 
-        val bytes = planningExportZip(entries, goals, scenarios, emptyList(), emptyList(), today)
+        val bytes = planningExportZip(entries, goals, scenarios, emptyList(), emptyList(), today = today)
         val outcomesCsv = readZip(bytes)["outcomes.csv"]!!
         val lines = outcomesCsv.trim().lines()
 
@@ -107,16 +107,50 @@ class PlanningExportTest {
     }
 
     @Test
-    fun testScenariosCsvResolvesRrspIncomeCategoryToItsLabel() {
+    fun testScenariosCsvReportsWhetherRoomAccrualIsTurnedOn() {
         val scenarios = listOf(
-            scenario("With RRSP").copy(rrspIncomeCategoryId = "SALARY")
+            scenario("With accrual").copy(rrspAccrueRoomFromIncome = true),
+            scenario("Without accrual")
+        )
+
+        val bytes = planningExportZip(emptyList(), emptyList(), scenarios, emptyList(), emptyList(), today = today)
+        val csv = readZip(bytes)["scenarios.csv"]!!
+        val lines = csv.trim().lines()
+
+        assertTrue(lines.any { it.startsWith("With accrual,") && it.contains(",true,") })
+        assertTrue(lines.any { it.startsWith("Without accrual,") && it.contains(",false,") })
+    }
+
+    // IncomeCategory/RecentMonthlyIncome/RecentMonthlySavingsRate mirror
+    // /planning's "Your Numbers" card (NetWorthPage.kt) - see summaryCsv's
+    // doc comment (PlanningExport.kt) for why this can't drift from what
+    // the page itself shows.
+    @Test
+    fun testSummaryCsvResolvesTheIncomeCategoryToItsLabelAndReportsRecentIncomeAndSavingsRate() {
+        val transactions = listOf(
+            tx("in-1", date = today.minusMonths(1), amount = 6000.0, category = "SALARY")
         )
         val categories = listOf(Category("SALARY", "owner", "Salary"))
 
-        val bytes = planningExportZip(emptyList(), emptyList(), scenarios, emptyList(), categories, today)
-        val csv = readZip(bytes)["scenarios.csv"]!!
+        val bytes = planningExportZip(emptyList(), emptyList(), emptyList(), transactions, categories, "SALARY", today)
+        val csv = readZip(bytes)["summary.csv"]!!
+        val lines = csv.trim().lines()
 
-        assertTrue(csv.contains("Salary"))
-        assertFalse(csv.contains("SALARY"))
+        assertEquals(
+            "ExportDate,NetWorthAsOf,NetWorth,TotalAssets,TotalLiabilities,TransactionsFrom,TransactionsTo,TransactionCount,IncomeCategory,RecentMonthlyIncome,RecentMonthlySavingsRate",
+            lines[0]
+        )
+        assertTrue(lines[1].contains("Salary"))
+        assertFalse(lines[1].contains("SALARY"))
+        assertTrue(lines[1].endsWith("2000.0,2000.0")) // 6000 / 3 trailing months, both income and savings rate
+    }
+
+    @Test
+    fun testSummaryCsvLeavesRecentMonthlyIncomeBlankWhenNoIncomeCategoryIsSet() {
+        val bytes = planningExportZip(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), today = today)
+        val csv = readZip(bytes)["summary.csv"]!!
+        val lines = csv.trim().lines()
+
+        assertTrue(lines[1].endsWith(",,0.0")) // blank IncomeCategory, blank RecentMonthlyIncome, 0.0 savings rate
     }
 }

@@ -60,6 +60,7 @@ fun ApplicationTestBuilder.testModule(
     netWorthEntryStore: NetWorthEntryRepository = FakeNetWorthEntryRepository(),
     financialGoalStore: FinancialGoalRepository = FakeFinancialGoalRepository(),
     scenarioStore: ScenarioRepository = FakeScenarioRepository(),
+    householdSettingsStore: HouseholdSettingsRepository = FakeHouseholdSettingsRepository(),
     houseDocumentStore: HouseDocumentRepository = FakeHouseDocumentRepository(),
     houseFactStore: HouseFactRepository = FakeHouseFactRepository(),
     documentBlobStore: DocumentBlobStore = FakeDocumentBlobStore(),
@@ -84,6 +85,7 @@ fun ApplicationTestBuilder.testModule(
             netWorthEntryStore = netWorthEntryStore,
             financialGoalStore = financialGoalStore,
             scenarioStore = scenarioStore,
+            householdSettingsStore = householdSettingsStore,
             houseDocumentStore = houseDocumentStore,
             houseFactStore = houseFactStore,
             documentBlobStore = documentBlobStore,
@@ -360,14 +362,14 @@ class FakeScenarioRepository : ScenarioRepository {
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
         rrspReinvestRefund: Boolean,
-        rrspIncomeCategoryId: String?,
+        rrspAccrueRoomFromIncome: Boolean,
         rrspAnnualRoomAccrualCap: Double?
     ): Scenario {
         val scenario = Scenario(
             "scenario-${nextId++}", ownerId, name, annualMarketGrowthRate, investedSavingsFraction, recreationalSpendAdjustment,
             salaryChangeDate, salaryChangeMonthlyDelta, salaryChangeEndDate, salaryChangeRrspContributionOverride,
             salaryChangeMarginalTaxRateOverride, salaryChangeRoomAccrualOverride, rrspMonthlyContribution, rrspMarginalTaxRate,
-            rrspRoomRemaining, rrspReinvestRefund, rrspIncomeCategoryId, rrspAnnualRoomAccrualCap
+            rrspRoomRemaining, rrspReinvestRefund, rrspAccrueRoomFromIncome, rrspAnnualRoomAccrualCap
         )
         scenarios += scenario
         return scenario
@@ -390,7 +392,7 @@ class FakeScenarioRepository : ScenarioRepository {
         rrspMarginalTaxRate: Double?,
         rrspRoomRemaining: Double?,
         rrspReinvestRefund: Boolean,
-        rrspIncomeCategoryId: String?,
+        rrspAccrueRoomFromIncome: Boolean,
         rrspAnnualRoomAccrualCap: Double?
     ): Scenario? {
         val index = scenarios.indexOfFirst { it.id == id && it.ownerId == ownerId }
@@ -410,7 +412,7 @@ class FakeScenarioRepository : ScenarioRepository {
             rrspMarginalTaxRate = rrspMarginalTaxRate,
             rrspRoomRemaining = rrspRoomRemaining,
             rrspReinvestRefund = rrspReinvestRefund,
-            rrspIncomeCategoryId = rrspIncomeCategoryId,
+            rrspAccrueRoomFromIncome = rrspAccrueRoomFromIncome,
             rrspAnnualRoomAccrualCap = rrspAnnualRoomAccrualCap
         )
         scenarios[index] = updated
@@ -419,6 +421,20 @@ class FakeScenarioRepository : ScenarioRepository {
 
     override suspend fun delete(ownerId: String, id: String) {
         scenarios.removeAll { it.id == id && it.ownerId == ownerId }
+    }
+}
+
+// In-memory stand-in for FirestoreHouseholdSettingsStore - same one-doc-
+// per-owner shape as FakeRecommendationGenerationMarkerRepository below.
+class FakeHouseholdSettingsRepository : HouseholdSettingsRepository {
+    private val settings = mutableMapOf<String, HouseholdSettings>()
+
+    override suspend fun get(ownerId: String): HouseholdSettings = settings[ownerId] ?: HouseholdSettings(ownerId)
+
+    override suspend fun save(ownerId: String, incomeCategoryId: String?): HouseholdSettings {
+        val saved = HouseholdSettings(ownerId, incomeCategoryId)
+        settings[ownerId] = saved
+        return saved
     }
 }
 

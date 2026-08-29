@@ -26,7 +26,8 @@ fun Route.netWorthRoutes(
     financialGoalStore: FinancialGoalRepository,
     scenarioStore: ScenarioRepository,
     transactionStore: TransactionRepository,
-    categoryStore: CategoryRepository
+    categoryStore: CategoryRepository,
+    householdSettingsStore: HouseholdSettingsRepository
 ) {
     get("/planning") {
         val ownerId = call.requireUserId()
@@ -35,9 +36,10 @@ fun Route.netWorthRoutes(
         val scenarios = scenarioStore.all(ownerId)
         val transactions = transactionStore.all(ownerId)
         val categories = categoryStore.all(ownerId)
+        val householdSettings = householdSettingsStore.get(ownerId)
         val message = call.request.queryParameters["message"]
         val error = call.request.queryParameters["error"]
-        val model = netWorthPageModel(entries, goals, scenarios, transactions, categories, message, error) + call.currentUserModel()
+        val model = netWorthPageModel(entries, goals, scenarios, transactions, categories, householdSettings, message, error) + call.currentUserModel()
         call.respond(FreeMarkerContent("planning.ftl", model))
     }
 
@@ -50,13 +52,27 @@ fun Route.netWorthRoutes(
         val scenarios = scenarioStore.all(ownerId)
         val transactions = transactionStore.all(ownerId)
         val categories = categoryStore.all(ownerId)
+        val householdSettings = householdSettingsStore.get(ownerId)
         val today = LocalDate.now()
-        val zipBytes = planningExportZip(entries, goals, scenarios, transactions, categories, today)
+        val zipBytes = planningExportZip(entries, goals, scenarios, transactions, categories, householdSettings.incomeCategoryId, today)
         call.response.header(
             HttpHeaders.ContentDisposition,
             ContentDisposition.Attachment.withParameter(ContentDisposition.Parameters.FileName, "planning-export-$today.zip").toString()
         )
         call.respondBytes(zipBytes, ContentType.Application.Zip)
+    }
+
+    // Saves which Category represents household income - read by /planning's
+    // "Your Numbers" card (NetWorthPage.kt) for its Income stat, and by every
+    // scenario with RRSP room accrual on (Scenario.rrspAccrueRoomFromIncome) -
+    // see HouseholdSettingsStore.kt for why this lives here instead of being
+    // picked per scenario. "" (the select's "None" option) clears it.
+    post("/planning/household-settings") {
+        val ownerId = call.requireUserId()
+        val formParams = call.receiveParameters()
+        val incomeCategoryId = formParams["incomeCategoryId"]?.trim()?.takeIf { it.isNotEmpty() }
+        householdSettingsStore.save(ownerId, incomeCategoryId)
+        call.respondRedirect("/planning?message=${"Saved".encodeURLQueryComponent()}")
     }
 
     post("/planning/entries") {
@@ -131,7 +147,7 @@ fun Route.netWorthRoutes(
             input.recreationalSpendAdjustment, input.salaryChangeDate, input.salaryChangeMonthlyDelta,
             input.salaryChangeEndDate, input.salaryChangeRrspContributionOverride, input.salaryChangeMarginalTaxRateOverride,
             input.salaryChangeRoomAccrualOverride, input.rrspMonthlyContribution, input.rrspMarginalTaxRate,
-            input.rrspRoomRemaining, input.rrspReinvestRefund, input.rrspIncomeCategoryId, input.rrspAnnualRoomAccrualCap
+            input.rrspRoomRemaining, input.rrspReinvestRefund, input.rrspAccrueRoomFromIncome, input.rrspAnnualRoomAccrualCap
         )
         call.respondRedirect("/planning?message=${"Added ${scenario.name}".encodeURLQueryComponent()}")
     }
@@ -147,7 +163,7 @@ fun Route.netWorthRoutes(
             input.recreationalSpendAdjustment, input.salaryChangeDate, input.salaryChangeMonthlyDelta,
             input.salaryChangeEndDate, input.salaryChangeRrspContributionOverride, input.salaryChangeMarginalTaxRateOverride,
             input.salaryChangeRoomAccrualOverride, input.rrspMonthlyContribution, input.rrspMarginalTaxRate,
-            input.rrspRoomRemaining, input.rrspReinvestRefund, input.rrspIncomeCategoryId, input.rrspAnnualRoomAccrualCap
+            input.rrspRoomRemaining, input.rrspReinvestRefund, input.rrspAccrueRoomFromIncome, input.rrspAnnualRoomAccrualCap
         )
         val message = if (updated != null) "Updated ${updated.name}" else "Scenario not found"
         val param = if (updated != null) "message" else "error"
@@ -176,7 +192,7 @@ private data class EntryFormInput(
 // no category to derive a payment from (or vice versa) can't drive an
 // amortization schedule. The payment itself is never typed in by hand - see
 // NetWorthEntry's doc comment for why this points at a household Category
-// (the same tagged-category pattern Scenario.rrspIncomeCategoryId already
+// (the same tagged-category pattern HouseholdSettings.incomeCategoryId already
 // uses) instead of a raw dollar figure. Appreciation is its own independent
 // optional field. All three are accepted regardless of the chosen `type`
 // (same posture planning.ftl already takes with Scenario's RRSP fields) -
@@ -257,7 +273,7 @@ private data class ScenarioFormInput(
     val rrspMarginalTaxRate: Double?,
     val rrspRoomRemaining: Double?,
     val rrspReinvestRefund: Boolean,
-    val rrspIncomeCategoryId: String?,
+    val rrspAccrueRoomFromIncome: Boolean,
     val rrspAnnualRoomAccrualCap: Double?
 )
 
@@ -330,9 +346,12 @@ private fun parseScenarioForm(formParams: Parameters): ScenarioFormInput? {
     val rrspReinvestRefund = formParams["rrspReinvestRefund"] != null
     // Independent of the contribution trio above - a household can track
     // room accrual without necessarily contributing in this scenario, or
-    // vice versa. "" (the add form's default "no category selected"
-    // option) means no accrual, same as never selecting one.
-    val rrspIncomeCategoryId = formParams["rrspIncomeCategoryId"]?.trim()?.takeIf { it.isNotEmpty() }
+    // vice versa. Same "a disabled fieldset excludes its inputs" mechanism
+    // rrspReinvestRefund above relies on: planning.ftl's rrsp-accrual facet
+    // carries a hidden `rrspAccrueRoomFromIncome=true` marker input inside
+    // its fieldset, so removing the facet (disabling the fieldset) is what
+    // makes this absent from the submitted form, same as never adding it.
+    val rrspAccrueRoomFromIncome = formParams["rrspAccrueRoomFromIncome"] != null
     val rrspAnnualRoomAccrualCap = formParams["rrspAnnualRoomAccrualCap"]?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()?.takeIf { it >= 0 }
 
     return ScenarioFormInput(
@@ -350,7 +369,7 @@ private fun parseScenarioForm(formParams: Parameters): ScenarioFormInput? {
         rrspMarginalTaxRate,
         rrspRoomRemaining,
         rrspReinvestRefund,
-        rrspIncomeCategoryId,
+        rrspAccrueRoomFromIncome,
         rrspAnnualRoomAccrualCap
     )
 }

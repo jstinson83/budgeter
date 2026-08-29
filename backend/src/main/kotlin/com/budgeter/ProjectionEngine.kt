@@ -51,6 +51,32 @@ fun baselineMonthlySavingsRate(transactions: List<Transaction>, asOf: LocalDate 
     return series.map { it.second }.average()
 }
 
+// Trailing-3-month average of one Category's monthly total. Powers
+// /planning's "Your Numbers" card (NetWorthPage.kt) - the Income stat
+// households read right next to Salary change's Amount ($/mo) field, so
+// they can see what they actually make before typing in a change relative
+// to it. Unlike baselineMonthlySavingsRate's zero-fill (a genuinely $0
+// month is a meaningful savings-rate answer), this returns null - not
+// 0.0 - both when categoryId is null and when the category has no
+// transactions anywhere in the window, same "no data yet" vs. "a real
+// zero" distinction resolvedMonthlyMortgagePayment above already draws:
+// an empty Income category almost always means nothing's tagged that way
+// yet, not that the household earned nothing this quarter.
+fun recentCategoryMonthlyAverage(transactions: List<Transaction>, categoryId: String?, asOf: LocalDate = LocalDate.now()): Double? {
+    if (categoryId == null) return null
+    val endMonth = YearMonth.from(asOf)
+    val startMonth = endMonth.minusMonths((BASELINE_TRAILING_MONTHS - 1).toLong())
+    val byMonth = transactions
+        .filter { it.category == categoryId }
+        .groupBy { YearMonth.from(it.date) }
+        .filterKeys { !it.isBefore(startMonth) && !it.isAfter(endMonth) }
+    if (byMonth.isEmpty()) return null
+    val series = (0 until BASELINE_TRAILING_MONTHS).map { offset ->
+        byMonth[startMonth.plusMonths(offset.toLong())]?.sumOf { it.amount } ?: 0.0
+    }
+    return series.average()
+}
+
 data class ProjectionPoint(val date: LocalDate, val netWorth: Double)
 
 // Month-by-month interest/principal amortization for one MORTGAGE entry's
@@ -95,9 +121,9 @@ private fun appreciateMonthly(startingValue: Double, annualRate: Double, months:
 
 // The monthly payment for a mortgage entry is never typed in by hand - see
 // NetWorthEntry.mortgagePaymentCategoryId's doc comment for why ("we
-// already do this for the RRSP income category, find the amount the same
-// way" - Scenario.rrspIncomeCategoryId in ScenarioStore.kt is the existing
-// precedent). Resolved as the *median* of the tagged category's monthly
+// already do this for the household's income category, find the amount
+// the same way" - HouseholdSettings.incomeCategoryId (HouseholdSettingsStore.kt)
+// is the existing precedent). Resolved as the *median* of the tagged category's monthly
 // totals over the trailing BASELINE_TRAILING_MONTHS window ending at
 // `asOf` - median rather than average specifically because a mortgage
 // payment is normally a fixed recurring amount: the maintainer's own
@@ -274,10 +300,15 @@ data class ScenarioProjection(
 // Same projection, tied to one goal's own target date - kept for the
 // goal-scoped chart (currently hidden from /planning's UI, see CLAUDE.md,
 // but still used by the verification export) and PlanningExport.kt.
-fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactions: List<Transaction>, goal: FinancialGoal, today: LocalDate = LocalDate.now()): ScenarioProjection =
-    projectScenario(scenario, entries, transactions, goal.targetDate, today)
+fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactions: List<Transaction>, goal: FinancialGoal, incomeCategoryId: String? = null, today: LocalDate = LocalDate.now()): ScenarioProjection =
+    projectScenario(scenario, entries, transactions, goal.targetDate, incomeCategoryId, today)
 
-fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactions: List<Transaction>, targetDate: LocalDate, today: LocalDate = LocalDate.now()): ScenarioProjection {
+// incomeCategoryId is the household-wide setting (HouseholdSettingsStore.kt)
+// rather than anything Scenario itself carries - see
+// Scenario.rrspAccrueRoomFromIncome's doc comment for why the category
+// choice and the per-scenario "accrue room from it or not" strategy
+// decision were split apart.
+fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactions: List<Transaction>, targetDate: LocalDate, incomeCategoryId: String? = null, today: LocalDate = LocalDate.now()): ScenarioProjection {
     val startingInvested = entries.filter { it.type == NetWorthEntryType.INVESTMENT }.sumOf { it.value }
     val startingCash = netWorthTotal(entries) - startingInvested
     val baselineRate = baselineMonthlySavingsRate(transactions, today)
@@ -287,10 +318,12 @@ fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactio
     // assumed to repeat" simplification baselineMonthlySavingsRate already
     // uses) - the engine has no way to project future income growth, only
     // to read what a household has already tagged with this category.
-    val annualIncome = scenario.rrspIncomeCategoryId?.let { categoryId ->
+    val annualIncome = if (scenario.rrspAccrueRoomFromIncome && incomeCategoryId != null) {
         val start = today.minusMonths(12)
-        transactions.filter { it.category == categoryId && !it.date.isBefore(start) && it.date.isBefore(today) }.sumOf { it.amount }
-    } ?: 0.0
+        transactions.filter { it.category == incomeCategoryId && !it.date.isBefore(start) && it.date.isBefore(today) }.sumOf { it.amount }
+    } else {
+        0.0
+    }
 
     val startMonth = YearMonth.from(today)
     val endMonth = YearMonth.from(targetDate)
@@ -333,8 +366,8 @@ fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactio
         // into a fully-invested, room-limited bucket rather than adding
         // extra money on top - capped by whatever room is left, so the
         // simulation can't keep contributing once the room is exhausted.
-        // Room only decreases here unless rrspIncomeCategoryId is set (see
-        // the accrual step below), which is why "resume normal investing
+        // Room only decreases here unless rrspAccrueRoomFromIncome is set
+        // (see the accrual step below), which is why "resume normal investing
         // once caught up" falls out of this cap alone with no separate
         // switch needed.
         val rrspContribution = if (effectiveRrspMonthlyContribution != null) {
@@ -371,7 +404,7 @@ fun projectScenario(scenario: Scenario, entries: List<NetWorthEntry>, transactio
             // without a current contribution plan, or (the catch-up case
             // this was built for) keep accruing a little more room on top
             // of a large existing pool being drawn down.
-            if (scenario.rrspIncomeCategoryId != null) {
+            if (scenario.rrspAccrueRoomFromIncome && incomeCategoryId != null) {
                 val rawAccrual = annualIncome * RRSP_ROOM_ACCRUAL_RATE
                 val computedAccrual = scenario.rrspAnnualRoomAccrualCap?.let { cap -> minOf(rawAccrual, cap) } ?: rawAccrual
                 val accrual = if (salaryChangeActive && scenario.salaryChangeRoomAccrualOverride != null) {
