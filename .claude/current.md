@@ -153,6 +153,19 @@ scoped - revisit only if they come up:**
 - Retirement/decumulation phase transition - the projection engine has no
   withdrawal-phase modeling at all today; a "stop earning, start spending
   down" event needs that groundwork first, not just a new event type.
+- Spousal RRSP/marginal-rate splitting (raised 2026-08-29) - `Scenario`
+  currently applies one blended income category, marginal rate, and RRSP
+  contribution/room to the whole household. A household with a large
+  income gap between spouses and separate RRSP contributions is only
+  modeled precisely if the higher earner funds most of it; splitting would
+  need per-spouse income category, marginal rate, contribution, and room
+  tracking. Deliberately not scoped - revisit only if the blended
+  approximation's actual dollar impact turns out to matter, not
+  preemptively. (Employer-match RRSP growth, raised the same discussion,
+  was decided *not* to need a modeling fix - `INVESTMENT`-typed
+  `NetWorthEntry.value` is read live at projection time, so periodically
+  updating the balance by hand from a real statement already captures
+  contribution + match growth correctly with no engine change needed.)
 
 **Phase 4/5 below talk about "goal status"/"the goal projection" - stale
 wording now that goals are hidden from `/planning`'s UI (see the
