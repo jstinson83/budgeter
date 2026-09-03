@@ -13,10 +13,19 @@ import java.time.LocalDate
 // "PAYMENT - THANK YOU" row, and a bank "TFR-TO/FR <account-num>" row pairs
 // with a line-of-credit "TFR-FR/TO" row) and to keep a credit card's
 // incoming payments from ever being mistaken for income in analysis.
+//
+// USD_BANK is a second, separate BANK-like account (same TD statement
+// format and transfer markers, confirmed against a real USD account
+// export) rather than reusing BANK itself - it needs its own bucket for
+// AccountCoverage/dashboard freshness reporting, and its amounts arrive in
+// USD needing conversion at upload time (see TransactionRoutes.kt's
+// conversionRate handling) rather than being directly summable with CAD
+// amounts.
 enum class AccountType(val label: String) {
     BANK("Bank"),
     CREDIT_CARD("Credit Card"),
-    LOC("Line of Credit")
+    LOC("Line of Credit"),
+    USD_BANK("USD Bank")
 }
 
 data class Transaction(

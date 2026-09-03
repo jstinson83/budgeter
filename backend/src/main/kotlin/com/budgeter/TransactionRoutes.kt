@@ -9,6 +9,18 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.utils.io.toByteArray
 
+// The original USD amount has nowhere else to live - Transaction has no
+// currency field (see AccountType's doc comment) - so it's kept in the
+// description rather than silently discarded, in case the conversion rate
+// needs double-checking later.
+private fun ParsedTransaction.convertedToCad(conversionRate: Double): ParsedTransaction {
+    val usdAmount = amount
+    return copy(
+        amount = usdAmount * conversionRate,
+        description = "$description (USD ${"%.2f".format(usdAmount)} @ $conversionRate)"
+    )
+}
+
 fun Route.transactionRoutes(transactionStore: TransactionRepository) {
     get("/transactions") {
         val ownerId = call.requireUserId()
@@ -32,10 +44,12 @@ fun Route.transactionRoutes(transactionStore: TransactionRepository) {
 
         var csvText: String? = null
         var accountTypeRaw: String? = null
+        var conversionRateRaw: String? = null
         call.receiveMultipart().forEachPart { part ->
             when {
                 part is PartData.FileItem && csvText == null -> csvText = part.provider().toByteArray().toString(Charsets.UTF_8)
                 part is PartData.FormItem && part.name == "accountType" -> accountTypeRaw = part.value
+                part is PartData.FormItem && part.name == "conversionRate" -> conversionRateRaw = part.value
             }
             part.dispose()
         }
@@ -59,8 +73,30 @@ fun Route.transactionRoutes(transactionStore: TransactionRepository) {
             }
         }
 
+        // USD_BANK is the one account type whose CSV amounts aren't already
+        // in CAD - see AccountType's doc comment. There's no FX-rate
+        // lookup anywhere in this app, so the rate is a one-off value the
+        // user supplies per upload (a flat rate applied to every row in
+        // the file, not a per-transaction/per-day rate - an accepted
+        // approximation given this app's existing amount precision, see
+        // Transaction.amount's own doc comment) rather than a stored,
+        // reusable setting.
+        val conversionRate = if (accountType == AccountType.USD_BANK) {
+            conversionRateRaw?.toDoubleOrNull()?.takeIf { it > 0 } ?: run {
+                call.respondRedirect("/transactions?error=${"USD Bank requires a conversion rate (CAD per USD)".encodeURLQueryComponent()}")
+                return@post
+            }
+        } else {
+            null
+        }
+
         val result = CsvTransactionParser.parse(csvText!!, accountType)
-        val importResult = transactionStore.addAll(ownerId, sha256Hex(csvText!!), result.transactions)
+        val convertedTransactions = if (conversionRate != null) {
+            result.transactions.map { it.convertedToCad(conversionRate) }
+        } else {
+            result.transactions
+        }
+        val importResult = transactionStore.addAll(ownerId, sha256Hex(csvText!!), convertedTransactions)
 
         val message = buildString {
             append("Imported ${importResult.stored.size} transaction(s)")

@@ -140,6 +140,32 @@ class TransferMatcherTest {
     }
 
     @Test
+    fun testCategorizesAUsdBankTransferOutLegUsingTheSameMarkerAsBank() {
+        // Confirmed against a real USD account export: "RT460 TFR-TO
+        // 7GYK40F" funding a transfer to the CAD account.
+        val usdBank = transaction("usd-1", AccountType.USD_BANK, "RT460 TFR-TO 7GYK40F", -27750.00)
+
+        assertEquals(mapOf("usd-1" to TRANSFER_CATEGORY_ID), TransferMatcher.categorize(listOf(usdBank)))
+    }
+
+    @Test
+    fun testCategorizesAUsdBankTransferInLeg() {
+        val usdBank = transaction("usd-1", AccountType.USD_BANK, "RT460 TFR-FR 7GYK40F", 500.00)
+
+        assertEquals(mapOf("usd-1" to TRANSFER_CATEGORY_ID), TransferMatcher.categorize(listOf(usdBank)))
+    }
+
+    @Test
+    fun testDoesNotCategorizeAUsdBankWireInAsATransfer() {
+        // A wire from an external (unmodeled) account is real income, not
+        // a transfer between the user's own accounts - it must not match
+        // just because it's on a USD_BANK row.
+        val wire = transaction("usd-1", AccountType.USD_BANK, "260821S5003700WIRE", 18482.50)
+
+        assertEquals(emptyMap(), TransferMatcher.categorize(listOf(wire)))
+    }
+
+    @Test
     fun testMatchesLocInterestWithItsBankPaymentLegAsInterestNotTransfer() {
         val bank = transaction("bank-1", AccountType.BANK, "PYT TO: 000998877", -12.34, LocalDate.of(2026, 7, 1))
         val loc = transaction("loc-1", AccountType.LOC, "INTEREST", -12.34, LocalDate.of(2026, 7, 1))

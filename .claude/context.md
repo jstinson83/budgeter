@@ -414,6 +414,53 @@ sat at the top of `categorize()`); fixed by moving that guard to only gate
 the Gemini launch, its original purpose, so transfer matching always runs
 to completion regardless of another job's status.
 
+#### `USD_BANK` account type (currency conversion, 2026-09-03)
+
+A fourth `AccountType`, added after a real-world gap: a $10k wire from an
+unmodeled USD account into the CAD bank account was being swept into
+`TRANSFER_CATEGORY_ID` by the CAD-side `TFR-FR`-style marker above and
+silently dropped from income, even though the USD account it came from
+wasn't tracked anywhere - there was no leg recording the actual income
+event. Modeling the USD account restores the correct 3-transaction shape:
+a wire-in (real income, on the USD account) plus a matched transfer-out/
+transfer-in pair (excluded on both legs, same as any other transfer).
+
+- `USD_BANK` uses the exact same TD statement format and transfer markers
+  as `BANK` (confirmed against a real USD account export - `RT460 TFR-TO
+  7GYK40F` is indistinguishable in format from a CAD account's own `TFR-TO`
+  rows), so `TransferMatcher.categoryFor()` just mirrors `BANK`'s two
+  non-CC `TFR-TO`/`TFR-FR` cases for `USD_BANK`. No CC-payment marker was
+  added for it - no evidence a USD account ever pays a CAD credit card
+  directly, so that case wasn't added speculatively. It's a separate
+  enum value rather than reusing `BANK` so `AccountCoverage`/dashboard
+  freshness reporting keeps it distinct, and because its amounts need
+  conversion (below) that a real CAD bank account's don't.
+- **Currency conversion, not a currency field.** `Transaction.amount` still
+  has no currency concept at all (see its own doc comment) - there's no
+  FX-rate lookup anywhere in this app, and threading a currency field
+  through every `sumOf { it.amount }` (net change, category totals,
+  exports) was judged not worth it for a personal budget tracker. Instead,
+  selecting "USD Bank" on the `/transactions` upload form
+  (`transactions.ftl`) requires a conversion rate (CAD per USD, plain
+  number input, conditionally required via a small inline `onchange`
+  toggle - not a hidden-fieldset situation since a present-but-blank rate
+  is harmless when accountType isn't USD_BANK, unlike the Scenario-facet
+  gotcha in `CLAUDE.md`). `TransactionRoutes.kt`'s import handler applies
+  it as one flat multiplier to every row's `amount` before storage
+  (`ParsedTransaction.convertedToCad`) - a per-upload approximation, not a
+  per-day historical rate, matching this app's existing `Double`-amount
+  precision posture. The original USD amount is appended to the
+  description (e.g. `(USD 100.00 @ 1.35)`) since there's nowhere else to
+  keep it once converted.
+- **Known limitation, not addressed**: re-uploading the same CSV with a
+  corrected rate is a no-op - `transactionFingerprint` dedups by
+  `(ownerId, fileHash, rowNumber)` keyed off the *raw* CSV bytes (fileHash
+  is computed before conversion), so a second upload of identical bytes
+  with a different rate collides on the same Firestore document IDs and
+  is silently skipped as duplicates. Fixing a wrong rate means deleting
+  the affected rows (individually or via delete-all) and re-uploading,
+  same recovery path already used for any other bad import.
+
 #### `INVESTMENT` category
 
 Tracks money moved into an investment/brokerage account, without modeling

@@ -66,6 +66,16 @@ object TransferMatcher {
             BANK_FR_NON_CC_MARKER.containsMatchIn(transaction.description) -> TRANSFER_CATEGORY_ID
         transaction.accountType == AccountType.LOC && transaction.amount < 0 &&
             transaction.description.contains(LOC_OUTGOING_MARKER, ignoreCase = true) -> TRANSFER_CATEGORY_ID
+        // USD_BANK is the same TD statement format/markers as BANK (see
+        // AccountType's doc comment) - just the plain non-CC TFR-TO/TFR-FR
+        // markers, confirmed against a real USD account export ("RT460
+        // TFR-TO 7GYK40F" funding a CAD transfer). No CC-payment marker for
+        // USD_BANK - there's no evidence a USD account ever pays a CAD
+        // credit card directly, so that case isn't added speculatively.
+        transaction.accountType == AccountType.USD_BANK && transaction.amount < 0 &&
+            BANK_TO_NON_CC_MARKER.containsMatchIn(transaction.description) -> TRANSFER_CATEGORY_ID
+        transaction.accountType == AccountType.USD_BANK && transaction.amount > 0 &&
+            BANK_FR_NON_CC_MARKER.containsMatchIn(transaction.description) -> TRANSFER_CATEGORY_ID
         else -> null
     }
 
