@@ -33,12 +33,23 @@
     </#if>
 
     <form method="post" action="/transactions/import" enctype="multipart/form-data" class="upload-form">
-      <label><input type="radio" name="accountType" value="BANK" checked> Bank</label>
-      <label><input type="radio" name="accountType" value="CREDIT_CARD"> Credit card</label>
-      <label><input type="radio" name="accountType" value="LOC"> Line of credit</label>
+      <label><input type="radio" name="accountType" value="BANK" checked onchange="toggleConversionRate()"> Bank</label>
+      <label><input type="radio" name="accountType" value="CREDIT_CARD" onchange="toggleConversionRate()"> Credit card</label>
+      <label><input type="radio" name="accountType" value="LOC" onchange="toggleConversionRate()"> Line of credit</label>
+      <label><input type="radio" name="accountType" value="USD_BANK" onchange="toggleConversionRate()"> USD Bank</label>
+      <label id="conversion-rate-label" hidden>Conversion rate (CAD per USD)
+        <input type="number" name="conversionRate" id="conversion-rate-input" step="0.0001" min="0.0001">
+      </label>
       <input type="file" name="file" accept=".csv" required>
       <button type="submit" class="button">Import CSV</button>
     </form>
+    <script>
+      function toggleConversionRate() {
+        var isUsdBank = document.querySelector('input[name="accountType"]:checked').value === 'USD_BANK';
+        document.getElementById('conversion-rate-label').hidden = !isUsdBank;
+        document.getElementById('conversion-rate-input').required = isUsdBank;
+      }
+    </script>
 
     <#if (transactions?size gt 0)>
     <div class="upload-form">

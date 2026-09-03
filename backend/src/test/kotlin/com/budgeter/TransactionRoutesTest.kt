@@ -349,6 +349,77 @@ class TransactionRoutesTest {
     }
 
     @Test
+    fun testImportConvertsUsdBankAmountsToCadUsingTheSuppliedRate() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val importResponse = client.submitFormWithBinaryData(
+            url = "/transactions/import",
+            formData = formData {
+                append("accountType", "USD_BANK")
+                append("conversionRate", "1.35")
+                append("file", "2026-01-15,260821S5003700WIRE,,100.00,100.00".toByteArray(), Headers.build {
+                    append(HttpHeaders.ContentType, "text/csv")
+                    append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
+                })
+            }
+        )
+
+        val redirectLocation = importResponse.headers[HttpHeaders.Location]
+        assertNotNull(redirectLocation)
+        val body = client.get(redirectLocation).bodyAsText()
+        assertTrue(body.contains("USD Bank"))
+        // 100.00 USD * 1.35 = 135.00 CAD, stored/displayed amount.
+        assertTrue(body.contains("135.0"))
+        // Original USD amount is kept in the description rather than lost.
+        assertTrue(body.contains("USD 100.00 @ 1.35"))
+    }
+
+    @Test
+    fun testImportRejectsUsdBankWithNoConversionRate() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.submitFormWithBinaryData(
+            url = "/transactions/import",
+            formData = formData {
+                append("accountType", "USD_BANK")
+                append("file", "2026-01-15,260821S5003700WIRE,,100.00,100.00".toByteArray(), Headers.build {
+                    append(HttpHeaders.ContentType, "text/csv")
+                    append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
+                })
+            }
+        )
+
+        assertEquals(HttpStatusCode.Found, response.status)
+        val redirectLocation = response.headers[HttpHeaders.Location]
+        assertNotNull(redirectLocation)
+        assertTrue(redirectLocation.startsWith("/transactions?error="))
+    }
+
+    @Test
+    fun testImportRejectsUsdBankWithANonPositiveConversionRate() = testApplication {
+        testModule()
+        val client = signInFakeUser()
+
+        val response = client.submitFormWithBinaryData(
+            url = "/transactions/import",
+            formData = formData {
+                append("accountType", "USD_BANK")
+                append("conversionRate", "0")
+                append("file", "2026-01-15,260821S5003700WIRE,,100.00,100.00".toByteArray(), Headers.build {
+                    append(HttpHeaders.ContentType, "text/csv")
+                    append(HttpHeaders.ContentDisposition, "filename=\"statement.csv\"")
+                })
+            }
+        )
+
+        val redirectLocation = response.headers[HttpHeaders.Location]
+        assertNotNull(redirectLocation)
+        assertTrue(redirectLocation.startsWith("/transactions?error="))
+    }
+
+    @Test
     fun testImportRejectsAnInvalidAccountType() = testApplication {
         testModule()
         val client = signInFakeUser()
